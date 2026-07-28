@@ -185,6 +185,12 @@ export class Store {
           WHERE t.run_id = ?
           ORDER BY c.seq ASC, t.rowid ASC`
       ),
+      // Every request re-sends the whole message history, so the same
+      // tool_result appears in call N, N+1, N+2… Record each one once (§07.4).
+      recordedToolResultIds: db.prepare(
+        `SELECT tool_use_id FROM tool_events
+          WHERE run_id = ? AND kind = 'tool_result' AND tool_use_id IS NOT NULL`
+      ),
       clearRuns: db.prepare('DELETE FROM runs'),
       clearCalls: db.prepare('DELETE FROM calls'),
       clearTools: db.prepare('DELETE FROM tool_events'),
@@ -319,6 +325,10 @@ export class Store {
 
   toolEvents(runId) {
     return this.q.toolEventsForRun.all(runId);
+  }
+
+  recordedToolResultIds(runId) {
+    return new Set(this.q.recordedToolResultIds.all(runId).map((r) => r.tool_use_id));
   }
 
   // ------------------------------------------------------------ lifecycle

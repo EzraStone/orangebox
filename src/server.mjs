@@ -38,11 +38,11 @@ const MIME = {
  * Build (but do not start) the orangebox server.
  * Returns { server, store, live, listen(), close() }.
  */
-export function createServer({ dbPath, gapSeconds = 120 } = {}) {
+export function createServer({ dbPath, gapSeconds = 120, providers = PROVIDERS } = {}) {
   const store = openStore(dbPath);
   const live = createLiveHub();
   const pricing = loadPricing();
-  const proxy = createProxy({ store, live, pricing, gapSeconds, providers: PROVIDERS });
+  const proxy = createProxy({ store, live, pricing, gapSeconds, providers });
 
   const server = http.createServer((req, res) => {
     handle(req, res, { store, live, proxy }).catch((err) => {

@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "start": "node bin/orangebox.mjs",
-    "test": "node --test test/"
+    "test": "node --test test/parse.test.mjs test/store.test.mjs test/proxy.test.mjs"
   },
   "keywords": [
     "llm",
