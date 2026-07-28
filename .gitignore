@@ -1,0 +1,9 @@
+node_modules/
+.claude/
+*.log
+*.db
+*.db-wal
+*.db-shm
+orangebox-run-*.json
+.DS_Store
+.tmp/

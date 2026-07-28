@@ -1,0 +1,46 @@
+{
+  "name": "orangebox",
+  "version": "1.0.0",
+  "description": "Flight data recorder for AI agents — a zero-config local proxy that records every LLM API call into SQLite and renders each run as a visual timeline.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "orangebox": "bin/orangebox.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin",
+    "src",
+    "ui",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node bin/orangebox.mjs",
+    "test": "node --test test/"
+  },
+  "keywords": [
+    "llm",
+    "agents",
+    "observability",
+    "proxy",
+    "anthropic",
+    "openai",
+    "debugging",
+    "tracing",
+    "sqlite"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EzraStone/orangebox.git"
+  },
+  "bugs": {
+    "url": "https://github.com/EzraStone/orangebox/issues"
+  },
+  "homepage": "https://github.com/EzraStone/orangebox#readme",
+  "dependencies": {
+    "better-sqlite3": "^12.11.1"
+  }
+}
