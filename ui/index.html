@@ -4,11 +4,43 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>orangebox</title>
+<meta name="color-scheme" content="dark">
 <link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%23FF5A1F'/></svg>">
 </head>
 <body>
-<noscript>orangebox's UI needs JavaScript. The JSON API at /api works without it.</noscript>
-<div id="app"></div>
+<noscript>orangebox's UI needs JavaScript. The JSON API under /api works without it.</noscript>
+
+<div class="shell" id="shell">
+  <aside class="pane pane-runs" id="pane-runs" aria-label="Runs">
+    <div class="pane-head">
+      <span class="brand"><span class="mark">▮</span>orangebox</span>
+      <span class="spacer"></span>
+      <span class="pane-title" id="runs-count"></span>
+    </div>
+    <div class="pane-body">
+      <ul class="runlist" id="runlist"></ul>
+    </div>
+    <footer class="trust">This database contains your prompts. So do its exports.</footer>
+  </aside>
+
+  <main class="pane pane-timeline" id="pane-timeline">
+    <div class="pane-head" id="run-header"></div>
+    <div class="pane-body" id="timeline-scroll">
+      <div class="timeline" id="timeline"></div>
+    </div>
+  </main>
+
+  <section class="pane pane-detail" id="pane-detail" aria-label="Call detail">
+    <div class="drag" id="drag" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+    <div class="pane-head" id="detail-head"></div>
+    <div class="tabs" id="tabs" role="tablist"></div>
+    <div class="pane-body"><div class="tabpanel" id="tabpanel" role="tabpanel"></div></div>
+  </section>
+</div>
+
+<div class="pill" id="status-pill" hidden></div>
+
 <script type="module" src="/app.js"></script>
 </body>
 </html>
