@@ -12,6 +12,7 @@ import {
 } from './store.mjs';
 import * as anthropic from './parse/anthropic.mjs';
 import * as openai from './parse/openai.mjs';
+import { parseSseFrames, parseFrameJson } from './parse/sse.mjs';
 
 const PARSERS = { anthropic, openai };
 
@@ -194,15 +195,19 @@ async function proxyCall(ctx, req, res, route) {
 }
 
 /**
- * §06.3 — write-through relay. Each chunk reaches the client the moment it
- * arrives; the capture buffer is an in-memory append alongside it. Reassembly
- * of the captured transcript lands in M2.
+ * §06.3 — write-through relay. Every chunk goes to the client the instant it
+ * arrives; capture is an in-memory append alongside. The only other per-chunk
+ * work is first-token detection, and that stops the moment it succeeds.
  */
 async function relayStream(ctx, opts) {
   const { req, res, upstream, base, requestBody, requestJson, overCap, parser, client } = opts;
+  const { live } = ctx;
+
   writeHeadFrom(res, upstream, null);
 
   const chunks = [];
+  const detector = makeFirstTokenDetector(base.provider);
+  let firstTokenAt = null;
   let streamError = null;
 
   const reader = upstream.body?.getReader();
@@ -211,7 +216,18 @@ async function relayStream(ctx, opts) {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        chunks.push(Buffer.from(value));
+
+        const buf = Buffer.from(value);
+        chunks.push(buf);
+
+        if (firstTokenAt === null && detector.sees(buf)) {
+          firstTokenAt = Date.now();
+          live.publish('call.first_token', {
+            call_id: base.id,
+            ttft_ms: firstTokenAt - base.started_at
+          });
+        }
+
         if (client.gone) {
           await reader.cancel().catch(() => {});
           break;
@@ -219,7 +235,8 @@ async function relayStream(ctx, opts) {
         await writeChunk(res, value);
       }
     } catch (err) {
-      streamError = err;
+      // An abort we caused ourselves is the client leaving, not upstream failing.
+      if (!client.gone) streamError = err;
     }
   }
 
@@ -228,29 +245,88 @@ async function relayStream(ctx, opts) {
   const endedAt = Date.now();
   if (!res.writableEnded) res.end();
 
+  // §06.3 — fold the captured transcript back into a canonical response object.
   const responseText = Buffer.concat(chunks).toString('utf8');
+  const { response, error: sseError } = parser.reassembleStream(responseText);
+
   const errorType = clientAborted
     ? 'client_aborted'
-    : streamError
+    : streamError || sseError
       ? 'upstream_stream_error'
       : upstream.ok
         ? null
         : `http_${upstream.status}`;
+
+  let responseJson = null;
+  if (response) {
+    responseJson = {
+      ...response,
+      _orangebox: {
+        reassembled_from_stream: true,
+        ...(clientAborted || streamError ? { partial: true } : {}),
+        ...(sseError ? { stream_error: sseError } : {}),
+        ...(streamError ? { transport_error: String(streamError?.message ?? streamError) } : {})
+      }
+    };
+  }
 
   await persist(ctx, {
     ...base,
     streamed: 1,
     status: upstream.status,
     error_type: errorType,
+    first_token_at: firstTokenAt,
     ended_at: endedAt,
     requestBody,
     requestJson,
     overCap,
     responseText,
-    responseJson: null, // reassembly arrives in M2
+    responseJson,
     requestHeaders: req.headers,
     parser
   });
+}
+
+/**
+ * §06.3 — "first SSE event that carries content". Scans only until it finds
+ * one, then every later chunk costs a single boolean check. Gives up after
+ * ~64 KB so a pathological stream cannot turn this into per-chunk parsing.
+ */
+function makeFirstTokenDetector(provider) {
+  const SCAN_LIMIT = 64 * 1024;
+  let pending = '';
+  let done = false;
+
+  return {
+    sees(chunk) {
+      if (done) return false;
+      pending += chunk.toString('utf8');
+
+      for (const frame of parseSseFrames(pending)) {
+        if (frame.data === '[DONE]') continue;
+        const payload = parseFrameJson(frame.data);
+
+        if (provider === 'anthropic') {
+          if ((payload?.type ?? frame.event) === 'content_block_delta') {
+            done = true;
+            return true;
+          }
+        } else {
+          const delta = payload?.choices?.[0]?.delta;
+          if (delta && typeof delta === 'object' && Object.keys(delta).length > 0) {
+            done = true;
+            return true;
+          }
+        }
+      }
+
+      if (pending.length > SCAN_LIMIT) {
+        done = true; // no content this far in; stop paying for the search
+        pending = '';
+      }
+      return false;
+    }
+  };
 }
 
 // ============================================================== persistence

@@ -1,16 +1,27 @@
 // §17.1 — integration tests against a mock upstream. No real network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   startMockUpstream,
   startOrangebox,
   jsonResponse,
+  sseResponse,
+  sleep,
   getJson,
   settle,
   ANTHROPIC_MESSAGE,
   OPENAI_COMPLETION
 } from './helpers.mjs';
+
+const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
+const fixture = (name) => fs.readFileSync(path.join(FIXTURES, name), 'utf8');
+
+/** Split a transcript into its wire frames, so the mock can dribble them out. */
+const frames = (text) => text.split(/(?<=\n\n)/).filter(Boolean);
 
 async function withRig(handler, run, { gapSeconds = 120 } = {}) {
   const upstream = await startMockUpstream(handler);
@@ -365,6 +376,242 @@ test('non-JSON upstream bodies are stored verbatim, never dropped (§14.2)', asy
       const stored = JSON.parse(full.response_json);
       assert.equal(stored._orangebox.unparsed, true);
       assert.equal(stored.body, 'not json at all');
+    }
+  );
+});
+
+// ============================================================== streaming
+
+test('a streamed Anthropic call is byte-identical and reassembles fully (§06.3, §17.1 check 2)', async () => {
+  const transcript = fixture('anthropic-stream-tool-use.sse');
+
+  await withRig(
+    (req, res) => sseResponse(res, frames(transcript)),
+    async ({ app }) => {
+      const res = await fetch(`${app.origin}/anthropic/v1/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...anthropicRequest, stream: true })
+      });
+
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get('content-type'), /text\/event-stream/);
+      assert.equal(await res.text(), transcript, 'relayed bytes match upstream exactly');
+
+      assert.ok(await settle(app, () => app.store.countRuns() === 1));
+      const runId = app.store.listRuns().runs[0].id;
+      const call = app.store.callSummaries(runId)[0];
+
+      assert.equal(call.streamed, 1);
+      assert.equal(call.error_type, null);
+      assert.equal(call.model, 'claude-opus-5');
+      assert.equal(call.stop_reason, 'tool_use');
+      assert.equal(call.input_tokens, 143);
+      assert.equal(call.output_tokens, 57);
+      assert.equal(call.cache_read_tokens, 2048);
+      assert.ok(call.cost_usd > 0);
+
+      // §06.3 — TTFT is recorded and lands before the stream closes.
+      assert.ok(call.ttft_ms !== null, 'ttft recorded');
+      assert.ok(call.ttft_ms >= 0 && call.ttft_ms <= call.latency_ms);
+
+      // §7.1 — the stored response is the canonical object, flagged as folded.
+      const full = app.store.fullCalls(runId)[0];
+      const stored = JSON.parse(full.response_json);
+      assert.equal(stored._orangebox.reassembled_from_stream, true);
+      assert.equal(stored.content[0].text, 'Let me check the weather.');
+      assert.deepEqual(stored.content[1].input, { city: 'Paris' });
+
+      // §7.4 — tool events come off the reassembled response like any other.
+      const tools = app.store.toolEvents(runId);
+      assert.equal(tools.length, 1);
+      assert.equal(tools[0].kind, 'tool_use');
+      assert.equal(tools[0].tool_name, 'get_weather');
+    }
+  );
+});
+
+test('a streamed OpenAI call reassembles, including terminal usage (§7.3)', async () => {
+  const transcript = fixture('openai-stream-tool-use.sse');
+
+  await withRig(
+    (req, res) => sseResponse(res, frames(transcript)),
+    async ({ app }) => {
+      const res = await fetch(`${app.origin}/openai/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          stream: true,
+          stream_options: { include_usage: true },
+          messages: [{ role: 'user', content: 'weather in Paris?' }]
+        })
+      });
+      assert.equal(await res.text(), transcript);
+
+      assert.ok(await settle(app, () => app.store.countRuns() === 1));
+      const runId = app.store.listRuns().runs[0].id;
+      const call = app.store.callSummaries(runId)[0];
+
+      assert.equal(call.streamed, 1);
+      assert.equal(call.model, 'gpt-4o-mini-2024-07-18');
+      assert.equal(call.stop_reason, 'tool_calls');
+      assert.equal(call.input_tokens, 88);
+      assert.equal(call.output_tokens, 31);
+      assert.ok(call.ttft_ms !== null);
+
+      const tools = app.store.toolEvents(runId);
+      assert.equal(tools.length, 1);
+      assert.deepEqual(JSON.parse(tools[0].content_json), { city: 'Paris' });
+    }
+  );
+});
+
+test('without include_usage, streamed token counts stay null (§7.3)', async () => {
+  await withRig(
+    (req, res) => sseResponse(res, frames(fixture('openai-stream-no-usage.sse'))),
+    async ({ app }) => {
+      const res = await fetch(`${app.origin}/openai/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'gpt-4o-mini', stream: true, messages: [] })
+      });
+      await res.text(); // drain, or the relay blocks on backpressure
+
+      assert.ok(await settle(app, () => app.store.countRuns() === 1));
+      const call = app.store.callSummaries(app.store.listRuns().runs[0].id)[0];
+      assert.equal(call.input_tokens, null);
+      assert.equal(call.output_tokens, null);
+      assert.equal(call.cost_usd, null, 'no counts means no estimate, not $0.00');
+      assert.equal(call.stop_reason, 'stop');
+    }
+  );
+});
+
+test('an error event mid-stream is recorded as upstream_stream_error (§14.1)', async () => {
+  await withRig(
+    (req, res) => sseResponse(res, frames(fixture('anthropic-stream-error.sse'))),
+    async ({ app }) => {
+      const res = await fetch(`${app.origin}/anthropic/v1/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...anthropicRequest, stream: true })
+      });
+      // Whatever arrived is relayed as-is.
+      assert.match(await res.text(), /overloaded_error/);
+
+      assert.ok(await settle(app, () => app.store.countRuns() === 1));
+      const runId = app.store.listRuns().runs[0].id;
+      const call = app.store.callSummaries(runId)[0];
+      assert.equal(call.error_type, 'upstream_stream_error');
+
+      const stored = JSON.parse(app.store.fullCalls(runId)[0].response_json);
+      assert.equal(stored.content[0].text, 'Halfway through this sen', 'partial content kept');
+      assert.equal(stored._orangebox.stream_error.type, 'overloaded_error');
+      assert.equal(app.store.getRun(runId).error_count, 1);
+    }
+  );
+});
+
+test('a client that walks away mid-stream is recorded as client_aborted (§17.1 check 5)', async () => {
+  let upstreamFinished = false;
+
+  const upstream = await startMockUpstream(async (req, res) => {
+    const all = frames(fixture('anthropic-stream-tool-use.sse'));
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+    for (const frame of all) {
+      if (res.destroyed) break;
+      res.write(frame);
+      await sleep(30);
+    }
+    upstreamFinished = true;
+    if (!res.destroyed) res.end();
+  });
+
+  const app = await startOrangebox({
+    providers: { anthropic: upstream.origin, openai: upstream.origin }
+  });
+
+  try {
+    const ac = new AbortController();
+    const res = await fetch(`${app.origin}/anthropic/v1/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...anthropicRequest, stream: true }),
+      signal: ac.signal
+    });
+
+    // Read a couple of frames, then hang up like a killed agent process.
+    const reader = res.body.getReader();
+    await reader.read();
+    await reader.read();
+    ac.abort();
+    await reader.cancel().catch(() => {});
+
+    assert.ok(
+      await settle(app, () => {
+        if (app.store.countRuns() !== 1) return false;
+        return app.store.callSummaries(app.store.listRuns().runs[0].id).length === 1;
+      }),
+      'the aborted call is still recorded'
+    );
+
+    const runId = app.store.listRuns().runs[0].id;
+    const call = app.store.callSummaries(runId)[0];
+    assert.equal(call.error_type, 'client_aborted');
+    assert.equal(call.streamed, 1);
+
+    const stored = JSON.parse(app.store.fullCalls(runId)[0].response_json);
+    assert.equal(stored._orangebox.partial, true);
+    assert.equal(stored._orangebox.reassembled_from_stream, true);
+
+    // §17.1 check 5 — the server stays healthy afterwards.
+    const health = await getJson(`${app.origin}/api/health`);
+    assert.equal(health.status, 200);
+    assert.equal(health.body.ok, true);
+
+    assert.equal(upstreamFinished, false, 'upstream was cut off rather than drained');
+  } finally {
+    await app.stop();
+    await upstream.close();
+  }
+});
+
+test('the live feed announces run, start, first token, and completion (§10.1)', async () => {
+  await withRig(
+    (req, res) => sseResponse(res, frames(fixture('anthropic-stream-tool-use.sse'))),
+    async ({ app }) => {
+      const ac = new AbortController();
+      const feed = await fetch(`${app.origin}/api/live`, { signal: ac.signal });
+      const reader = feed.body.getReader();
+      const decoder = new TextDecoder();
+      let seen = '';
+
+      const collect = (async () => {
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            seen += decoder.decode(value, { stream: true });
+            if (seen.includes('call.completed')) break;
+          }
+        } catch {
+          /* aborted */
+        }
+      })();
+
+      await fetch(`${app.origin}/anthropic/v1/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...anthropicRequest, stream: true })
+      });
+
+      await Promise.race([collect, sleep(3000)]);
+      ac.abort();
+
+      for (const event of ['run.created', 'call.started', 'call.first_token', 'call.completed']) {
+        assert.ok(seen.includes(`event: ${event}`), `missing ${event} in feed`);
+      }
     }
   );
 });
