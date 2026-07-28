@@ -25,6 +25,8 @@ export async function main(argv) {
       return void console.log(VERSION);
     case 'start':
       return start(parseFlags(rest));
+    case 'run':
+      return runWrapped(rest);
     case 'export':
       return exportRun(rest);
     case 'clear':
@@ -125,6 +127,134 @@ function banner({ origin, store, host, willOpen }) {
       `\x1b[31mWARNING: orangebox has no authentication. Binding to ${host} exposes every recorded prompt to your network.\x1b[0m\n`
     );
   }
+}
+
+// ------------------------------------------------------------------- run
+
+/**
+ * §05.2 — `orangebox run --name "checkout bot" -- node agent.js`.
+ * Wraps a command in an explicit run so its calls group precisely instead of
+ * relying on the idle-gap heuristic. The child's exit code becomes ours.
+ */
+async function runWrapped(args) {
+  const separator = args.indexOf('--');
+  if (separator === -1 || separator === args.length - 1) {
+    fail('usage: orangebox run [--name "..."] -- <command> [args...]');
+  }
+
+  const flags = args.slice(0, separator);
+  const [command, ...commandArgs] = args.slice(separator + 1);
+
+  const opts = { ...DEFAULTS, name: null };
+  for (let i = 0; i < flags.length; i++) {
+    const next = () => {
+      const v = flags[++i];
+      if (v === undefined) fail(`${flags[i - 1]} needs a value`);
+      return v;
+    };
+    switch (flags[i]) {
+      case '--name': opts.name = next(); break;
+      case '--port': opts.port = int(next(), '--port'); break;
+      case '--host': opts.host = next(); break;
+      case '--db': opts.db = next(); break;
+      case '--gap': opts.gap = int(next(), '--gap'); break;
+      default: fail(`unknown flag "${flags[i]}" (command arguments go after --)`);
+    }
+  }
+
+  const origin = `http://${displayHost(opts.host)}:${opts.port}`;
+
+  // Attach to a recorder that is already listening, otherwise run our own for
+  // the lifetime of the child.
+  let owned = null;
+  if (!(await healthy(origin))) {
+    owned = createServer({ dbPath: opts.db ?? defaultDbPath(), gapSeconds: opts.gap });
+    try {
+      await owned.listen(opts.port, opts.host);
+    } catch (err) {
+      if (err.code === 'EADDRINUSE') {
+        fail(`port ${opts.port} is in use by something that is not orangebox — try --port`);
+      }
+      fail(err.message);
+    }
+  }
+
+  const { id: runId } = await postJson(`${origin}/api/runs/begin`, {
+    name: opts.name ?? [command, ...commandArgs].join(' ')
+  });
+
+  console.log(`  ▮ recording   ${origin}/run/${runId}`);
+
+  const env = {
+    ...process.env,
+    ANTHROPIC_BASE_URL: `${origin}/r/${runId}/anthropic`,
+    OPENAI_BASE_URL: `${origin}/r/${runId}/openai`,
+    ORANGEBOX_RUN_ID: runId
+  };
+
+  const code = await spawnChild(command, commandArgs, env);
+
+  await postJson(`${origin}/api/runs/${encodeURIComponent(runId)}/end`, {});
+  console.log(`\n  ▮ recorded    ${origin}/run/${runId}`);
+
+  if (owned) await owned.close();
+  process.exitCode = code;
+}
+
+function spawnChild(command, args, env) {
+  return new Promise((resolve) => {
+    const start = (useShell) => {
+      const child = spawn(command, args, { stdio: 'inherit', env, shell: useShell });
+
+      const forward = (signal) => () => {
+        try {
+          child.kill(signal);
+        } catch {
+          /* already gone */
+        }
+      };
+      const onInt = forward('SIGINT');
+      const onTerm = forward('SIGTERM');
+      process.on('SIGINT', onInt);
+      process.on('SIGTERM', onTerm);
+
+      child.on('error', (err) => {
+        process.off('SIGINT', onInt);
+        process.off('SIGTERM', onTerm);
+        // npm/npx and friends are .cmd shims on Windows; retry through the shell.
+        if (err.code === 'ENOENT' && !useShell && process.platform === 'win32') return start(true);
+        console.error(`orangebox: could not run "${command}": ${err.message}`);
+        resolve(127);
+      });
+
+      child.on('exit', (exitCode, signal) => {
+        process.off('SIGINT', onInt);
+        process.off('SIGTERM', onTerm);
+        resolve(signal ? 128 : (exitCode ?? 0));
+      });
+    };
+    start(false);
+  });
+}
+
+async function healthy(origin) {
+  try {
+    const res = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) return false;
+    return (await res.json())?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+async function postJson(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body ?? {})
+  });
+  if (!res.ok) fail(`${url} answered ${res.status}`);
+  return res.json();
 }
 
 // --------------------------------------------------------------- export
@@ -250,6 +380,7 @@ orangebox v${VERSION} — flight recorder for AI agents
 
 USAGE
   orangebox [start] [options]          start recording (default command)
+  orangebox run [--name "..."] -- CMD  run CMD with its calls grouped into one run
   orangebox export <run-id> [-o file]  write a run to a self-contained JSON file
   orangebox clear [--yes]              delete all recorded data
   orangebox --version | --help
@@ -265,5 +396,8 @@ OPTIONS (start)
 POINT YOUR AGENT AT IT
   export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"
   export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"
+
+  …or skip the env vars entirely and let orangebox set them for you:
+  orangebox run --name "checkout bot" -- node agent.js
 `);
 }

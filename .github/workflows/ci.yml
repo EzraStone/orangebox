@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: node ${{ matrix.node }} · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # §15 asks for 18/20/22. better-sqlite3 — the one dependency §02.1
+        # allows — requires Node 20+, and Node 18 went EOL in April 2025, so
+        # the matrix moves up a version rather than pinning a dead runtime.
+        node: ['20', '22', '24']
+        os: [ubuntu-latest]
+        include:
+          # The proxy leans on OS-specific socket behaviour (client aborts,
+          # refused connections); prove it on Windows too.
+          - node: '22'
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      # The suite must not touch the network: every "upstream" is a local
+      # node:http server (§17.1 check 10).
+      - run: npm test

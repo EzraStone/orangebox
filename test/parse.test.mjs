@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -270,6 +271,46 @@ test('pricing matches the longest key that prefixes the model (§08)', () => {
   assert.equal(pricing.rateFor('gpt-5-nano-2026-01-01').out, 0.4);
   assert.equal(pricing.rateFor('some-local-llama'), null);
   assert.equal(pricing.rateFor(null), null);
+});
+
+test('a user pricing file deep-merges over the shipped one (§08)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orangebox-pricing-'));
+  const userFile = path.join(dir, 'pricing.json');
+
+  fs.writeFileSync(
+    userFile,
+    JSON.stringify({
+      // Correct one rate on an existing model; the others must survive.
+      'claude-opus-5': { in: 9.99 },
+      // And teach it a model it has never heard of.
+      'llama-4-local': { in: 0, out: 0 }
+    })
+  );
+
+  try {
+    const pricing = loadPricing({ userFile });
+    const opus = pricing.rateFor('claude-opus-5');
+    assert.equal(opus.in, 9.99, 'override applied');
+    assert.equal(opus.out, 25.0, 'untouched keys survive the merge');
+    assert.equal(opus.cache_read, 0.5);
+
+    assert.equal(pricing.rateFor('llama-4-local-q4').in, 0, 'new entries are matched by prefix too');
+    assert.equal(pricing.rateFor('gpt-4o-mini').in, 0.15, 'unrelated models unaffected');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a malformed user pricing file is ignored rather than fatal', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orangebox-pricing-'));
+  const userFile = path.join(dir, 'pricing.json');
+  fs.writeFileSync(userFile, '{ this is not json');
+  try {
+    const pricing = loadPricing({ userFile });
+    assert.equal(pricing.rateFor('claude-opus-5').in, 5.0, 'falls back to the shipped table');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('cost is null for unpriced models and for calls with no token counts (§08)', () => {

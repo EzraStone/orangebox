@@ -616,6 +616,115 @@ test('the live feed announces run, start, first token, and completion (§10.1)',
   );
 });
 
+// ==================================================== api surface (§10)
+
+test('export carries everything needed to understand a run (§10.6, §17.1 check 9)', async () => {
+  await withRig(
+    (req, res) => jsonResponse(res, 200, ANTHROPIC_MESSAGE),
+    async ({ app }) => {
+      await fetch(`${app.origin}/r/exported-run/anthropic/v1/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': 'sk-ant-LEAK-CANARY' },
+        body: JSON.stringify(anthropicRequest)
+      });
+      assert.ok(await settle(app, () => app.store.callSummaries('exported-run').length === 1));
+
+      const res = await fetch(`${app.origin}/api/export/exported-run`);
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get('content-disposition'), /attachment; filename="orangebox-run-exported-run\.json"/);
+
+      const raw = await res.text();
+      assert.equal(raw.includes('sk-ant-LEAK-CANARY'), false, 'exports carry prompts, never keys');
+
+      const body = JSON.parse(raw);
+      assert.equal(body.orangebox_export, 1);
+      assert.ok(body.exported_at > 0);
+      assert.equal(body.run.id, 'exported-run');
+      assert.equal(body.calls.length, 1);
+      // Unlike CallSummary, the export keeps the payloads — that is the point.
+      assert.equal(typeof body.calls[0].request_json, 'string');
+      assert.equal(typeof body.calls[0].response_json, 'string');
+      assert.deepEqual(
+        JSON.parse(body.calls[0].request_json).messages,
+        anthropicRequest.messages
+      );
+
+      assert.equal((await fetch(`${app.origin}/api/export/nope`)).status, 404);
+    }
+  );
+});
+
+test('runs survive a restart and deep links still resolve (§17.1 check 6)', async () => {
+  const upstream = await startMockUpstream((req, res) => jsonResponse(res, 200, ANTHROPIC_MESSAGE));
+  const first = await startOrangebox({
+    providers: { anthropic: upstream.origin, openai: upstream.origin }
+  });
+
+  let dbPath;
+  let runId;
+  try {
+    dbPath = first.dbPath;
+    await fetch(`${first.origin}/r/persisted/anthropic/v1/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(anthropicRequest)
+    });
+    assert.ok(await settle(first, () => first.store.callSummaries('persisted').length === 1));
+    runId = 'persisted';
+    await first.close(); // close, but keep the database file
+  } catch (err) {
+    await first.stop();
+    await upstream.close();
+    throw err;
+  }
+
+  const { createServer } = await import('../src/server.mjs');
+  const second = createServer({
+    dbPath,
+    providers: { anthropic: upstream.origin, openai: upstream.origin }
+  });
+  const addr = await second.listen(0, '127.0.0.1');
+  const origin = `http://127.0.0.1:${addr.port}`;
+
+  try {
+    const { status, body } = await getJson(`${origin}/api/runs/${runId}`);
+    assert.equal(status, 200);
+    assert.equal(body.calls.length, 1, 'history intact across restart');
+    assert.equal(body.calls[0].input_tokens, 12);
+
+    // The deep link is an app route, so it serves the UI shell.
+    const deep = await fetch(`${origin}/run/${runId}`);
+    assert.equal(deep.status, 200);
+    assert.match(deep.headers.get('content-type'), /text\/html/);
+  } finally {
+    await second.close();
+    await upstream.close();
+  }
+});
+
+test('DELETE /api/runs/:id and POST /api/clear remove data (§10)', async () => {
+  await withRig(
+    (req, res) => jsonResponse(res, 200, ANTHROPIC_MESSAGE),
+    async ({ app }) => {
+      for (const id of ['run-x', 'run-y']) {
+        await fetch(`${app.origin}/r/${id}/anthropic/v1/messages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(anthropicRequest)
+        });
+      }
+      assert.ok(await settle(app, () => app.store.countRuns() === 2));
+
+      assert.equal((await fetch(`${app.origin}/api/runs/run-x`, { method: 'DELETE' })).status, 200);
+      assert.equal(app.store.countRuns(), 1);
+      assert.equal((await fetch(`${app.origin}/api/runs/run-x`, { method: 'DELETE' })).status, 404);
+
+      await fetch(`${app.origin}/api/clear`, { method: 'POST' });
+      assert.equal(app.store.countRuns(), 0);
+    }
+  );
+});
+
 test('unknown routes 404 with the routing hint (§04)', async () => {
   const app = await startOrangebox();
   try {
