@@ -19,8 +19,12 @@ jobs:
         os: [ubuntu-latest]
         include:
           # The proxy leans on OS-specific socket behaviour (client aborts,
-          # refused connections); prove it on Windows too.
+          # refused connections), so prove it on Windows too. Two Node versions
+          # there because the local dev machine only ever runs 24 — if 22 fails
+          # where 24 passes, that is a runtime difference and not the OS.
           - node: '22'
+            os: windows-latest
+          - node: '24'
             os: windows-latest
 
     steps:
@@ -35,4 +39,31 @@ jobs:
 
       # The suite must not touch the network: every "upstream" is a local
       # node:http server (§17.1 check 10).
-      - run: npm test
+      - name: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.txt
+
+      # Job logs need a token to read through the API, which makes a red run
+      # opaque to anything but a human with a browser. Put the tail of the
+      # failure in the job summary, where it is readable without one.
+      - name: Surface the failure
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "### \`npm test\` failed on ${{ matrix.os }} / node ${{ matrix.node }}"
+            echo
+            echo '```'
+            tail -c 8000 test-output.txt || echo "(no test output captured)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output-${{ matrix.os }}-node${{ matrix.node }}
+          path: test-output.txt
+          retention-days: 7
