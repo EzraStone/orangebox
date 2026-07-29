@@ -27,7 +27,8 @@ change is wrong.
 | `src/live.mjs` | SSE hub. |
 | `src/pricing.*` | Rate table and longest-prefix lookup. |
 | `ui/` | The web UI. No framework, no build step, no third-party anything. |
-| `examples/demo-agent.mjs` | Scripted agent producing the canonical three-call run. |
+| `examples/demo-agent.mjs` | Scripted agent producing the canonical three-call run. Needs a real `ANTHROPIC_API_KEY`. |
+| `examples/demo-offline.mjs` | The same shape against a fake provider — no key, no network. Start here. |
 | `docs/` | The published website (GitHub Pages serves this folder). |
 
 `docs/spec.html` is a **copy** of the canonical `orangebox-spec.html` at the
@@ -57,6 +58,29 @@ Section references in code comments (`§06.3`, `§14.2`) point into it.
 - **No telemetry, ever.** Not a version check, not an anonymous ping. Ever.
 
 ## Manual probes
+
+### Without an API key
+
+`node examples/demo-offline.mjs` starts a fake provider, points orangebox at it,
+and seeds two runs. Because it is a *real* proxy pointed at a *fake* provider,
+every probe below works against it — swap the model name to pick the response:
+
+| Model contains | Fake provider returns |
+| --- | --- |
+| `429` | 429 `rate_limit_error` with `retry-after` |
+| `500` | 500 `api_error` |
+| `slow` | a normal reply after 3 s |
+| `die` | a few SSE frames, then an `error` event |
+| anything, `"stream": true` | server-sent events |
+
+```bash
+# recorded as http_429, relayed to the client verbatim
+curl -s -D - -o /dev/null http://127.0.0.1:4100/anthropic/v1/messages \
+  -H 'content-type: application/json' \
+  -d '{"model":"claude-opus-5-429","max_tokens":16,"messages":[]}'
+```
+
+### Against the real providers
 
 Start the recorder first:
 

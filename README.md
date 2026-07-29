@@ -54,6 +54,17 @@ npx -y github:EzraStone/orangebox run --name "checkout bot" -- node agent.js
 
 > **Not on npm yet.** That is why the commands read `github:EzraStone/orangebox` rather than the shorter `npx orangebox`. Installing from GitHub works today; once the package is published, the short form will work too and these will keep working.
 
+### No API key? See it working anyway
+
+```bash
+git clone https://github.com/EzraStone/orangebox && cd orangebox && npm install
+node examples/demo-offline.mjs
+```
+
+That starts a fake provider on loopback, points orangebox at it, seeds two realistic runs — a plan → tool-loop → streamed-synthesis run and a retry storm — then stays up so you can explore the UI and curl the proxy yourself. No API key, no network, and a throwaway database that never touches `~/.orangebox`.
+
+The fake provider reacts to the model name, so you can exercise the failure paths on demand: `claude-opus-5-429`, `-500`, `-slow`, `-die`.
+
 ## Who this is for
 
 **orangebox records the agent you are building, not the agent CLI you are using.**
