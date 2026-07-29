@@ -40,9 +40,27 @@ export async function startOrangebox({ providers, gapSeconds = 120 } = {}) {
     origin: `http://127.0.0.1:${address.port}`,
     async stop() {
       await app.close();
-      fs.rmSync(dir, { recursive: true, force: true });
+      await removeTempDir(dir);
     }
   };
+}
+
+/**
+ * Windows keeps SQLite's -wal and -shm handles open a moment longer than
+ * close() returns, so an immediate delete throws EBUSY/EPERM — and `force`
+ * only swallows ENOENT, not that. Retry briefly, then give up quietly: this is
+ * teardown, and a leaked temp directory must never fail a passing test.
+ */
+export async function removeTempDir(dir) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return true;
+    } catch {
+      await sleep(50);
+    }
+  }
+  return false;
 }
 
 export function jsonResponse(res, status, body, extraHeaders = {}) {

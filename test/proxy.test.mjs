@@ -14,7 +14,8 @@ import {
   getJson,
   settle,
   ANTHROPIC_MESSAGE,
-  OPENAI_COMPLETION
+  OPENAI_COMPLETION,
+  removeTempDir
 } from './helpers.mjs';
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -699,6 +700,7 @@ test('runs survive a restart and deep links still resolve (§17.1 check 6)', asy
   } finally {
     await second.close();
     await upstream.close();
+    await removeTempDir(path.dirname(dbPath));
   }
 });
 

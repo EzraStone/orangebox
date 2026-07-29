@@ -11,6 +11,7 @@ import * as anthropic from '../src/parse/anthropic.mjs';
 import * as openai from '../src/parse/openai.mjs';
 import { parseSseFrames } from '../src/parse/sse.mjs';
 import { loadPricing } from '../src/pricing.mjs';
+import { removeTempDir } from './helpers.mjs';
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const fixture = (name) => fs.readFileSync(path.join(FIXTURES, name), 'utf8');
@@ -273,7 +274,7 @@ test('pricing matches the longest key that prefixes the model (§08)', () => {
   assert.equal(pricing.rateFor(null), null);
 });
 
-test('a user pricing file deep-merges over the shipped one (§08)', () => {
+test('a user pricing file deep-merges over the shipped one (§08)', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orangebox-pricing-'));
   const userFile = path.join(dir, 'pricing.json');
 
@@ -297,11 +298,11 @@ test('a user pricing file deep-merges over the shipped one (§08)', () => {
     assert.equal(pricing.rateFor('llama-4-local-q4').in, 0, 'new entries are matched by prefix too');
     assert.equal(pricing.rateFor('gpt-4o-mini').in, 0.15, 'unrelated models unaffected');
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    await removeTempDir(dir);
   }
 });
 
-test('a malformed user pricing file is ignored rather than fatal', () => {
+test('a malformed user pricing file is ignored rather than fatal', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orangebox-pricing-'));
   const userFile = path.join(dir, 'pricing.json');
   fs.writeFileSync(userFile, '{ this is not json');
@@ -309,7 +310,7 @@ test('a malformed user pricing file is ignored rather than fatal', () => {
     const pricing = loadPricing({ userFile });
     assert.equal(pricing.rateFor('claude-opus-5').in, 5.0, 'falls back to the shipped table');
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    await removeTempDir(dir);
   }
 });
 

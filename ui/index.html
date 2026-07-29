@@ -17,6 +17,7 @@
       <span class="brand"><span class="mark">▮</span>orangebox</span>
       <span class="spacer"></span>
       <span class="pane-title" id="runs-count"></span>
+      <button class="iconbtn" id="runs-collapse" type="button" title="Collapse runs (\)" aria-label="Collapse runs pane" aria-expanded="true">&#x00AB;</button>
     </div>
     <div class="pane-body">
       <ul class="runlist" id="runlist"></ul>
@@ -25,7 +26,10 @@
   </aside>
 
   <main class="pane pane-timeline" id="pane-timeline">
-    <div class="pane-head" id="run-header"></div>
+    <div class="pane-head">
+      <button class="iconbtn" id="runs-expand" type="button" title="Show runs (\)" aria-label="Show runs pane">&#x00BB;</button>
+      <div class="run-head-slot" id="run-header"></div>
+    </div>
     <div class="pane-body" id="timeline-scroll">
       <div class="timeline" id="timeline"></div>
     </div>

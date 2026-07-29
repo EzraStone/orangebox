@@ -1058,8 +1058,33 @@ document.addEventListener('keydown', (e) => {
     state.follow = true;
     scrollToLive();
     renderPill();
+  } else if (e.key === '\\') {
+    e.preventDefault();
+    setRunsCollapsed(!$('shell').classList.contains('runs-collapsed'));
   }
 });
+
+// ================================================== collapsible runs pane
+
+/** §11.2 — 280px, collapsible. The choice sticks for the session. */
+function setRunsCollapsed(collapsed) {
+  $('shell').classList.toggle('runs-collapsed', collapsed);
+  $('runs-collapse').setAttribute('aria-expanded', String(!collapsed));
+  try {
+    localStorage.setItem('orangebox.runsCollapsed', collapsed ? '1' : '0');
+  } catch {
+    /* private browsing — the toggle still works, it just won't be remembered */
+  }
+}
+
+$('runs-collapse').addEventListener('click', () => setRunsCollapsed(true));
+$('runs-expand').addEventListener('click', () => setRunsCollapsed(false));
+
+try {
+  if (localStorage.getItem('orangebox.runsCollapsed') === '1') setRunsCollapsed(true);
+} catch {
+  /* ignored */
+}
 
 // ====================================================== resizable drawer
 
