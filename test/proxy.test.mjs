@@ -515,17 +515,30 @@ test('an error event mid-stream is recorded as upstream_stream_error (§14.1)', 
 });
 
 test('a client that walks away mid-stream is recorded as client_aborted (§17.1 check 5)', async () => {
-  let upstreamFinished = false;
+  const all = frames(fixture('anthropic-stream-tool-use.sse'));
+
+  // The abort has to land while the stream is genuinely open. Sleeping between
+  // frames and hoping is not good enough: on a fast machine the whole body
+  // arrives, the proxy calls res.end(), and there is no abort left to record —
+  // which is why this test passed locally and failed on CI for days. So the
+  // mock writes a couple of frames and then *blocks* until the test releases
+  // it, taking timing out of the equation entirely.
+  let releaseUpstream;
+  const held = new Promise((resolve) => {
+    releaseUpstream = resolve;
+  });
 
   const upstream = await startMockUpstream(async (req, res) => {
-    const all = frames(fixture('anthropic-stream-tool-use.sse'));
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
-    for (const frame of all) {
+    res.write(all[0]);
+    res.write(all[1]);
+
+    await held;
+
+    for (const frame of all.slice(2)) {
       if (res.destroyed) break;
       res.write(frame);
-      await sleep(30);
     }
-    upstreamFinished = true;
     if (!res.destroyed) res.end();
   });
 
@@ -542,12 +555,18 @@ test('a client that walks away mid-stream is recorded as client_aborted (§17.1 
       signal: ac.signal
     });
 
-    // Read a couple of frames, then hang up like a killed agent process.
+    // Take the first chunk — which exists, because the mock wrote two frames
+    // before blocking — then hang up like a killed agent process.
     const reader = res.body.getReader();
-    await reader.read();
     await reader.read();
     ac.abort();
     await reader.cancel().catch(() => {});
+
+    // Deliberately do NOT release the mock here. Releasing it lets the stream
+    // finish, and if it finishes before the abort propagates the proxy records
+    // a clean call — the exact race that made this test unreliable. The only
+    // thing that should end this stream is orangebox aborting upstream, which
+    // is what the real scenario looks like too.
 
     assert.ok(
       await settle(app, () => {
@@ -571,8 +590,14 @@ test('a client that walks away mid-stream is recorded as client_aborted (§17.1 
     assert.equal(health.status, 200);
     assert.equal(health.body.ok, true);
 
-    assert.equal(upstreamFinished, false, 'upstream was cut off rather than drained');
+    // The captured transcript is a prefix of the full one — we hung up early.
+    const captured = JSON.parse(app.store.fullCalls(runId)[0].response_json);
+    assert.ok(
+      captured.content.length === 0 || (captured.content[0].text ?? '').length < 'Let me check the weather.'.length,
+      'only part of the stream was captured'
+    );
   } finally {
+    releaseUpstream(); // never leave the mock handler parked, even on failure
     await app.stop();
     await upstream.close();
   }
