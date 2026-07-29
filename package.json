@@ -19,6 +19,8 @@
   ],
   "scripts": {
     "start": "node bin/orangebox.mjs",
+    "docs:sync": "node -e \"require('fs').copyFileSync('orangebox-spec.html','docs/spec.html')\"",
+    "docs:serve": "node -e \"const h=require('http'),f=require('fs'),p=require('path'),M={'.html':'text/html; charset=utf-8','.svg':'image/svg+xml'};h.createServer((q,s)=>{let u=decodeURIComponent(q.url.split('?')[0]);if(u==='/')u='/index.html';const t=p.join('docs',u);if(!f.existsSync(t)){s.writeHead(404);return s.end()}s.writeHead(200,{'content-type':M[p.extname(t)]||'application/octet-stream'});s.end(f.readFileSync(t))}).listen(4190,()=>console.log('docs on http://127.0.0.1:4190'))\"",
     "test": "node --test test/parse.test.mjs test/store.test.mjs test/proxy.test.mjs test/diff.test.mjs"
   },
   "keywords": [

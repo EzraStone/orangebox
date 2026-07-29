@@ -28,6 +28,15 @@ change is wrong.
 | `src/pricing.*` | Rate table and longest-prefix lookup. |
 | `ui/` | The web UI. No framework, no build step, no third-party anything. |
 | `examples/demo-agent.mjs` | Scripted agent producing the canonical three-call run. |
+| `docs/` | The published website (GitHub Pages serves this folder). |
+
+`docs/spec.html` is a **copy** of the canonical `orangebox-spec.html` at the
+repo root, because Pages can only serve what is inside `docs/`. Edit the root
+file, then run `npm run docs:sync` so the published copy matches. Preview the
+site locally with `npm run docs:serve`.
+
+The four SVGs in `docs/img/` are hand-drawn to match the real UI and are used by
+both the README and the website; if the UI's look changes, they need updating.
 
 The full build specification is [`orangebox-spec.html`](orangebox-spec.html).
 Section references in code comments (`§06.3`, `§14.2`) point into it.

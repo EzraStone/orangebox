@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>orangebox — build specification v1.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#ECEEEA;        /* cool manual-stock paper */
+  --panel:#F7F9F5;        /* raised panel */
+  --ink:#1A1D21;          /* body ink */
+  --ink-soft:#3C4148;
+  --stamp:#787F88;        /* metadata gray */
+  --line:#C7CCC4;         /* rules */
+  --orange:#E8490F;       /* international orange — the color real flight recorders are painted */
+  --orange-deep:#C23A08;
+  --blue:#2E5490;         /* blueprint ink */
+  --ok:#2E7D4F;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --disp:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15.5px;line-height:1.58;-webkit-font-smoothing:antialiased}
+.wrap{max-width:960px;margin:0 auto;padding:0 28px 96px}
+a{color:var(--blue);text-decoration:none;border-bottom:1px solid rgba(46,84,144,.35)}
+a:hover{color:var(--orange-deep);border-bottom-color:var(--orange-deep)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+code{font-family:var(--mono);font-size:.86em;background:#E2E5DF;padding:.08em .34em;border-radius:3px}
+pre{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--orange);padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:12.8px;line-height:1.55;margin:14px 0 22px}
+pre code{background:none;padding:0;font-size:inherit}
+.codehead{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--stamp);margin:18px 0 -10px}
+h1,h2,h3,h4{font-family:var(--disp);line-height:1.15;margin:0}
+p{margin:.5em 0 1em}
+ul,ol{margin:.4em 0 1.1em;padding-left:1.4em}
+li{margin:.28em 0}
+strong{font-weight:600}
+hr{border:none;border-top:1px solid var(--line);margin:32px 0}
+
+/* ---------- masthead ---------- */
+.masthead{padding:44px 0 8px}
+.docline{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--stamp);border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:26px}
+.plate{background:var(--orange);color:#FFF7F2;border-radius:6px;padding:22px 24px 20px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.28), inset 0 0 0 5px var(--orange), inset 0 0 0 6px rgba(255,255,255,.28);margin:0 0 18px}
+.plate .rivet{float:right;font-family:var(--mono);font-size:10px;letter-spacing:.14em;opacity:.85;text-transform:uppercase;margin-top:2px}
+.plate h1{font-size:clamp(34px,6vw,54px);font-weight:700;letter-spacing:.01em;text-transform:lowercase}
+.plate .tagline{font-family:var(--disp);font-weight:600;font-size:clamp(15px,2.4vw,19px);letter-spacing:.05em;text-transform:uppercase;margin-top:4px;color:#FFE0D2}
+.platefields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:rgba(255,255,255,.35);border:1px solid rgba(255,255,255,.35);border-radius:4px;overflow:hidden;margin-top:18px}
+.platefields div{background:var(--orange);padding:8px 12px}
+.platefields .k{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:#FFD2BF;margin-bottom:2px}
+.platefields .v{font-family:var(--mono);font-size:12.5px;font-weight:600}
+.lede{font-size:17px;color:var(--ink-soft);max-width:70ch;margin:20px 0 8px}
+.tapewrap{border:1px solid var(--line);background:var(--panel);border-radius:4px;padding:10px 10px 6px;margin:22px 0 10px}
+.tapewrap figcaption{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--stamp);padding:6px 4px 4px}
+.tapewrap svg{display:block;width:100%;height:auto}
+
+/* ---------- toc ---------- */
+.toc{border:1px solid var(--line);background:var(--panel);border-radius:4px;padding:20px 22px;margin:26px 0 8px}
+.toc h2{font-size:13px;font-family:var(--mono);font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--stamp);margin-bottom:12px}
+.toc ol{columns:2;column-gap:36px;margin:0;padding-left:0;list-style:none}
+.toc li{break-inside:avoid;margin:0;border-bottom:1px dotted var(--line)}
+.toc a{display:flex;gap:10px;padding:5px 2px;border-bottom:none;color:var(--ink)}
+.toc a:hover{color:var(--orange-deep)}
+.toc .n{font-family:var(--mono);font-size:11.5px;color:var(--orange);min-width:28px;padding-top:2px}
+@media (max-width:640px){.toc ol{columns:1}}
+
+/* ---------- sections ---------- */
+section.sec{margin-top:64px;border-top:2px solid var(--ink);padding-top:14px}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--orange);margin-bottom:6px}
+section.sec>h2{font-size:clamp(24px,3.6vw,32px);font-weight:700;margin-bottom:14px}
+h3{font-size:18px;font-weight:700;margin:30px 0 8px}
+h3 .sub{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--stamp);margin-right:8px}
+h4{font-family:var(--mono);font-size:12.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin:22px 0 6px}
+
+/* ---------- callouts ---------- */
+.call{border:1px solid var(--line);border-left:4px solid var(--blue);background:var(--panel);padding:12px 16px;margin:16px 0;border-radius:0 4px 4px 0}
+.call .lab{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);display:block;margin-bottom:4px}
+.call.decision{border-left-color:var(--ok)}
+.call.decision .lab{color:var(--ok)}
+.call.warn{border-left-color:var(--orange)}
+.call.warn .lab{color:var(--orange-deep)}
+.call p:last-child{margin-bottom:2px}
+
+/* ---------- tables ---------- */
+table{border-collapse:collapse;width:100%;margin:14px 0 22px;font-size:13.5px}
+th{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;text-align:left;color:var(--stamp);border-bottom:2px solid var(--ink);padding:6px 10px 6px 0}
+td{border-bottom:1px solid var(--line);padding:7px 10px 7px 0;vertical-align:top}
+td code{white-space:nowrap}
+td.m{font-family:var(--mono);font-size:12.5px;white-space:nowrap}
+
+/* ---------- misc ---------- */
+.filetree{border-left-color:var(--blue)}
+.kbd{font-family:var(--mono);font-size:11.5px;border:1px solid var(--line);border-bottom-width:2px;background:#fff;border-radius:3px;padding:0 5px}
+footer{margin-top:80px;border-top:2px solid var(--ink);padding-top:14px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--stamp);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.backtop{border-bottom:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <div class="docline">
+    <span>Engineering build specification</span>
+    <span>DOC OB-SPEC-001 · REV B · 2026-07-28</span>
+  </div>
+
+  <div class="plate" role="img" aria-label="Orange data plate reading: orangebox, the flight recorder for AI agents">
+    <span class="rivet">●&nbsp; unit data plate &nbsp;●</span>
+    <h1>orangebox</h1>
+    <div class="tagline">Flight data recorder for AI agents</div>
+    <div class="platefields">
+      <div><span class="k">Type</span><span class="v">LOCAL PROXY + UI</span></div>
+      <div><span class="k">Spec</span><span class="v">v1.0 / MVP</span></div>
+      <div><span class="k">Runtime</span><span class="v">NODE ≥ 18</span></div>
+      <div><span class="k">Deps</span><span class="v">ONE (sqlite)</span></div>
+      <div><span class="k">Telemetry</span><span class="v">NONE — EVER</span></div>
+      <div><span class="k">License</span><span class="v">MIT</span></div>
+    </div>
+  </div>
+
+  <p class="lede"><strong>orangebox</strong> is a zero-config local proxy that records every LLM API call your agent makes — prompts, tool calls, streams, retries, tokens, latency, cost — into SQLite, and renders each run as a visual timeline in a local web UI. Point your SDK's base URL at it and press play. <em>Aircraft "black boxes" are actually painted international orange so they can be found. Same idea: when your agent crashes, the evidence survives — hence the name, hence this paint job.</em></p>
+
+  <figure class="tapewrap">
+    <svg viewBox="0 0 960 150" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect x="0" y="0" width="960" height="150" fill="#F7F9F5"/>
+      <g stroke="#DDE1D9" stroke-width="1">
+        <line x1="48" y1="0" x2="48" y2="150"/><line x1="96" y1="0" x2="96" y2="150"/><line x1="144" y1="0" x2="144" y2="150"/><line x1="192" y1="0" x2="192" y2="150"/><line x1="240" y1="0" x2="240" y2="150"/><line x1="288" y1="0" x2="288" y2="150"/><line x1="336" y1="0" x2="336" y2="150"/><line x1="384" y1="0" x2="384" y2="150"/><line x1="432" y1="0" x2="432" y2="150"/><line x1="480" y1="0" x2="480" y2="150"/><line x1="528" y1="0" x2="528" y2="150"/><line x1="576" y1="0" x2="576" y2="150"/><line x1="624" y1="0" x2="624" y2="150"/><line x1="672" y1="0" x2="672" y2="150"/><line x1="720" y1="0" x2="720" y2="150"/><line x1="768" y1="0" x2="768" y2="150"/><line x1="816" y1="0" x2="816" y2="150"/><line x1="864" y1="0" x2="864" y2="150"/><line x1="912" y1="0" x2="912" y2="150"/>
+      </g>
+      <line x1="0" y1="122" x2="960" y2="122" stroke="#1A1D21" stroke-width="1.5"/>
+      <g font-family="IBM Plex Mono,monospace" font-size="10" fill="#787F88">
+        <text x="14" y="138">T+0.0s</text><text x="230" y="138">T+4.1s</text><text x="450" y="138">T+11.6s</text><text x="662" y="138">T+19.8s</text><text x="872" y="138">T+27.4s</text>
+      </g>
+      <g font-family="IBM Plex Mono,monospace" font-size="10.5" fill="#3C4148">
+        <text x="16" y="30">call 01 · plan</text>
+        <text x="252" y="30">call 02 · tool loop ×2</text>
+        <text x="586" y="30">call 03 · synthesize</text>
+        <text x="836" y="30" fill="#C23A08">stream ▮</text>
+      </g>
+      <g>
+        <rect x="16" y="40" width="150" height="24" rx="3" fill="#E8490F"/>
+        <text x="24" y="56" font-family="IBM Plex Mono,monospace" font-size="10" fill="#FFF">1.9s · 2.4k tok</text>
+        <rect x="252" y="40" width="200" height="24" rx="3" fill="#E8490F"/>
+        <text x="260" y="56" font-family="IBM Plex Mono,monospace" font-size="10" fill="#FFF">3.2s · stop: tool_use</text>
+        <rect x="586" y="40" width="234" height="24" rx="3" fill="#E8490F"/>
+        <text x="594" y="56" font-family="IBM Plex Mono,monospace" font-size="10" fill="#FFF">4.7s · 6.1k tok · $0.041</text>
+        <rect x="826" y="40" width="118" height="24" rx="3" fill="none" stroke="#E8490F" stroke-width="1.5" stroke-dasharray="4 3"/>
+      </g>
+      <g>
+        <rect x="292" y="82" width="64" height="16" rx="2" fill="#2E5490"/>
+        <text x="298" y="94" font-family="IBM Plex Mono,monospace" font-size="9" fill="#FFF">web_search</text>
+        <rect x="380" y="82" width="58" height="16" rx="2" fill="#2E5490"/>
+        <text x="386" y="94" font-family="IBM Plex Mono,monospace" font-size="9" fill="#FFF">web_fetch</text>
+        <line x1="322" y1="64" x2="322" y2="82" stroke="#2E5490" stroke-width="1.5"/>
+        <line x1="408" y1="64" x2="408" y2="82" stroke="#2E5490" stroke-width="1.5"/>
+      </g>
+    </svg>
+    <figcaption>FIG. 0 — one recorded run as rendered by the timeline UI: LLM calls (orange), tool activity (blue), live stream (dashed)</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="Table of contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#s01"><span class="n">§01</span>Overview &amp; pitch</a></li>
+      <li><a href="#s02"><span class="n">§02</span>Goals &amp; non-goals</a></li>
+      <li><a href="#s03"><span class="n">§03</span>Users &amp; core stories</a></li>
+      <li><a href="#s04"><span class="n">§04</span>System architecture</a></li>
+      <li><a href="#s05"><span class="n">§05</span>CLI</a></li>
+      <li><a href="#s06"><span class="n">§06</span>Proxy engine</a></li>
+      <li><a href="#s07"><span class="n">§07</span>Parsing &amp; normalization</a></li>
+      <li><a href="#s08"><span class="n">§08</span>Tokens &amp; cost</a></li>
+      <li><a href="#s09"><span class="n">§09</span>Storage (SQLite)</a></li>
+      <li><a href="#s10"><span class="n">§10</span>Internal HTTP API</a></li>
+      <li><a href="#s11"><span class="n">§11</span>Web UI</a></li>
+      <li><a href="#s12"><span class="n">§12</span>Security &amp; privacy</a></li>
+      <li><a href="#s13"><span class="n">§13</span>Performance budgets</a></li>
+      <li><a href="#s14"><span class="n">§14</span>Edge cases &amp; failures</a></li>
+      <li><a href="#s15"><span class="n">§15</span>Repo layout</a></li>
+      <li><a href="#s16"><span class="n">§16</span>Build order &amp; milestones</a></li>
+      <li><a href="#s17"><span class="n">§17</span>Acceptance criteria</a></li>
+      <li><a href="#s18"><span class="n">§18</span>README &amp; launch</a></li>
+      <li><a href="#s19"><span class="n">§19</span>v2 roadmap</a></li>
+      <li><a href="#s20"><span class="n">§20</span>Glossary</a></li>
+      <li><a href="#s21"><span class="n">§21</span>Prior art &amp; positioning</a></li>
+    </ol>
+  </nav>
+
+  <div class="call warn">
+    <span class="lab">To the implementing AI — read first</span>
+    <p>This document is the complete build context for orangebox v1. Treat <strong>MUST</strong> as a hard requirement, <strong>SHOULD</strong> as a strong default you may deviate from only with a stated reason in code comments, and <strong>MAY</strong> as optional. Where this spec is silent, choose the simplest option consistent with §02 non-goals. Do not add features not listed here — v1 wins by being small, fast, and finished. Cross-references use section numbers (e.g. "see §07"). All naming, schemas, and endpoint shapes in this document are normative.</p>
+  </div>
+</header>
+<main>
+
+<section class="sec" id="s01">
+  <div class="eyebrow">§01 · Overview</div>
+  <h2>What orangebox is</h2>
+  <p><strong>One-liner:</strong> a local flight recorder for AI agents — run <code>npx orangebox</code>, point your SDK at it, and watch every prompt, tool call, and token stream through a visual timeline you can inspect forever.</p>
+  <p><strong>The problem.</strong> People building agents debug them by reading raw JSON logs and console prints. When an agent loops, stalls, burns tokens, or picks the wrong tool, reconstructing <em>what actually happened</em> — which prompts went out, in what order, with what tool results injected — is manual archaeology. Hosted observability platforms solve this but require accounts, SDK instrumentation, and shipping your prompts to someone's cloud.</p>
+  <p><strong>The wedge.</strong> orangebox requires <em>zero code changes</em> (only an environment variable), stores everything locally, needs no account, and works with any language or framework because it sits at the HTTP layer. It is to agents what Wireshark is to networks: a passive, trustworthy tap.</p>
+  <p><strong>How it works in one paragraph.</strong> orangebox starts an HTTP server on <code>127.0.0.1:4100</code>. That server does three jobs at once: (1) reverse-proxies API requests to Anthropic and OpenAI, transparently streaming responses back while teeing a copy; (2) parses each captured request/response pair into a normalized "call" record and appends it to a local SQLite database, grouped into "runs"; (3) serves a static single-page UI plus a small JSON API and a live SSE feed so the timeline updates in real time while your agent executes.</p>
+
+  <h3><span class="sub">1.1</span>Definitions used throughout</h3>
+  <table>
+    <tr><th>Term</th><th>Meaning</th></tr>
+    <tr><td class="m">call</td><td>One HTTP request/response pair to an LLM provider endpoint (one completion, streamed or not).</td></tr>
+    <tr><td class="m">run</td><td>An ordered group of calls representing one agent execution (one task, one session). See §06.4 for grouping rules.</td></tr>
+    <tr><td class="m">tool event</td><td>A <code>tool_use</code> block emitted by the model, or a <code>tool_result</code> block sent back by the client, extracted from call payloads (§07.4).</td></tr>
+    <tr><td class="m">TTFT</td><td>Time to first token: ms from request sent upstream to first content byte of a streamed response.</td></tr>
+    <tr><td class="m">upstream</td><td>The real provider API (api.anthropic.com, api.openai.com).</td></tr>
+  </table>
+</section>
+
+<section class="sec" id="s02">
+  <div class="eyebrow">§02 · Scope</div>
+  <h2>Goals and non-goals</h2>
+  <h3><span class="sub">2.1</span>v1 goals (MUST ship)</h3>
+  <ul>
+    <li>Transparent pass-through proxy for <strong>Anthropic Messages API</strong> and <strong>OpenAI Chat Completions API</strong>, including SSE streaming, with recording that never alters the response the client sees.</li>
+    <li>Automatic grouping of calls into runs, with an explicit opt-in mechanism for precise grouping (§06.4).</li>
+    <li>SQLite persistence with full raw payloads (redacted per §12) plus extracted columns for fast querying.</li>
+    <li>Web UI: run list → run timeline → call detail, updating live during execution (§11).</li>
+    <li>Token counts, latency, TTFT, stop reason, and estimated USD cost per call and per run (§08).</li>
+    <li>Install-to-first-recorded-call in under 2 minutes with exactly two shell commands.</li>
+    <li>Single runtime dependency (<code>better-sqlite3</code>). Everything else: Node standard library.</li>
+  </ul>
+  <h3><span class="sub">2.2</span>Non-goals for v1 (MUST NOT build)</h3>
+  <ul>
+    <li>No accounts, auth, cloud sync, telemetry, analytics, or update pings. Ever, in any version.</li>
+    <li>No replay/re-execution of calls (v2, §19). No diffing between runs (v2).</li>
+    <li>No support for other providers/endpoints (embeddings, images, batch, Gemini, Bedrock) — the architecture must not preclude them, but no code for them ships in v1.</li>
+    <li>No framework-specific adapters (LangChain, Vercel AI SDK, etc.). The HTTP layer is the integration.</li>
+    <li>No config files. All behavior via CLI flags and environment variables.</li>
+    <li>No TypeScript build step, no bundler for the server, no UI framework. Plain ESM JavaScript everywhere.</li>
+  </ul>
+  <div class="call decision">
+    <span class="lab">Decision — why HTTP proxy, not SDK wrapper</span>
+    <p>An SDK wrapper only works for one language and requires code changes; a proxy works for Python, JS, Go, curl, and every framework simultaneously, and is impossible to forget to instrument. The cost is that we must faithfully handle streaming and edge cases at the HTTP layer (§06, §14). That cost is the product.</p>
+  </div>
+</section>
+
+<section class="sec" id="s03">
+  <div class="eyebrow">§03 · Audience</div>
+  <h2>Users and core stories</h2>
+  <p>Primary persona: a developer building an agent (side project or at work), currently debugging via <code>console.log</code>. Secondary: a developer evaluating token spend. All stories below MUST be demonstrable in the finished v1.</p>
+  <ol>
+    <li><strong>"Why did my agent do that?"</strong> — Start orangebox, re-run the agent, open the timeline, click the bad call, read the exact system prompt + message history + tool results the model saw at that moment.</li>
+    <li><strong>"Where did my agent stall?"</strong> — The timeline's proportional spacing and latency chips make the 40-second tool gap or the 3× retry visually obvious without reading anything.</li>
+    <li><strong>"What is this costing me?"</strong> — Each run header shows total tokens and estimated USD; each call shows its share.</li>
+    <li><strong>"Show a teammate."</strong> — <code>orangebox export &lt;run-id&gt;</code> writes a self-contained JSON file of the run (§05.2) that can be committed to a bug report.</li>
+    <li><strong>"Watch it live."</strong> — With the UI open, calls appear within 250 ms of completion; a streaming call shows a live dashed node with elapsed time ticking (§11.4).</li>
+  </ol>
+</section>
+
+<section class="sec" id="s04">
+  <div class="eyebrow">§04 · Architecture</div>
+  <h2>System architecture</h2>
+  <pre><code>            your agent process (any language)
+            ANTHROPIC_BASE_URL=http://127.0.0.1:4100/anthropic
+            OPENAI_BASE_URL=http://127.0.0.1:4100/openai
+                           │
+                           ▼
+      ┌─────────────────────────────────────────────┐
+      │  orangebox  ·  single Node process :4100    │
+      │                                             │
+      │  ┌──────────┐   tee   ┌──────────────────┐  │
+      │  │  proxy   │────────▶│ parser/normalizer│  │
+      │  │  (§06)   │         │      (§07)       │  │
+      │  └────┬─────┘         └────────┬─────────┘  │
+      │       │ pass-through           │ write      │
+      │       │ (bytes, unmodified)    ▼            │
+      │       │              ┌──────────────────┐   │
+      │       │              │ SQLite (§09)     │   │
+      │       │              │ ~/.orangebox/    │   │
+      │       │              └────────┬─────────┘   │
+      │       │                       │ read        │
+      │       │              ┌────────▼─────────┐   │
+      │       │              │ JSON API + SSE   │◀──┼── browser UI (§11)
+      │       │              │ + static UI(§10) │   │    http://127.0.0.1:4100
+      │       │              └──────────────────┘   │
+      └───────┼─────────────────────────────────────┘
+              ▼
+      api.anthropic.com / api.openai.com</code></pre>
+  <p>One process, one port. Routing by path prefix (first match wins):</p>
+  <table>
+    <tr><th>Path prefix</th><th>Handler</th></tr>
+    <tr><td class="m">/anthropic/*</td><td>Proxy → <code>https://api.anthropic.com/*</code> (prefix stripped)</td></tr>
+    <tr><td class="m">/openai/*</td><td>Proxy → <code>https://api.openai.com/*</code> (prefix stripped)</td></tr>
+    <tr><td class="m">/r/:runId/anthropic/*&nbsp;·&nbsp;/r/:runId/openai/*</td><td>Same proxying, but the call is attributed to run <code>:runId</code> (§06.4)</td></tr>
+    <tr><td class="m">/api/*</td><td>Internal JSON API + SSE live feed (§10)</td></tr>
+    <tr><td class="m">/ and /run/*</td><td>Static UI files from <code>ui/</code> (§11); unknown app routes serve <code>index.html</code></td></tr>
+  </table>
+  <p>Anything else → <code>404</code> with JSON body <code>{"error":"unknown route","hint":"agent traffic goes to /anthropic or /openai; UI is at /"}</code>.</p>
+</section>
+
+<section class="sec" id="s05">
+  <div class="eyebrow">§05 · CLI</div>
+  <h2>Command-line interface</h2>
+  <h3><span class="sub">5.1</span><code>orangebox</code> (default command: start)</h3>
+  <pre><code>$ npx orangebox
+
+  ▮ orangebox v1.0.0 — flight recorder for AI agents
+  ▮ recording on   http://127.0.0.1:4100
+  ▮ database       ~/.orangebox/orangebox.db  (12 runs, 3.4 MB)
+  ▮ point your agent at it:
+  ▮   export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"
+  ▮   export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"
+  ▮ ui             http://127.0.0.1:4100  (opening browser…)</code></pre>
+  <table>
+    <tr><th>Flag</th><th>Default</th><th>Behavior</th></tr>
+    <tr><td class="m">--port &lt;n&gt;</td><td class="m">4100</td><td>Listen port. If taken, exit code 1 with message suggesting <code>--port</code>.</td></tr>
+    <tr><td class="m">--db &lt;path&gt;</td><td class="m">~/.orangebox/orangebox.db</td><td>Database location; parent dirs created if missing.</td></tr>
+    <tr><td class="m">--host &lt;addr&gt;</td><td class="m">127.0.0.1</td><td>Bind address. Any non-loopback value prints a red warning (§12.1).</td></tr>
+    <tr><td class="m">--gap &lt;seconds&gt;</td><td class="m">120</td><td>Idle gap that starts a new implicit run (§06.4).</td></tr>
+    <tr><td class="m">--no-open</td><td class="m">—</td><td>Don't open the browser on start.</td></tr>
+    <tr><td class="m">--retain &lt;days&gt;</td><td class="m">0 (keep forever)</td><td>On start, delete runs older than N days.</td></tr>
+  </table>
+  <p>Browser opening MUST be dependency-free: spawn <code>open</code> (darwin), <code>xdg-open</code> (linux), <code>start</code> via <code>cmd /c</code> (win32); ignore failures silently.</p>
+
+  <h3><span class="sub">5.2</span>Subcommands</h3>
+  <table>
+    <tr><th>Command</th><th>Behavior</th></tr>
+    <tr><td class="m">orangebox run --name "checkout bot" -- node agent.js</td><td>Ensures a server is up (connects to existing, else starts one in-process); POSTs <code>/api/runs/begin</code> to create an explicit run; spawns the child command with <code>ANTHROPIC_BASE_URL</code> and <code>OPENAI_BASE_URL</code> set to the run-scoped prefixes <code>/r/&lt;id&gt;/anthropic</code> and <code>/r/&lt;id&gt;/openai</code>; on child exit, POSTs <code>/api/runs/&lt;id&gt;/end</code> and prints the run's UI URL. Child's exit code becomes orangebox's exit code.</td></tr>
+    <tr><td class="m">orangebox export &lt;run-id&gt; [-o file.json]</td><td>Writes the §10.6 export JSON to disk (default <code>orangebox-run-&lt;id&gt;.json</code>).</td></tr>
+    <tr><td class="m">orangebox clear [--yes]</td><td>Deletes all recorded data after confirmation prompt (skipped with <code>--yes</code>).</td></tr>
+    <tr><td class="m">orangebox --version · --help</td><td>Standard output; help text mirrors the tables in this section.</td></tr>
+  </table>
+</section>
+
+<section class="sec" id="s06">
+  <div class="eyebrow">§06 · Proxy</div>
+  <h2>Proxy engine</h2>
+  <h3><span class="sub">6.1</span>Request handling (MUST)</h3>
+  <ol>
+    <li>Match path prefix per §04; extract optional <code>runId</code>; compute upstream URL = provider origin + remaining path + original query string.</li>
+    <li>Buffer the request body fully (bodies are JSON; cap 10 MB — over cap, forward anyway but store a truncation stub, §14). Record <code>started_at</code> (epoch ms) immediately before dispatching upstream.</li>
+    <li>Forward using <code>fetch</code> (Node ≥18 / undici) with the original method and body, and headers filtered as follows:
+      <ul>
+        <li>Drop hop-by-hop headers: <code>host</code>, <code>connection</code>, <code>keep-alive</code>, <code>transfer-encoding</code>, <code>upgrade</code>, <code>proxy-*</code>, <code>content-length</code> (recomputed).</li>
+        <li>Force <code>accept-encoding: identity</code> upstream so captured bytes are plaintext (pass-through of compressed streams plus capture is not worth the complexity in v1).</li>
+        <li>Pass auth headers (<code>authorization</code>, <code>x-api-key</code>) through to upstream but NEVER persist them (§12.2).</li>
+      </ul>
+    </li>
+    <li>Relay the upstream status code and response headers to the client (minus hop-by-hop and <code>content-encoding</code>/<code>content-length</code> when re-chunking).</li>
+  </ol>
+  <h3><span class="sub">6.2</span>Non-streaming responses</h3>
+  <p>Read the full upstream body, send it to the client unchanged, then hand <code>{requestBody, responseBody, status, timing}</code> to the parser (§07). DB writes happen after the client response is finished — never in the hot path.</p>
+  <h3><span class="sub">6.3</span>Streaming responses (SSE)</h3>
+  <p>Detected via request body <code>"stream": true</code> or response <code>content-type: text/event-stream</code>. Requirements:</p>
+  <ul>
+    <li><strong>Write-through:</strong> every chunk from upstream is written to the client the moment it arrives; capture appends to an in-memory buffer in parallel. No batching, no transformation, no added latency beyond function-call overhead (§13).</li>
+    <li>Record <code>first_token_at</code> on the first SSE event that carries content (Anthropic: first <code>content_block_delta</code>; OpenAI: first chunk with a non-empty <code>choices[0].delta</code>). Record <code>ended_at</code> when the upstream stream closes.</li>
+    <li>After close, reassemble the buffered events into a canonical final response object (§07.3) and persist.</li>
+    <li>If the <em>client</em> disconnects mid-stream: abort upstream, finalize the record with <code>error_type = 'client_aborted'</code> and whatever was captured. If the <em>upstream</em> errors mid-stream: relay what arrived, finalize with <code>error_type = 'upstream_stream_error'</code>.</li>
+  </ul>
+  <h3><span class="sub">6.4</span>Run attribution — the grouping rules</h3>
+  <p>Every call gets exactly one <code>run_id</code>, resolved in priority order:</p>
+  <ol>
+    <li><strong>Path-scoped (explicit):</strong> requests via <code>/r/:runId/…</code> attach to that run. Created by <code>orangebox run</code> (§05.2) or manually via §10.4. Run rows created this way get <code>source='explicit'</code>.</li>
+    <li><strong>Header:</strong> if the request carries <code>x-orangebox-run-id: &lt;id&gt;</code> (users can set default headers in both SDKs), use it, creating the run row if new.</li>
+    <li><strong>Gap heuristic (implicit):</strong> otherwise, attach to the most recent implicit run if its last call ended less than <code>--gap</code> seconds ago; else create a new run with <code>source='gap'</code> and an auto-name like <code>run 2026-07-27 14:03</code>. This is deliberately simple; concurrent unrelated agents interleaving into one implicit run is accepted v1 behavior — the fix is the explicit mechanisms above, and the UI copy says so.</li>
+  </ol>
+  <p>A run's <code>ended_at</code> is set by the explicit end endpoint, or lazily for implicit runs when a newer run is created.</p>
+</section>
+
+<section class="sec" id="s07">
+  <div class="eyebrow">§07 · Normalization</div>
+  <h2>Parsing &amp; normalization</h2>
+  <p>Two provider modules, <code>src/parse/anthropic.mjs</code> and <code>src/parse/openai.mjs</code>, each export the same interface: <code>parseRequest(json)</code>, <code>reassembleStream(sseText)</code>, <code>parseResponse(json)</code>, returning pieces of the normalized call record below. All parsing MUST be defensive: any unrecognized shape degrades to storing raw JSON with extracted fields null — never a crash, never a dropped record (§14).</p>
+  <h3><span class="sub">7.1</span>Normalized call record (the contract between §06, §09, §11)</h3>
+  <table>
+    <tr><th>Field</th><th>Type</th><th>Source</th></tr>
+    <tr><td class="m">id</td><td>string</td><td><code>Date.now().toString(36) + '-' + crypto.randomUUID().slice(0,8)</code> — sortable, dep-free.</td></tr>
+    <tr><td class="m">provider</td><td>'anthropic' | 'openai'</td><td>Route prefix.</td></tr>
+    <tr><td class="m">endpoint</td><td>string</td><td>Upstream path, e.g. <code>/v1/messages</code>.</td></tr>
+    <tr><td class="m">model</td><td>string</td><td>Request body <code>model</code>; prefer response's <code>model</code> when present.</td></tr>
+    <tr><td class="m">status / error_type</td><td>int / string|null</td><td>HTTP status; classified error per §14.1.</td></tr>
+    <tr><td class="m">streamed</td><td>0|1</td><td>Per §06.3 detection.</td></tr>
+    <tr><td class="m">started_at · first_token_at · ended_at</td><td>epoch ms</td><td>Proxy timing (§06). <code>ttft_ms</code> and <code>latency_ms</code> are derived columns.</td></tr>
+    <tr><td class="m">input_tokens · output_tokens · cache_read_tokens · cache_write_tokens</td><td>int|null</td><td>Provider usage objects (§7.2/7.3); null when absent.</td></tr>
+    <tr><td class="m">stop_reason</td><td>string|null</td><td>Anthropic <code>stop_reason</code> / OpenAI <code>finish_reason</code>, stored verbatim.</td></tr>
+    <tr><td class="m">cost_usd</td><td>real|null</td><td>§08 formula; null when model unpriced.</td></tr>
+    <tr><td class="m">request_json · response_json</td><td>text</td><td>Raw JSON after redaction (§12.2) and truncation (§14.2). For streams, <code>response_json</code> is the reassembled canonical object plus <code>"_orangebox": {"reassembled_from_stream": true}</code>.</td></tr>
+  </table>
+
+  <h3><span class="sub">7.2</span>Anthropic Messages API mapping</h3>
+  <p>Request (<code>POST /v1/messages</code>): read <code>model</code>, <code>stream</code>, <code>system</code>, <code>messages[]</code>, <code>tools[]</code>. Response: <code>content[]</code> blocks of type <code>text</code> and <code>tool_use {id, name, input}</code>; <code>stop_reason</code> ∈ <code>end_turn | tool_use | max_tokens | stop_sequence</code> (store others verbatim); <code>usage {input_tokens, output_tokens, cache_creation_input_tokens → cache_write_tokens, cache_read_input_tokens → cache_read_tokens}</code>.</p>
+  <h4>7.2.1 Stream reassembly algorithm (Anthropic)</h4>
+  <ol>
+    <li>Split buffer on SSE framing (<code>event:</code>/<code>data:</code> lines, blank-line delimited); ignore <code>ping</code>.</li>
+    <li><code>message_start</code> → seed message object (id, model, role, initial usage).</li>
+    <li><code>content_block_start</code> at index i → open block i (text block with <code>text:''</code>, or tool_use with <code>partial_json:''</code>).</li>
+    <li><code>content_block_delta</code> → append <code>text_delta.text</code> to text blocks; append <code>input_json_delta.partial_json</code> to tool_use blocks.</li>
+    <li><code>content_block_stop</code> → for tool_use, <code>JSON.parse</code> the accumulated string into <code>input</code> (on parse failure keep raw string under <code>input_raw</code> and continue).</li>
+    <li><code>message_delta</code> → merge <code>stop_reason</code> and <code>usage.output_tokens</code>. <code>message_stop</code> → done. <code>error</code> event → finalize with <code>error_type='upstream_stream_error'</code> and store the error payload.</li>
+  </ol>
+
+  <h3><span class="sub">7.3</span>OpenAI Chat Completions mapping</h3>
+  <p>Request (<code>POST /v1/chat/completions</code>): read <code>model</code>, <code>stream</code>, <code>messages[]</code>, <code>tools[]</code>. Response: <code>choices[0].message</code> with <code>content</code> and <code>tool_calls[{id, function:{name, arguments}}]</code> (<code>arguments</code> is a JSON <em>string</em> — parse for display, keep raw); <code>finish_reason</code> → stop_reason; <code>usage {prompt_tokens → input_tokens, completion_tokens → output_tokens}</code>.</p>
+  <p><strong>Stream reassembly:</strong> concatenate <code>choices[0].delta.content</code> strings; accumulate <code>delta.tool_calls</code> by their <code>index</code>, concatenating <code>function.arguments</code> fragments; take <code>finish_reason</code> from the final carrying chunk; usage arrives only in the terminal chunk when the client sent <code>stream_options.include_usage</code> — when absent, token fields stay null and the UI shows an em-dash with the tooltip "enable stream_options.include_usage for streamed token counts". Terminate on <code>data: [DONE]</code>.</p>
+
+  <h3><span class="sub">7.4</span>Tool event extraction</h3>
+  <p>After persisting a call, extract tool events into their own table (§09) for the timeline's blue track:</p>
+  <ul>
+    <li>From the <strong>response</strong>: every <code>tool_use</code> block (Anthropic) / <code>tool_calls</code> entry (OpenAI) → row with <code>kind='tool_use'</code>, tool name, id, JSON input.</li>
+    <li>From the <strong>next request's</strong> messages: every <code>tool_result</code> block (Anthropic) / <code>role:'tool'</code> message (OpenAI) → row with <code>kind='tool_result'</code>, matched to its originating <code>tool_use_id</code>/<code>tool_call_id</code>, with <code>is_error</code> from Anthropic's <code>is_error</code> flag. The wall-clock gap between a call's <code>ended_at</code> and the next call's <code>started_at</code> is rendered as tool-execution time in §11 — orangebox never sees the tool run itself, only its result, and the UI labels it "client-side ≈".</li>
+  </ul>
+</section>
+<section class="sec" id="s08">
+  <div class="eyebrow">§08 · Accounting</div>
+  <h2>Tokens &amp; cost</h2>
+  <p>Cost per call (USD):</p>
+  <pre><code>cost = input_tokens/1e6 * in + output_tokens/1e6 * out
+     + cache_read_tokens/1e6 * cache_read + cache_write_tokens/1e6 * cache_write</code></pre>
+  <p>Rates come from <code>src/pricing.json</code>, matched by <strong>longest key that is a prefix of the model string</strong> (so <code>claude-sonnet-4-6</code> matches key <code>claude-sonnet-4-6</code> before <code>claude-sonnet</code>). No match → <code>cost_usd = null</code>; the UI shows "—" with tooltip "no pricing entry for &lt;model&gt;". Null token fields count as 0 in the formula only if at least one token field is non-null; otherwise cost is null.</p>
+  <div class="codehead">src/pricing.json — shape (rates are USD per million tokens)</div>
+  <pre><code>{
+  "_comment": "Verify every rate against provider pricing pages at build time; prices drift.",
+  "_updated": "YYYY-MM-DD",
+  "claude-sonnet-4-6":   { "in": 3.00,  "out": 15.00, "cache_read": 0.30, "cache_write": 3.75 },
+  "claude-haiku-4-5":    { "in": 1.00,  "out": 5.00,  "cache_read": 0.10, "cache_write": 1.25 },
+  "gpt-4o":              { "in": 2.50,  "out": 10.00 },
+  "gpt-4o-mini":         { "in": 0.15,  "out": 0.60 }
+}</code></pre>
+  <div class="call warn"><span class="lab">Implementing AI — do not trust these numbers</span><p>The rates above are placeholders demonstrating shape. Before release, populate the file from the providers' current pricing pages and set <code>_updated</code>. If <code>~/.orangebox/pricing.json</code> exists at boot, deep-merge it over the shipped file so users can correct drift without upgrading. Every cost in the UI is labeled "est." — it is an estimate, not a bill.</p></div>
+</section>
+
+<section class="sec" id="s09">
+  <div class="eyebrow">§09 · Storage</div>
+  <h2>SQLite layer</h2>
+  <p><code>better-sqlite3</code> (synchronous, prebuilt binaries — the project's single dependency). Open with <code>journal_mode=WAL</code>, <code>synchronous=NORMAL</code>, <code>busy_timeout=5000</code>. All writes for one call (call row + tool events + run aggregate update) happen in one transaction, after the client response completes. Schema version stored in <code>meta</code>; v1 migration policy: create-if-missing only.</p>
+  <div class="codehead">schema.sql — normative DDL</div>
+  <pre><code>CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+
+CREATE TABLE IF NOT EXISTS runs (
+  id            TEXT PRIMARY KEY,
+  name          TEXT,
+  source        TEXT NOT NULL CHECK (source IN ('explicit','header','gap')),
+  started_at    INTEGER NOT NULL,
+  ended_at      INTEGER,
+  call_count    INTEGER NOT NULL DEFAULT 0,
+  input_tokens  INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd      REAL    NOT NULL DEFAULT 0,
+  error_count   INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS calls (
+  id               TEXT PRIMARY KEY,
+  run_id           TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  seq              INTEGER NOT NULL,          -- 1-based order within run
+  provider         TEXT NOT NULL,
+  endpoint         TEXT NOT NULL,
+  model            TEXT,
+  status           INTEGER,
+  error_type       TEXT,
+  streamed         INTEGER NOT NULL DEFAULT 0,
+  started_at       INTEGER NOT NULL,
+  first_token_at   INTEGER,
+  ended_at         INTEGER,
+  latency_ms       INTEGER,
+  ttft_ms          INTEGER,
+  input_tokens     INTEGER,
+  output_tokens    INTEGER,
+  cache_read_tokens  INTEGER,
+  cache_write_tokens INTEGER,
+  stop_reason      TEXT,
+  cost_usd         REAL,
+  request_json     TEXT NOT NULL,
+  response_json    TEXT,
+  truncated        INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_calls_run ON calls(run_id, seq);
+CREATE INDEX IF NOT EXISTS idx_calls_started ON calls(started_at);
+
+CREATE TABLE IF NOT EXISTS tool_events (
+  id           TEXT PRIMARY KEY,
+  run_id       TEXT NOT NULL,
+  call_id      TEXT NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+  kind         TEXT NOT NULL CHECK (kind IN ('tool_use','tool_result')),
+  tool_name    TEXT,
+  tool_use_id  TEXT,
+  is_error     INTEGER NOT NULL DEFAULT 0,
+  content_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tools_run ON tool_events(run_id);
+CREATE INDEX IF NOT EXISTS idx_tools_use ON tool_events(tool_use_id);</code></pre>
+  <p>Run aggregates (<code>call_count</code>, token sums, cost, <code>error_count</code>) are maintained incrementally in the per-call transaction — never recomputed with table scans on read paths.</p>
+</section>
+
+<section class="sec" id="s10">
+  <div class="eyebrow">§10 · API</div>
+  <h2>Internal HTTP API</h2>
+  <p>JSON over GET/POST/DELETE under <code>/api</code>. No auth (loopback-only, §12.1). All timestamps epoch ms. Errors: appropriate status + <code>{"error": "message"}</code>.</p>
+  <table>
+    <tr><th>Endpoint</th><th>Returns / behavior</th></tr>
+    <tr><td class="m">GET /api/health</td><td><code>{"ok":true,"version":"1.0.0","db":"…path","runs":12}</code></td></tr>
+    <tr><td class="m">GET /api/runs?limit=50&amp;offset=0</td><td><code>{"runs":[Run…],"total":n}</code> — Run = the runs row, newest first.</td></tr>
+    <tr><td class="m">GET /api/runs/:id</td><td><code>{"run":Run,"calls":[CallSummary…],"tools":[ToolEvent…]}</code>. CallSummary = calls row minus the two <code>*_json</code> blobs (they can be megabytes; the timeline doesn't need them).</td></tr>
+    <tr><td class="m">GET /api/calls/:id</td><td>Full calls row including raw payloads. Fetched lazily when the detail pane opens.</td></tr>
+    <tr><td class="m">POST /api/runs/begin {"name":?}</td><td>Creates explicit run → <code>{"id":"…"}</code>. Used by <code>orangebox run</code>.</td></tr>
+    <tr><td class="m">POST /api/runs/:id/end</td><td>Sets <code>ended_at</code> → <code>{"ok":true}</code>.</td></tr>
+    <tr><td class="m">DELETE /api/runs/:id · POST /api/clear</td><td>Delete one run (cascades) / everything. UI confirms before calling.</td></tr>
+    <tr><td class="m">GET /api/export/:runId</td><td><code>Content-Disposition: attachment</code>; body <code>{"orangebox_export":1,"exported_at":…,"run":Run,"calls":[full…],"tools":[…]}</code>.</td></tr>
+    <tr><td class="m">GET /api/live</td><td>SSE feed, §10.1.</td></tr>
+  </table>
+  <h3><span class="sub">10.1</span>Live feed events</h3>
+  <p>Named SSE events, each with a JSON payload; heartbeat comment every 15 s. The UI treats the feed as <em>invalidation hints</em>, not as the source of truth — on any event it refetches the affected run, which makes dropped events harmless.</p>
+  <table>
+    <tr><th>event</th><th>data</th><th>when</th></tr>
+    <tr><td class="m">run.created</td><td class="m">{run}</td><td>New run row (any source).</td></tr>
+    <tr><td class="m">call.started</td><td class="m">{run_id, call_id, provider, model, started_at, streamed}</td><td>Request dispatched upstream.</td></tr>
+    <tr><td class="m">call.first_token</td><td class="m">{call_id, ttft_ms}</td><td>Streamed calls only.</td></tr>
+    <tr><td class="m">call.completed</td><td class="m">{run_id, call_id}</td><td>Record persisted (success or error).</td></tr>
+  </table>
+</section>
+
+<section class="sec" id="s11">
+  <div class="eyebrow">§11 · Interface</div>
+  <h2>Web UI</h2>
+  <p>Vanilla ES-module JavaScript, no framework, no build step: <code>ui/index.html</code>, <code>ui/app.js</code>, <code>ui/style.css</code>, served statically. Target modern evergreen browsers only. Rendering via small DOM-builder helpers; all provider content is inserted with <code>textContent</code>, never <code>innerHTML</code> (prompts are untrusted input — a prompt containing HTML must render inert, §12.3).</p>
+  <h3><span class="sub">11.1</span>Product design tokens (the app, not this spec page)</h3>
+  <p>The UI is a dark instrument panel — the one place the product should feel like avionics: near-black <code>#14161A</code> surface, panel <code>#1C1F25</code>, line <code>#2A2E36</code>, text <code>#E8EAED</code>/<code>#9AA0A8</code>, international orange <code>#FF5A1F</code> for LLM activity and primary accents, signal blue <code>#5B8DEF</code> for tool activity, green <code>#3FB868</code> ok, red <code>#E5484D</code> errors. Type: system UI stack for labels; monospace stack for all numerals, ids, and payloads. Numbers use <code>font-variant-numeric: tabular-nums</code>.</p>
+  <h3><span class="sub">11.2</span>Layout</h3>
+  <pre><code>┌────────────┬──────────────────────────────┬───────────────────────┐
+│ RUNS       │ TIMELINE — run 07-27 14:03   │ CALL DETAIL (drawer)  │
+│ ● 14:03 ▸  │  ○ call 01  sonnet  1.9s ▸   │ tabs: Conversation ·  │
+│   12:41    │  │  2.4k tok · $0.012        │ Request · Response ·  │
+│   11:02    │  ├─▪ web_search (≈2.1s)      │ Timing                │
+│   yest.    │  ○ call 02  sonnet  3.2s     │                       │
+│            │  │  stop: tool_use           │ [system prompt ▾]     │
+│ 280px      │  ◌ call 03  streaming ▮ 4.2s │ user / assistant /    │
+│ collapsible│  ▼ live, autoscroll          │ tool blocks…          │
+└────────────┴──────────────────────────────┴───────────────────────┘</code></pre>
+  <ul>
+    <li><strong>Runs pane:</strong> newest first; each row: name, relative time, call count, total est. cost, red dot when <code>error_count &gt; 0</code>. Selecting loads the timeline; deep link <code>/run/:id</code>.</li>
+    <li><strong>Timeline:</strong> vertical, oldest at top. Call nodes: orange dot (dashed pulsing ring while in-flight), model chip, latency, tokens, est. cost, stop-reason chip (<code>tool_use</code> blue, <code>max_tokens</code> amber, errors red). Between consecutive calls, tool events render as blue chips on an inset track with the "client-side ≈" duration from §07.4. Gaps &gt; 5 s render as a labeled break (<code>· · · 41 s idle · ·&nbsp;·</code>) rather than proportional whitespace.</li>
+    <li><strong>Detail drawer</strong> (~45%, resizable, <span class="kbd">esc</span> closes): <em>Conversation</em> — the full message array the model saw: collapsible system prompt, role-badged messages, tool_use blocks as bordered cards with pretty-printed JSON input, tool_result cards linked to their tool_use (red border when <code>is_error</code>); long blocks clamp at 20 lines with "show all". <em>Request</em>/<em>Response</em> — pretty-printed raw JSON, copy button, truncation banner when <code>truncated=1</code>. <em>Timing</em> — horizontal bar: queue→TTFT→stream duration, plus the raw timestamps.</li>
+  </ul>
+  <h3><span class="sub">11.3</span>States &amp; interactions</h3>
+  <ul>
+    <li><strong>Empty DB:</strong> setup card with the two export lines from §05.1 and a copy button — the empty state <em>is</em> onboarding.</li>
+    <li><strong>Live:</strong> SSE per §10.1, auto-reconnect with capped backoff (1→30 s) and an "offline — reconnecting" pill when down. Autoscroll follows new calls unless the user has scrolled up (resume via "jump to live" pill).</li>
+    <li><strong>Keyboard:</strong> <span class="kbd">j</span>/<span class="kbd">k</span> next/previous call, <span class="kbd">enter</span> open detail, <span class="kbd">esc</span> close, <span class="kbd">g</span> jump to live.</li>
+    <li>Header per run: name (click to rename → future; v1 read-only), total tokens, est. cost, duration, Export button (§10.6), Delete (confirm).</li>
+    <li>Accessibility floor: visible focus rings, semantic buttons/lists, color never the sole error signal (icon + text), <code>prefers-reduced-motion</code> disables the streaming pulse.</li>
+  </ul>
+</section>
+
+<section class="sec" id="s12">
+  <div class="eyebrow">§12 · Trust</div>
+  <h2>Security &amp; privacy</h2>
+  <h3><span class="sub">12.1</span>Network posture</h3>
+  <ul>
+    <li>Bind <code>127.0.0.1</code> by default. <code>--host</code> with any non-loopback value MUST print: <em>"WARNING: orangebox has no authentication. Binding to &lt;addr&gt; exposes every recorded prompt to your network."</em></li>
+    <li>Outbound connections: only the two provider origins in §04, only in direct response to proxied client requests. The process makes no other network calls — no version checks, no telemetry, nothing (§02.2).</li>
+  </ul>
+  <h3><span class="sub">12.2</span>Credential handling (MUST)</h3>
+  <ul>
+    <li>Persisted request headers are an allowlist — <code>content-type</code>, <code>anthropic-version</code>, <code>user-agent</code> — everything else is dropped before storage; additionally any header whose name matches <code>/auth|key|token|secret|cookie/i</code> is never stored even if allowlisted by mistake.</li>
+    <li>API keys exist in process memory only for the lifetime of the upstream request and never appear in logs, errors, the DB, exports, or the UI.</li>
+    <li>Body content is stored verbatim (that is the product), so README and UI footer both state plainly: the database contains your prompts; exports contain your prompts; treat both accordingly.</li>
+  </ul>
+  <h3><span class="sub">12.3</span>UI safety</h3>
+  <p>All recorded content rendered via <code>textContent</code> (§11). The UI ships zero third-party scripts, fonts, or CDN references — it must work fully offline.</p>
+</section>
+
+<section class="sec" id="s13">
+  <div class="eyebrow">§13 · Budgets</div>
+  <h2>Performance budgets</h2>
+  <table>
+    <tr><th>Metric</th><th>Budget</th><th>How</th></tr>
+    <tr><td>Added latency, non-streamed call</td><td class="m">&lt; 5 ms p50 vs direct</td><td>No parsing or DB work before the client response completes (§06.2).</td></tr>
+    <tr><td>Added inter-chunk latency, streamed</td><td class="m">≈ 0 (write-through)</td><td>§06.3; capture is an in-memory append.</td></tr>
+    <tr><td>Concurrent streams</td><td class="m">50 without event-loop stalls &gt; 50 ms</td><td>No sync work per chunk beyond buffer append.</td></tr>
+    <tr><td>Persist after stream close</td><td class="m">&lt; 150 ms typical call</td><td>Single transaction; better-sqlite3 is fast.</td></tr>
+    <tr><td>UI initial render, 50-call run</td><td class="m">&lt; 500 ms</td><td>CallSummary excludes payload blobs (§10); lazy detail fetch.</td></tr>
+    <tr><td>Server RSS during 1 MB-payload streams ×50</td><td class="m">&lt; 300 MB</td><td>Buffers released after persist; truncation caps (§14.2).</td></tr>
+  </table>
+</section>
+
+<section class="sec" id="s14">
+  <div class="eyebrow">§14 · Failure atlas</div>
+  <h2>Edge cases &amp; failure modes</h2>
+  <h3><span class="sub">14.1</span>Error classification (<code>error_type</code>)</h3>
+  <table>
+    <tr><th>Condition</th><th>error_type</th><th>Client sees</th><th>Recorded</th></tr>
+    <tr><td>Upstream 4xx/5xx (incl. 429, overloaded)</td><td class="m">http_&lt;status&gt;</td><td>Exact upstream status + body</td><td>Full pair; retries by SDKs appear naturally as sibling calls — the timeline makes retry storms visible, which is a feature.</td></tr>
+    <tr><td>Upstream unreachable / DNS / TLS</td><td class="m">upstream_unreachable</td><td>502 + JSON explanation</td><td>Request only.</td></tr>
+    <tr><td>Upstream timeout (no response start in 10 min)</td><td class="m">upstream_timeout</td><td>504</td><td>Request only.</td></tr>
+    <tr><td>Client disconnects mid-stream</td><td class="m">client_aborted</td><td>—</td><td>Partial reassembly, flagged in UI.</td></tr>
+    <tr><td>Stream dies mid-flight / error event</td><td class="m">upstream_stream_error</td><td>Relayed as-is</td><td>Partial reassembly + error payload.</td></tr>
+  </table>
+  <h3><span class="sub">14.2</span>Content edge cases</h3>
+  <ul>
+    <li><strong>Huge payloads:</strong> any single stored JSON blob &gt; 2 MB → truncate string leaves (longest first) to fit, set <code>truncated=1</code>, insert marker <code>"…[orangebox: truncated N bytes]"</code>. Structure survives; bulk text is cut.</li>
+    <li><strong>Base64 images / documents in messages:</strong> replace data with <code>"[orangebox: base64 &lt;kind&gt;, N KB removed]"</code> before storage — they bloat the DB and the UI can't meaningfully show them in v1.</li>
+    <li><strong>Non-JSON bodies, malformed JSON, unknown endpoints under a provider prefix</strong> (e.g. <code>/v1/models</code>): proxy faithfully, store raw with null extractions, render as "unparsed call" in the UI. Never block traffic because we can't parse it.</li>
+    <li><strong>Tool loops:</strong> multi-turn tool_use/tool_result chains are the normal case — §07.4 linking must handle N cycles per run, interleaved across calls.</li>
+    <li><strong>Port in use:</strong> clear exit message. <strong>DB locked</strong> (second instance, same DB): exit with "another orangebox is already recording to this database — is one running?".</li>
+    <li><strong>Clock:</strong> all times from <code>Date.now()</code> on one machine; monotonic enough for v1.</li>
+  </ul>
+</section>
+<section class="sec" id="s15">
+  <div class="eyebrow">§15 · Repository</div>
+  <h2>Repo layout</h2>
+  <pre class="filetree"><code>orangebox/
+├── package.json          # name, bin: {"orangebox": "bin/orangebox.mjs"},
+│                         # engines: {"node": ">=18"}, deps: better-sqlite3 only
+├── bin/orangebox.mjs     # shebang, delegates to src/cli.mjs
+├── src/
+│   ├── cli.mjs           # arg parsing (hand-rolled, §05), start/run/export/clear
+│   ├── server.mjs        # http server, §04 routing table
+│   ├── proxy.mjs         # §06: forwarding, tee, timing, run attribution
+│   ├── parse/
+│   │   ├── anthropic.mjs # §7.2
+│   │   └── openai.mjs    # §7.3
+│   ├── store.mjs         # §09: schema, transactions, queries, redact/truncate
+│   ├── live.mjs          # §10.1 SSE hub (subscribe/publish/heartbeat)
+│   ├── pricing.json      # §08
+│   └── pricing.mjs       # prefix match + user-file merge
+├── ui/
+│   ├── index.html
+│   ├── app.js            # §11, ES modules, no build
+│   └── style.css
+├── examples/
+│   └── demo-agent.mjs    # §17.2 — scripted 3-call tool-loop agent for the GIF
+├── test/
+│   ├── fixtures/         # recorded SSE transcripts + JSON bodies, both providers
+│   ├── parse.test.mjs    # reassembly against fixtures (node:test)
+│   ├── store.test.mjs    # schema, transactions, truncation, redaction
+│   └── proxy.test.mjs    # integration vs a mock upstream (node:http)
+├── README.md             # §18
+├── LICENSE               # MIT
+└── .github/workflows/ci.yml  # node 18/20/22 matrix: npm test</code></pre>
+</section>
+
+<section class="sec" id="s16">
+  <div class="eyebrow">§16 · Sequence</div>
+  <h2>Build order &amp; milestones</h2>
+  <p>Build in this order; each milestone MUST be runnable and committed before the next begins.</p>
+  <table>
+    <tr><th>M</th><th>Deliverable</th><th>Done when</th></tr>
+    <tr><td class="m">M0</td><td>Scaffold: package, CLI start, server with routing table, placeholder UI, schema bootstrap.</td><td><code>npx .</code> prints the §05.1 banner; <code>/api/health</code> answers; DB file exists.</td></tr>
+    <tr><td class="m">M1</td><td>Non-streaming proxy + parse + persist, both providers; gap-based runs.</td><td>A curl through <code>/anthropic/v1/messages</code> returns the real answer and produces correct calls/runs rows (§17.1 checks 1–4).</td></tr>
+    <tr><td class="m">M2</td><td>Streaming: write-through, TTFT, reassembly, abort handling.</td><td>Fixture tests pass; a streamed SDK call is byte-identical to direct and yields a complete reassembled record.</td></tr>
+    <tr><td class="m">M3</td><td>UI: runs, timeline, detail drawer, live SSE, empty state.</td><td>All §03 stories demonstrable in the browser.</td></tr>
+    <tr><td class="m">M4</td><td><code>orangebox run</code>, export, clear, pricing merge, retention, README, demo agent, CI.</td><td>Full §17 checklist green.</td></tr>
+  </table>
+</section>
+
+<section class="sec" id="s17">
+  <div class="eyebrow">§17 · Verification</div>
+  <h2>Acceptance criteria</h2>
+  <h3><span class="sub">17.1</span>Checklist (all MUST pass before tagging v1.0.0)</h3>
+  <ol>
+    <li>Fresh machine, two commands (<code>npx orangebox</code>; export + run agent) → first recorded call visible in UI in &lt; 2 min.</li>
+    <li>Byte-fidelity: for both providers, streamed and not, response through orangebox is byte-identical to direct (assert with a diff harness in tests using the mock upstream).</li>
+    <li>A 3-call tool-loop run shows: 3 orange nodes in order, blue tool_use/tool_result chips between them correctly paired, sensible latencies, token counts matching the provider's usage fields, non-null est. cost.</li>
+    <li>Grep the DB file for a known API key after a session → zero matches.</li>
+    <li>Kill the agent mid-stream → call recorded as <code>client_aborted</code> with partial content; UI flags it; server stays healthy.</li>
+    <li>Stop and restart orangebox → all history intact; deep link <code>/run/:id</code> still resolves.</li>
+    <li>429 from upstream (mock) → client receives 429 body unchanged; call recorded as <code>http_429</code>; timeline shows the retry sibling calls.</li>
+    <li>1000-call synthetic run: UI opens within budget (§13); server RSS within budget.</li>
+    <li><code>orangebox export</code> file re-imports mentally: contains everything needed to understand the run with no DB access.</li>
+    <li><code>npm test</code> green on Node 18, 20, 22 in CI. No network access in tests.</li>
+  </ol>
+  <h3><span class="sub">17.2</span>Manual probes (put these in CONTRIBUTING.md)</h3>
+  <pre><code># non-streamed, anthropic (requires ANTHROPIC_API_KEY in env)
+curl -s http://127.0.0.1:4100/anthropic/v1/messages \
+  -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" \
+  -H "content-type: application/json" \
+  -d '{"model":"claude-haiku-4-5","max_tokens":64,
+       "messages":[{"role":"user","content":"say ping"}]}'
+
+# streamed, openai
+curl -sN http://127.0.0.1:4100/openai/v1/chat/completions \
+  -H "authorization: Bearer $OPENAI_API_KEY" -H "content-type: application/json" \
+  -d '{"model":"gpt-4o-mini","stream":true,
+       "stream_options":{"include_usage":true},
+       "messages":[{"role":"user","content":"say ping"}]}'</code></pre>
+  <p><code>examples/demo-agent.mjs</code>: a small scripted agent (Anthropic SDK, one fake <code>get_weather</code> tool executed locally) that produces exactly the plan → tool loop → synthesize shape shown in FIG. 0 — it exists so the README GIF, the acceptance tests, and every first-time user see the same flattering, representative run.</p>
+</section>
+
+<section class="sec" id="s18">
+  <div class="eyebrow">§18 · Distribution</div>
+  <h2>README &amp; launch</h2>
+  <h3><span class="sub">18.1</span>README structure (the README is the landing page)</h3>
+  <ol>
+    <li>Logo line: 🟧 <strong>orangebox</strong> — <em>the flight recorder for AI agents</em>. One sentence. Badge row (CI, npm, license).</li>
+    <li><strong>The GIF.</strong> Above the fold, &lt; 15 MB: terminal running <code>npx orangebox</code> and the demo agent split-screen with the timeline filling live, ending on the detail drawer. Record ~1280×720; the whole loop under 25 seconds.</li>
+    <li>Quickstart — exactly the two commands, nothing else between the reader and success.</li>
+    <li>"Why": three bullets — zero code changes · fully local, no account, no telemetry · works with any language/framework (it's just HTTP).</li>
+    <li>Feature list with one screenshot per feature (timeline, detail, cost).</li>
+    <li>How it works (the §04 diagram, simplified) — earns trust with technical readers.</li>
+    <li>FAQ seeded with the honest ones: Which providers? (these two, more coming — vote in issues) · Where's my data? (one SQLite file, here's the path) · Does it slow my agent? (§13 numbers) · Why "orangebox"? (flight recorders are orange).</li>
+    <li>Roadmap (§19) as checkboxes — a visible heartbeat.</li>
+  </ol>
+  <h3><span class="sub">18.2</span>Launch checklist</h3>
+  <ul>
+    <li>Confirm npm name availability early; fallbacks: <code>orangebox-ai</code>, <code>@orangebox/cli</code> (keep the CLI command <code>orangebox</code> regardless).</li>
+    <li>Show HN title: <em>"Show HN: Orangebox – a local flight recorder for AI agents (no cloud, no SDK)"</em>; first comment explains the itch, the proxy approach, and v1 limits candidly (§06.4 heuristic, two providers).</li>
+    <li>Same-day posts where agent debugging is discussed daily; lead with the GIF. Tue–Thu morning US time.</li>
+    <li>Pre-launch: 5 issues opened (roadmap items), CI green badge, tag v1.0.0 — a repo that looks alive gets starred.</li>
+  </ul>
+</section>
+
+<section class="sec" id="s19">
+  <div class="eyebrow">§19 · Horizon</div>
+  <h2>v2 roadmap (do not build now)</h2>
+  <ol>
+    <li><strong>Replay:</strong> re-send any recorded call (optionally with an edited prompt or different model) and diff the outputs — the feature that turns the recorder into a workbench.</li>
+    <li><strong>Run diffing:</strong> side-by-side timelines of two runs of the same agent.</li>
+    <li><strong>More providers:</strong> Gemini, Bedrock, Ollama/local (the parse-module interface in §07 is the extension point).</li>
+    <li><strong>OpenTelemetry export</strong> for teams with existing tracing.</li>
+    <li><strong>Cost dashboard:</strong> spend over time, by model, by run name.</li>
+    <li><strong>Assertions:</strong> tiny config to fail CI when a run exceeds cost/latency/loop-count thresholds — the wedge into CI usage.</li>
+  </ol>
+</section>
+
+<section class="sec" id="s20">
+  <div class="eyebrow">§20 · Glossary</div>
+  <h2>Glossary</h2>
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td class="m">SSE</td><td>Server-sent events; the streaming wire format both providers use (<code>text/event-stream</code>).</td></tr>
+    <tr><td class="m">write-through</td><td>Relaying each upstream chunk to the client immediately while copying it aside; the copy must never delay the relay.</td></tr>
+    <tr><td class="m">reassembly</td><td>Folding a captured SSE transcript into the equivalent non-streamed response object (§7.2.1, §7.3).</td></tr>
+    <tr><td class="m">implicit run</td><td>A run created by the idle-gap heuristic rather than by the wrapper command or header (§06.4).</td></tr>
+    <tr><td class="m">stop reason</td><td>Provider's stated reason generation ended (<code>end_turn</code>, <code>tool_use</code>, <code>max_tokens</code>, …) — the single most diagnostic field on a call.</td></tr>
+    <tr><td class="m">est. cost</td><td>Token counts × pricing.json rates (§08). An estimate, clearly labeled, never presented as billing truth.</td></tr>
+  </table>
+</section>
+
+<section class="sec" id="s21">
+  <div class="eyebrow">§21 · Reality check</div>
+  <h2>Prior art &amp; positioning</h2>
+  <p><em>Added REV B, 2026-07-28, after competitive research. This section did not exist when the M0–M4 plan in §16 was written. It exists so the implementing AI does not build v1 blind — read this before M0.</em></p>
+
+  <div class="call warn">
+    <span class="lab">Headline finding</span>
+    <p>The pain orangebox targets is real and already validated by the market — but the specific niche this spec describes (generic local SQLite proxy, both providers, env-var integration) is being squeezed from both sides by projects that are further along. Shipping the spec exactly as written in §01–§20 will land as a smaller, later clone of an existing tool. §21.3 gives the two changes that avoid that.</p>
+  </div>
+
+  <h3><span class="sub">21.1</span>The closest analog: claude-tap</h3>
+  <p>A project called <strong>claude-tap</strong> is, mechanically, close to the same product as orangebox: a local proxy and trace viewer for AI agent traffic — system prompts, conversation history, tool schemas, tool calls, streaming responses, token usage — stored and viewed entirely locally, with common auth headers auto-redacted and a live SSE-driven viewer. It sits around 2.6–2.8k GitHub stars and has appeared on GitHub's trending page, so the format (local proxy → timeline UI) is proven to attract stars, not just plausible in theory.</p>
+  <p>The reason it's ahead is a sharper wedge than the one in §02: instead of asking the developer to set <code>ANTHROPIC_BASE_URL</code>/<code>OPENAI_BASE_URL</code> for their own agent code, it hooks directly into the CLI coding agents developers already run all day — Claude Code, Codex CLI, Gemini CLI, Cursor CLI, OpenCode, and others — with OAuth auto-detection so some setups need zero configuration at all. It also ships request diffing between turns and a static-HTML export for sharing, both of which are v2 items in this spec (§19).</p>
+
+  <h3><span class="sub">21.2</span>The rest of the landscape</h3>
+  <p>Figures below are approximate, self-reported star counts gathered mid-2026 for orientation only — verify current numbers before making a positioning decision, the same way §08 warns not to trust the shipped pricing table.</p>
+  <table>
+    <tr><th>Project</th><th>~Stars</th><th>Approach</th><th>Where it diverges from orangebox</th></tr>
+    <tr><td>claude-tap</td><td class="m">2.6–2.8k</td><td>Local proxy + trace viewer, zero cloud</td><td>Scoped to coding-agent CLIs, not raw SDK traffic; already has diffing + export.</td></tr>
+    <tr><td>Langfuse</td><td class="m">21–28k</td><td>Hosted + self-hostable platform</td><td>YC-backed, acquired by ClickHouse; full team platform — tracing, prompt versioning, evals, datasets.</td></tr>
+    <tr><td>Helicone</td><td class="m">—</td><td>Proxy-first gateway</td><td>Zero-code-change proxy like orangebox, but traffic is designed to route through hosted infra; strong cost dashboards.</td></tr>
+    <tr><td>OpenLLMetry (Traceloop)</td><td class="m">7.2k</td><td>OpenTelemetry SDK instrumentation</td><td>Feeds existing APM tools (Datadog, Honeycomb, Grafana) instead of shipping its own UI.</td></tr>
+    <tr><td>LiteLLM</td><td class="m">~54k</td><td>Universal provider gateway</td><td>Owns the "one API for 100+ providers" niche outright; observability is a feature, not the product.</td></tr>
+    <tr><td>PostHog (LLM analytics)</td><td class="m">32k+</td><td>Product analytics suite</td><td>LLM observability is one module inside a much larger product-analytics platform.</td></tr>
+  </table>
+  <p>Read together: the "single-player, fully local, zero-account debugging tool" shape is validated (claude-tap proves it draws stars), and the "production team platform" shape is validated at much larger scale (Langfuse, PostHog, LiteLLM). What's <em>not</em> validated, because nobody occupies it, is a fully-local tool aimed at raw SDK and custom-agent-framework traffic rather than the fixed set of CLI tools claude-tap already covers.</p>
+
+  <div class="call decision">
+    <span class="lab">Decision — how this changes the spec</span>
+    <p>Two changes, applied on top of §01–§20 rather than a rewrite:</p>
+    <p><strong>1. Reposition, don't rename the wedge.</strong> Keep the §06 proxy architecture exactly as specified (it's the right mechanism), but position orangebox explicitly for people writing their <em>own</em> agent code with the Anthropic/OpenAI SDKs or a framework like LangGraph — "the recorder for the agent you're building," not "the recorder for the agent CLI you're using." The README (§18) should name this distinction plainly rather than let a reader assume overlap with claude-tap.</p>
+    <p><strong>2. Pull one v2 item into v1 as the headline differentiator.</strong> Of the §19 roadmap, request diffing between two calls or two runs is the cheapest to build and the one competitors already treat as core — ship a basic version in M3 (§16) alongside the timeline, not after. Replay (§19.1) is the higher-leverage differentiator long-term but is correctly sequenced as v2; do not pull it forward, it's too large to fit the M0–M4 timeline without threatening the 2-minute install promise in §17.1.</p>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <span>OB-SPEC-001 · REV A · END OF DOCUMENT</span>
+  <span>orangebox — if it isn't recorded, it didn't happen</span>
+  <a class="backtop" href="#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false">▲ top</a>
+</footer>
+
+</div>
+</body>
+</html>

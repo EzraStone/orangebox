@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 340" width="900" height="340" role="img" aria-label="The diff tab comparing two calls in a run, showing which lines the prompt gained between turns">
+  <defs>
+    <style>
+      .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .sans { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="340" rx="7" fill="#1C1F25"/>
+  <rect x=".5" y=".5" width="899" height="339" rx="6.5" fill="none" stroke="#2A2E36"/>
+
+  <!-- header + tabs -->
+  <text class="mono" x="20" y="26" font-size="9.5" letter-spacing="1.3" fill="#9AA0A8">CALL 03 · ANTHROPIC</text>
+  <line x1="1" y1="38" x2="899" y2="38" stroke="#2A2E36"/>
+  <text class="mono" x="20" y="58" font-size="10.5" fill="#9AA0A8">Conversation</text>
+  <text class="mono" x="106" y="58" font-size="10.5" fill="#9AA0A8">Request</text>
+  <text class="mono" x="168" y="58" font-size="10.5" fill="#9AA0A8">Response</text>
+  <text class="mono" x="240" y="58" font-size="10.5" fill="#E8EAED">Diff</text>
+  <line x1="234" y1="65" x2="270" y2="65" stroke="#FF5A1F" stroke-width="2"/>
+  <text class="mono" x="284" y="58" font-size="10.5" fill="#9AA0A8">Timing</text>
+  <line x1="1" y1="66" x2="899" y2="66" stroke="#2A2E36"/>
+
+  <!-- controls -->
+  <text class="mono" x="20" y="92" font-size="10" fill="#9AA0A8">compare against</text>
+  <rect x="112" y="81" width="80" height="18" rx="4" fill="#22262E" stroke="#2A2E36"/>
+  <text class="mono" x="120" y="94" font-size="9.5" fill="#E8EAED">this run  ⌄</text>
+  <rect x="200" y="81" width="164" height="18" rx="4" fill="#22262E" stroke="#2A2E36"/>
+  <text class="mono" x="208" y="94" font-size="9.5" fill="#E8EAED">call 02  claude-opus-5  ⌄</text>
+
+  <rect x="762" y="81" width="118" height="18" rx="4" fill="none" stroke="#2A2E36"/>
+  <rect x="762" y="81" width="59" height="18" rx="4" fill="#22262E"/>
+  <text class="mono" x="791" y="94" text-anchor="middle" font-size="9.5" fill="#E8EAED">request</text>
+  <text class="mono" x="850" y="94" text-anchor="middle" font-size="9.5" fill="#9AA0A8">response</text>
+
+  <!-- diff summary -->
+  <text class="mono" x="20" y="122" font-size="10.5" fill="#F4A9AB">− call 02</text>
+  <text class="mono" x="94" y="122" font-size="10.5" fill="#86D9A5">+ this call</text>
+  <text class="mono" x="880" y="122" text-anchor="end" font-size="10.5" fill="#9AA0A8">+44 −0 lines</text>
+  <line x1="20" y1="132" x2="880" y2="132" stroke="#2A2E36"/>
+
+  <!-- diff body -->
+  <rect x="20" y="144" width="860" height="176" rx="4" fill="#15181D" stroke="#2A2E36"/>
+  <line x1="42" y1="144" x2="42" y2="320" stroke="#22252B"/>
+
+  <!-- context -->
+  <text class="mono" x="54" y="161" font-size="10.5" fill="#8D949C">  "model": "claude-opus-5",</text>
+  <text class="mono" x="54" y="177" font-size="10.5" fill="#8D949C">  "max_tokens": 1024,</text>
+
+  <!-- added -->
+  <rect x="21" y="182" width="858" height="16" fill="#3FB868" fill-opacity=".1"/>
+  <text class="mono" x="31" y="194" font-size="10.5" fill="#3FB868">+</text>
+  <text class="mono" x="54" y="194" font-size="10.5" fill="#B9ECC9">  "stream": true,</text>
+
+  <!-- collapsed run -->
+  <rect x="21" y="200" width="858" height="17" fill="#191C22"/>
+  <line x1="21" y1="200" x2="879" y2="200" stroke="#22252B"/>
+  <line x1="21" y1="217" x2="879" y2="217" stroke="#22252B"/>
+  <text class="mono" x="54" y="212" font-size="9.5" fill="#9AA0A8">⋯ 36 unchanged lines</text>
+
+  <!-- added block: the assistant turn and its tool results -->
+  <rect x="21" y="219" width="858" height="16" fill="#3FB868" fill-opacity=".1"/>
+  <text class="mono" x="31" y="231" font-size="10.5" fill="#3FB868">+</text>
+  <text class="mono" x="54" y="231" font-size="10.5" fill="#B9ECC9">    { "role": "assistant", "content": [</text>
+
+  <rect x="21" y="235" width="858" height="16" fill="#3FB868" fill-opacity=".1"/>
+  <text class="mono" x="31" y="247" font-size="10.5" fill="#3FB868">+</text>
+  <text class="mono" x="54" y="247" font-size="10.5" fill="#B9ECC9">      { "type": "tool_use", "name": "get_weather",</text>
+
+  <rect x="21" y="251" width="858" height="16" fill="#3FB868" fill-opacity=".1"/>
+  <text class="mono" x="31" y="263" font-size="10.5" fill="#3FB868">+</text>
+  <text class="mono" x="54" y="263" font-size="10.5" fill="#B9ECC9">        "input": { "city": "Oslo" } } ] },</text>
+
+  <rect x="21" y="267" width="858" height="16" fill="#3FB868" fill-opacity=".1"/>
+  <text class="mono" x="31" y="279" font-size="10.5" fill="#3FB868">+</text>
+  <text class="mono" x="54" y="279" font-size="10.5" fill="#B9ECC9">    { "role": "user", "content": [</text>
+
+  <rect x="21" y="283" width="858" height="16" fill="#3FB868" fill-opacity=".1"/>
+  <text class="mono" x="31" y="295" font-size="10.5" fill="#3FB868">+</text>
+  <text class="mono" x="54" y="295" font-size="10.5" fill="#B9ECC9">      { "type": "tool_result", "is_error": true,</text>
+
+  <!-- context tail -->
+  <text class="mono" x="54" y="313" font-size="10.5" fill="#8D949C">  ]</text>
+</svg>

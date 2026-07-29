@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>orangebox — the flight recorder for the agent you're building</title>
+<meta name="description" content="A zero-config local proxy that records every LLM API call your own agent code makes — prompts, tool calls, streams, retries, tokens, cost — into SQLite, and renders each run as a visual timeline you can diff and export. No account, no cloud, no telemetry.">
+<link rel="canonical" href="https://ezrastone.github.io/orangebox/">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="orangebox — the flight recorder for the agent you're building">
+<meta property="og:description" content="Records every LLM API call your agent makes into a local SQLite file and renders each run as a visual timeline. No account, no cloud, no telemetry.">
+<meta property="og:url" content="https://ezrastone.github.io/orangebox/">
+<meta property="og:image" content="https://ezrastone.github.io/orangebox/img/plate.svg">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%23E8490F'/></svg>">
+
+<style>
+/* Deliberately self-contained: no web fonts, no CDN, no analytics. A product
+   that promises nothing leaves your machine should not ship a landing page
+   that phones home. */
+:root{
+  --paper:#ECEEEA; --panel:#F7F9F5; --ink:#1A1D21; --ink-soft:#3C4148;
+  --stamp:#787F88; --line:#C7CCC4; --orange:#E8490F; --orange-deep:#C23A08;
+  --blue:#2E5490; --ok:#2E7D4F;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#14161A; --panel:#1C1F25; --ink:#E8EAED; --ink-soft:#C3C8CE;
+    --stamp:#9AA0A8; --line:#2A2E36; --orange:#FF5A1F; --orange-deep:#FF7A47;
+    --blue:#5B8DEF; --ok:#3FB868;
+  }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:940px;margin:0 auto;padding:0 24px 100px}
+img,svg{max-width:100%;height:auto;display:block}
+a{color:var(--blue);text-decoration:none;border-bottom:1px solid color-mix(in srgb, var(--blue) 35%, transparent)}
+a:hover{color:var(--orange-deep);border-bottom-color:var(--orange-deep)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+h1,h2,h3{line-height:1.2;margin:0}
+p{margin:.6em 0 1.1em}
+ul{margin:.4em 0 1.2em;padding-left:1.3em}
+li{margin:.35em 0}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb, var(--ink) 8%, transparent);padding:.1em .35em;border-radius:3px}
+
+.docline{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--stamp);border-bottom:2px solid var(--ink);padding:26px 0 10px;margin-bottom:24px}
+
+.hero{margin:0 0 26px}
+.lede{font-size:19px;color:var(--ink-soft);max-width:64ch;margin:24px 0 8px}
+
+.cta{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:26px 0 8px}
+.btn{display:inline-block;font-family:var(--sans);font-size:14px;font-weight:600;padding:9px 17px;border-radius:5px;border:1px solid var(--ink);color:var(--paper);background:var(--ink)}
+.btn:hover{background:var(--orange);border-color:var(--orange);color:#FFF7F2}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--orange);color:var(--orange-deep);background:transparent}
+
+.shell{position:relative;border:1px solid var(--line);border-left:3px solid var(--orange);border-radius:4px;background:var(--panel);padding:14px 16px;margin:18px 0}
+.shell pre{margin:0;font-family:var(--mono);font-size:13.5px;overflow-x:auto;color:var(--ink)}
+.shell .cp{position:absolute;top:9px;right:9px;font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--line);background:var(--paper);color:var(--stamp);cursor:pointer}
+.shell .cp:hover{color:var(--orange-deep);border-color:var(--orange-deep)}
+.step{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--stamp);margin:20px 0 -8px}
+
+section{margin-top:62px;border-top:2px solid var(--ink);padding-top:14px}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--orange);margin-bottom:6px}
+section>h2{font-size:27px;font-weight:700;margin-bottom:12px;letter-spacing:-.01em}
+h3{font-size:17px;font-weight:700;margin:28px 0 6px}
+
+figure{margin:22px 0 8px;border:1px solid var(--line);border-radius:5px;background:var(--panel);padding:10px 10px 4px;overflow:hidden}
+figcaption{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--stamp);padding:8px 4px 4px}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:18px;margin:20px 0}
+.card{border:1px solid var(--line);border-radius:5px;background:var(--panel);padding:14px 16px}
+.card h3{margin:0 0 4px;font-size:15px}
+.card p{margin:0;font-size:14.5px;color:var(--ink-soft)}
+
+.call{border:1px solid var(--line);border-left:4px solid var(--blue);background:var(--panel);padding:12px 16px;margin:18px 0;border-radius:0 4px 4px 0}
+.call .lab{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);display:block;margin-bottom:4px}
+.call.warn{border-left-color:var(--orange)}
+.call.warn .lab{color:var(--orange-deep)}
+.call p:last-child{margin-bottom:2px}
+
+dl.faq{margin:14px 0 0}
+dl.faq dt{font-weight:650;margin-top:20px}
+dl.faq dd{margin:.3em 0 0;color:var(--ink-soft)}
+
+table{border-collapse:collapse;width:100%;margin:14px 0 20px;font-size:14px}
+th{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;text-align:left;color:var(--stamp);border-bottom:2px solid var(--ink);padding:6px 12px 6px 0}
+td{border-bottom:1px solid var(--line);padding:8px 12px 8px 0;vertical-align:top}
+td.m{font-family:var(--mono);font-size:12.5px;white-space:nowrap}
+
+footer{margin-top:70px;border-top:2px solid var(--ink);padding-top:14px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--stamp);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="docline">
+  <span>orangebox v1.0.0 · MIT</span>
+  <span><a href="https://github.com/EzraStone/orangebox">github.com/EzraStone/orangebox</a></span>
+</div>
+
+<header class="hero">
+  <img src="img/plate.svg" alt="orangebox — flight data recorder for the agent you're building. Local proxy plus UI, Node 20 or newer, one dependency, no telemetry, MIT licensed.">
+
+  <p class="lede">Point your agent at a local port and press play. orangebox records every LLM API call it makes — the exact prompt, the tool calls, the stream, the retries, the tokens, the cost — into one SQLite file on your machine, and draws each run as a timeline you can inspect, diff, and export.</p>
+
+  <p class="lede" style="font-size:16px">Aircraft black boxes are painted international orange so they can be found. Same idea: when your agent crashes, the evidence should survive.</p>
+
+  <div class="cta">
+    <a class="btn" href="#start">Get started</a>
+    <a class="btn ghost" href="https://github.com/EzraStone/orangebox">View source</a>
+    <a class="btn ghost" href="spec.html">Read the build spec</a>
+  </div>
+</header>
+
+<section id="start">
+  <div class="eyebrow">§01 · Install</div>
+  <h2>Two commands, then you're recording</h2>
+
+  <p>Needs <strong>Node 20 or newer</strong>. Nothing to sign up for, nothing to configure.</p>
+
+  <div class="step">1 — start the recorder</div>
+  <div class="shell">
+    <button class="cp" data-copy="npx -y github:EzraStone/orangebox">Copy</button>
+    <pre>npx -y github:EzraStone/orangebox</pre>
+  </div>
+
+  <div class="step">2 — point your agent at it, and run your agent as usual</div>
+  <div class="shell">
+    <button class="cp" data-copy='export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"
+export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"'>Copy</button>
+    <pre>export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"
+export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"</pre>
+  </div>
+
+  <p>The UI opens at <code>http://127.0.0.1:4100</code> and fills in as your agent runs. Prefer not to touch environment variables at all? Let orangebox set them for you, and get exact run boundaries for free:</p>
+
+  <div class="shell">
+    <button class="cp" data-copy='npx -y github:EzraStone/orangebox run --name "checkout bot" -- node agent.js'>Copy</button>
+    <pre>npx -y github:EzraStone/orangebox run --name "checkout bot" -- node agent.js</pre>
+  </div>
+
+  <div class="call warn">
+    <span class="lab">Not on npm yet</span>
+    <p>orangebox installs straight from GitHub with the commands above, which is why they read <code>github:EzraStone/orangebox</code> rather than the shorter <code>npx orangebox</code>. Once the package is published to npm, the short form will work and these will keep working.</p>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">§02 · What you get</div>
+  <h2>A timeline of what actually happened</h2>
+
+  <figure>
+    <img src="img/timeline.svg" alt="The orangebox UI: a runs list on the left, and a timeline of three calls — a planning call, a tool-loop call with two blue tool chips and a 2.1 second client-side gap, and a streaming call with a time-to-first-token of 108 milliseconds.">
+    <figcaption>One recorded run — LLM calls in orange, client-side tool activity in blue, the live stream dashed</figcaption>
+  </figure>
+
+  <div class="grid">
+    <div class="card">
+      <h3>The exact prompt</h3>
+      <p>Click any call and read the full message history the model saw at that moment — system prompt, every turn, tool results injected — as it received it, not as you think you assembled it.</p>
+    </div>
+    <div class="card">
+      <h3>Where it stalled</h3>
+      <p>Proportional latency, tool gaps, and stop-reason chips make a 40-second tool call or a 3× retry storm obvious without reading anything.</p>
+    </div>
+    <div class="card">
+      <h3>What it cost</h3>
+      <p>Tokens and estimated USD per call and per run. Always labelled "est." — and an em-dash with a reason when the numbers aren't knowable, never a confident $0.00.</p>
+    </div>
+    <div class="card">
+      <h3>Streams, faithfully</h3>
+      <p>Chunks relay the instant they arrive, then the transcript is folded back into a normal response object. A streamed call reads exactly like a non-streamed one, with real TTFT.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">§03 · Diffing</div>
+  <h2>Because prompts drift</h2>
+
+  <p>The question you actually have on turn five is <em>what changed since turn four?</em> Any call can be diffed against another — the previous call by default, or any call in any other run. Long unchanged stretches collapse, so a one-line change in a 6,000-line payload is one click instead of an eyeball comparison.</p>
+
+  <figure>
+    <img src="img/diff.svg" alt="The Diff tab comparing call 03 against call 02: pickers for the baseline run and call, a request/response toggle, and a unified diff showing 44 added lines with 36 unchanged lines collapsed.">
+    <figcaption>Comparing two calls in a run — request or response, in-run or across runs</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="eyebrow">§04 · Positioning</div>
+  <h2>Who this is for</h2>
+
+  <p><strong>orangebox records the agent you are building, not the agent CLI you are using.</strong></p>
+
+  <p>If you are writing agent code yourself — against the Anthropic or OpenAI SDK, or on top of a framework like LangGraph — orangebox records that traffic. It sits at the HTTP layer, so it does not care which client library, language, or framework you picked, and there is nothing for it to fall behind on when you switch.</p>
+
+  <p>If instead you want to see inside an off-the-shelf coding-agent CLI — Claude Code, Codex CLI, Gemini CLI, Cursor CLI and friends — a tool purpose-built for those, like <a href="https://github.com/liaohch3/claude-tap">claude-tap</a>, is the better fit: it knows those specific tools, auto-detects their auth, and needs no configuration at all. orangebox is deliberately not competing for that job.</p>
+
+  <p>Same mechanism, different target. Pick the one aimed at your problem.</p>
+</section>
+
+<section>
+  <div class="eyebrow">§05 · Mechanism</div>
+  <h2>How it works</h2>
+
+  <figure>
+    <img src="img/architecture.svg" alt="Your agent points its base URL at orangebox. One Node process proxies bytes unmodified to the provider while teeing a copy through a parser into SQLite, and serves the JSON API, live SSE feed, and UI to your browser.">
+    <figcaption>One process, one port — pass-through in orange, recording and UI alongside it</figcaption>
+  </figure>
+
+  <p>Requests are forwarded untouched and teed to a parser that writes a normalized record to <code>~/.orangebox/orangebox.db</code>. The same port serves the UI, a JSON API, and a live feed so the timeline updates while your agent is still running.</p>
+
+  <p>Recording happens <em>after</em> your client's response is finished — never in the hot path. Measured against a local mock, on one machine:</p>
+
+  <table>
+    <tr><th>Metric</th><th>Measured</th><th>Budget</th></tr>
+    <tr><td>Added latency, non-streamed call</td><td class="m">0.73 ms p50</td><td class="m">&lt; 5 ms</td></tr>
+    <tr><td>50 concurrent streams, event-loop lag</td><td class="m">31 ms max</td><td class="m">&lt; 50 ms</td></tr>
+    <tr><td>Request → recorded</td><td class="m">3 ms p50</td><td class="m">&lt; 150 ms</td></tr>
+    <tr><td>UI open, 1000-call run</td><td class="m">11 ms</td><td class="m">&lt; 500 ms</td></tr>
+  </table>
+</section>
+
+<section>
+  <div class="eyebrow">§06 · Trust</div>
+  <h2>Privacy, plainly</h2>
+
+  <p><strong>The database contains your prompts. So do its exports.</strong> That is the whole product — treat both accordingly.</p>
+
+  <p>What orangebox does <em>not</em> store is your API keys. Request headers are reduced to a three-item allowlist before anything is written, and any header whose name looks like a credential is dropped even if allowlisted by mistake. Keys live in process memory only for the duration of the upstream request and never reach the database, the logs, an export, or the UI. There is a test that greps for a canary key and fails if it finds one.</p>
+
+  <p>It binds to <code>127.0.0.1</code> and has no authentication, so <code>--host 0.0.0.0</code> would expose every recorded prompt to your network. orangebox says so, in red, if you do it.</p>
+
+  <p>Outbound connections go to <code>api.anthropic.com</code> and <code>api.openai.com</code> only, and only in direct response to a request you proxied. No version checks, no telemetry, no analytics — not in this version and not in any future one.</p>
+</section>
+
+<section>
+  <div class="eyebrow">§07 · Questions</div>
+  <h2>FAQ</h2>
+
+  <dl class="faq">
+    <dt>Which providers?</dt>
+    <dd>Anthropic Messages and OpenAI Chat Completions today. Gemini, Bedrock, and local runtimes are on the roadmap — the parser interface is the extension point.</dd>
+
+    <dt>Where is my data?</dt>
+    <dd>One SQLite file at <code>~/.orangebox/orangebox.db</code>, or wherever <code>--db</code> points. Delete it and it is gone. <code>orangebox clear</code> does the same thing with a confirmation prompt.</dd>
+
+    <dt>Does it slow my agent down?</dt>
+    <dd>Under a millisecond p50 on a non-streamed call, and effectively nothing per chunk on a streamed one. See the table above.</dd>
+
+    <dt>Does it work with my framework?</dt>
+    <dd>If it speaks HTTP to one of the two supported APIs, yes. That is the point of doing this at the proxy layer rather than as an SDK wrapper you have to remember to install.</dd>
+
+    <dt>What if orangebox itself breaks?</dt>
+    <dd>Recording failures are logged and swallowed; your request still goes through. A recorder that takes down the thing it records is worse than no recorder.</dd>
+
+    <dt>How do I share a run with a teammate?</dt>
+    <dd><code>orangebox export &lt;run-id&gt;</code> writes a self-contained JSON file with everything needed to understand the run, no database access required. Attach it to a bug report — remembering that it contains your prompts.</dd>
+
+    <dt>Why "orangebox"?</dt>
+    <dd>Flight recorders are painted international orange so they can be found in wreckage. "Black box" was already taken, and less accurate.</dd>
+  </dl>
+</section>
+
+<footer>
+  <span>orangebox — if it isn't recorded, it didn't happen</span>
+  <span><a href="https://github.com/EzraStone/orangebox">source</a> · <a href="spec.html">build spec</a> · MIT</span>
+</footer>
+
+</div>
+
+<script>
+// Copy buttons. The only script on the page.
+for (const button of document.querySelectorAll('.cp')) {
+  button.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(button.dataset.copy);
+      const was = button.textContent;
+      button.textContent = 'Copied';
+      setTimeout(() => { button.textContent = was; }, 1400);
+    } catch {
+      button.textContent = 'Select manually';
+    }
+  });
+}
+</script>
+</body>
+</html>

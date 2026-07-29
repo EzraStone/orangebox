@@ -1,33 +1,43 @@
-# 🟧 orangebox — *the flight recorder for the agent you're building*
+<p align="center">
+  <img src="docs/img/plate.svg" width="900" alt="orangebox — flight data recorder for the agent you're building. Local proxy plus UI, Node 20 or newer, one dependency, no telemetry, MIT licensed.">
+</p>
 
-A local proxy that records every LLM API call **your own agent code** makes — prompts, tool calls, streams, retries, tokens, cost — and renders each run as a visual timeline you can inspect, diff, and export.
+<p align="center">
+  <a href="https://ezrastone.github.io/orangebox-Website/"><b>Website</b></a> ·
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#who-this-is-for">Who it's for</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="orangebox-spec.html">Build spec</a>
+</p>
 
-[![CI](https://github.com/EzraStone/orangebox/actions/workflows/ci.yml/badge.svg)](https://github.com/EzraStone/orangebox/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/orangebox.svg)](https://www.npmjs.com/package/orangebox)
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/EzraStone/orangebox/actions/workflows/ci.yml"><img src="https://github.com/EzraStone/orangebox/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3FB868" alt="Node 20 or newer">
+  <img src="https://img.shields.io/badge/dependencies-1-E8490F" alt="One runtime dependency">
+  <img src="https://img.shields.io/badge/telemetry-none-2E5490" alt="No telemetry">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+</p>
 
-<!-- TODO before launch: replace the figure below with the demo GIF.
-     ~1280x720, under 15 MB, whole loop under 25 seconds: split-screen of
-     `npx orangebox` + `node examples/demo-agent.mjs` with the timeline
-     filling live, ending on the detail drawer. -->
+Point your agent at a local port and press play. orangebox records every LLM API call **your own agent code** makes — the exact prompt, the tool calls, the stream, the retries, the tokens, the cost — into one SQLite file on your machine, and draws each run as a timeline you can inspect, diff, and export.
 
-```
- T+0.0s        T+4.1s              T+11.6s                T+19.8s      T+27.4s
- │             │                   │                      │            │
- ● call 01 · plan          1.9s · 2.4k tok · $0.024
- │
- ● call 02 · tool loop     3.2s · stop: tool_use
- ├─▪ web_search  ▪ web_fetch        client-side ≈ 2.1s
- │
- ◌ call 03 · synthesize    4.7s · 6.1k tok · $0.041 · ttft 108 ms  ▮ streaming
-```
+*Aircraft black boxes are painted international orange so they can be found. Same idea: when your agent crashes, the evidence should survive.*
+
+<!-- The figures below are drawn to scale from real recorded runs. A screen-capture
+     GIF (§18.1: ~1280x720, under 15 MB, loop under 25 s) would still be better
+     above the fold and is the one launch asset not yet made. -->
+
+<p align="center">
+  <img src="docs/img/timeline.svg" width="900" alt="The orangebox UI: a runs list on the left, and a timeline of three calls — a planning call, a tool-loop call with two tool chips and a 2.1 second client-side gap, and a streaming call with a time-to-first-token of 108 milliseconds.">
+</p>
 
 ---
 
 ## Quickstart
 
+Needs **Node 20 or newer**. Nothing to sign up for, nothing to configure.
+
 ```bash
-npx orangebox
+npx -y github:EzraStone/orangebox
 ```
 
 ```bash
@@ -39,8 +49,10 @@ That's it. The UI opens at <http://127.0.0.1:4100> and fills in as your agent ru
 Prefer not to touch environment variables? Let orangebox set them for you, and get precise run boundaries for free:
 
 ```bash
-npx orangebox run --name "checkout bot" -- node agent.js
+npx -y github:EzraStone/orangebox run --name "checkout bot" -- node agent.js
 ```
+
+> **Not on npm yet.** That is why the commands read `github:EzraStone/orangebox` rather than the shorter `npx orangebox`. Installing from GitHub works today; once the package is published, the short form will work too and these will keep working.
 
 ## Who this is for
 
@@ -68,34 +80,34 @@ Same mechanism, different target. Pick the one aimed at your problem.
 
 **Diffing, because prompts drift.** Any call can be diffed against another — the previous call in the run by default, or any call in any other run. Line-level, with long unchanged stretches collapsed, so "what changed in the prompt between turn 4 and turn 5?" is one click instead of an eyeball comparison of two 6,000-line payloads. Works on the request or the response.
 
+<p align="center">
+  <img src="docs/img/diff.svg" width="900" alt="The Diff tab comparing call 03 against call 02: pickers for the baseline run and call, a request/response toggle, and a unified diff showing 44 added lines with 36 unchanged lines collapsed.">
+</p>
+
 **Streaming, faithfully.** Chunks are relayed the instant they arrive — the recorder adds no measurable latency — then the captured transcript is folded back into a normal response object so a streamed call reads exactly like a non-streamed one. Time-to-first-token is recorded per call.
 
 **Cost, labelled honestly.** Token counts × the rates in `src/pricing.json`. Always shown as "est.", never as billing truth. Unpriced model or missing counts? You get an em-dash and a tooltip saying which, not a confident $0.00.
 
-<!-- TODO before launch: one screenshot per feature (timeline, detail drawer, cost). -->
+<!-- §18.1 asks for one screenshot per feature. The figures above cover the
+     timeline, the detail drawer, and the diff; real screen captures should
+     replace them once there is a run worth photographing. -->
 
 ## How it works
 
-```
-       your agent (any language)
-       ANTHROPIC_BASE_URL=http://127.0.0.1:4100/anthropic
-                  │
-                  ▼
-   ┌──────────────────────────────────┐
-   │  orangebox · one Node process    │
-   │                                  │
-   │   proxy ──tee──▶ parser ──▶ SQLite
-   │     │                        │   │
-   │     │ bytes, unmodified      ▼   │
-   │     │              JSON API + SSE│◀── browser UI
-   └─────┼──────────────────────────┬─┘
-         ▼                          
-   api.anthropic.com / api.openai.com
-```
+<p align="center">
+  <img src="docs/img/architecture.svg" width="900" alt="Your agent points its base URL at orangebox. One Node process proxies bytes unmodified to the provider while teeing a copy through a parser into SQLite, and serves the JSON API, live SSE feed, and UI to your browser.">
+</p>
 
 One process, one port. Requests are proxied through untouched and teed to a parser that writes a normalized record to `~/.orangebox/orangebox.db`. The same port serves the UI, a JSON API, and a live SSE feed so the timeline updates while your agent is still running.
 
-Recording happens **after** your client's response is finished — never in the hot path.
+Recording happens **after** your client's response is finished — never in the hot path. Measured against a local mock, on one machine:
+
+| Metric | Measured | Budget |
+| --- | --- | --- |
+| Added latency, non-streamed call | 0.73 ms p50 | < 5 ms |
+| 50 concurrent streams, event-loop lag | 31 ms max | < 50 ms |
+| Request → recorded | 3 ms p50 | < 150 ms |
+| UI open, 1000-call run | 11 ms | < 500 ms |
 
 ## CLI
 
@@ -173,7 +185,9 @@ Outbound connections go to `api.anthropic.com` and `api.openai.com` only, and on
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for manual probes and the layout of the codebase. The full build specification this was written from is [`orangebox-spec.html`](orangebox-spec.html).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for manual probes and the layout of the codebase. The full build specification this was written from is [`orangebox-spec.html`](orangebox-spec.html), also published [on the website](https://ezrastone.github.io/orangebox-Website/spec.html).
+
+The landing page lives in its own repo: [EzraStone/orangebox-Website](https://github.com/EzraStone/orangebox-Website).
 
 Requires Node 20 or newer. One runtime dependency: `better-sqlite3`.
 

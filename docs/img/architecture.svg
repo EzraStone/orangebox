@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 400" width="900" height="400" role="img" aria-label="Architecture: your agent points at orangebox, which proxies to the provider while teeing a copy into SQLite and serving the UI">
+  <defs>
+    <style>
+      .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .sans { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      .lbl { font-size: 9.5px; letter-spacing: 1.2px; }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#3C4148"/>
+    </marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#E8490F"/>
+    </marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2E5490"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="400" fill="#ECEEEA"/>
+
+  <!-- your agent -->
+  <rect x="290" y="20" width="320" height="60" rx="4" fill="#F7F9F5" stroke="#C7CCC4"/>
+  <text class="sans" x="450" y="43" text-anchor="middle" font-size="13" font-weight="600" fill="#1A1D21">your agent — any language, any framework</text>
+  <text class="mono" x="450" y="63" text-anchor="middle" font-size="10" fill="#787F88">ANTHROPIC_BASE_URL=http://127.0.0.1:4100/anthropic</text>
+
+  <line x1="450" y1="80" x2="450" y2="108" stroke="#3C4148" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <!-- orangebox process -->
+  <rect x="70" y="110" width="760" height="200" rx="5" fill="#F7F9F5" stroke="#1A1D21" stroke-width="1.5"/>
+  <text class="mono lbl" x="88" y="130" fill="#E8490F">ORANGEBOX · ONE NODE PROCESS · PORT 4100</text>
+
+  <!-- proxy -->
+  <rect x="100" y="146" width="150" height="54" rx="4" fill="#E8490F"/>
+  <text class="sans" x="175" y="169" text-anchor="middle" font-size="12" font-weight="600" fill="#FFF7F2">proxy</text>
+  <text class="mono" x="175" y="187" text-anchor="middle" font-size="9" fill="#FFD2BF">write-through</text>
+
+  <!-- tee -->
+  <line x1="250" y1="173" x2="336" y2="173" stroke="#E8490F" stroke-width="1.4" marker-end="url(#ao)"/>
+  <text class="mono" x="293" y="166" text-anchor="middle" font-size="9" fill="#C23A08">tee</text>
+
+  <!-- parser -->
+  <rect x="338" y="146" width="150" height="54" rx="4" fill="#F7F9F5" stroke="#C7CCC4"/>
+  <text class="sans" x="413" y="169" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1D21">parser</text>
+  <text class="mono" x="413" y="187" text-anchor="middle" font-size="9" fill="#787F88">normalize + redact</text>
+
+  <line x1="488" y1="173" x2="574" y2="173" stroke="#3C4148" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <!-- sqlite -->
+  <rect x="576" y="146" width="150" height="54" rx="4" fill="#F7F9F5" stroke="#C7CCC4"/>
+  <text class="sans" x="651" y="169" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1D21">SQLite</text>
+  <text class="mono" x="651" y="187" text-anchor="middle" font-size="9" fill="#787F88">~/.orangebox/</text>
+
+  <!-- api + ui -->
+  <line x1="651" y1="200" x2="651" y2="236" stroke="#3C4148" stroke-width="1.4" marker-end="url(#a)"/>
+  <rect x="540" y="238" width="222" height="52" rx="4" fill="#F7F9F5" stroke="#2E5490"/>
+  <text class="sans" x="651" y="260" text-anchor="middle" font-size="12" font-weight="600" fill="#2E5490">JSON API + live SSE + UI</text>
+  <text class="mono" x="651" y="278" text-anchor="middle" font-size="9" fill="#787F88">http://127.0.0.1:4100</text>
+
+  <line x1="540" y1="264" x2="466" y2="264" stroke="#2E5490" stroke-width="1.4" marker-end="url(#ab)"/>
+  <rect x="316" y="238" width="148" height="52" rx="4" fill="#F7F9F5" stroke="#C7CCC4"/>
+  <text class="sans" x="390" y="260" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1D21">your browser</text>
+  <text class="mono" x="390" y="278" text-anchor="middle" font-size="9" fill="#787F88">timeline · diff · export</text>
+
+  <!-- pass-through down to upstream -->
+  <line x1="175" y1="200" x2="175" y2="336" stroke="#E8490F" stroke-width="1.4" marker-end="url(#ao)"/>
+  <text class="mono" x="186" y="248" font-size="9" fill="#C23A08">bytes, unmodified</text>
+
+  <rect x="70" y="338" width="210" height="46" rx="4" fill="#F7F9F5" stroke="#C7CCC4"/>
+  <text class="mono" x="175" y="360" text-anchor="middle" font-size="10.5" fill="#1A1D21">api.anthropic.com</text>
+  <text class="mono" x="175" y="376" text-anchor="middle" font-size="10.5" fill="#1A1D21">api.openai.com</text>
+
+  <!-- annotation -->
+  <text class="mono" x="830" y="360" text-anchor="end" font-size="9.5" fill="#787F88">the only outbound connections orangebox ever makes,</text>
+  <text class="mono" x="830" y="376" text-anchor="end" font-size="9.5" fill="#787F88">and only in response to a request you proxied.</text>
+</svg>
