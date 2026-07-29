@@ -42,11 +42,40 @@ const STRIP_FROM_RESPONSE = new Set([...HOP_BY_HOP, 'content-encoding']);
 
 const RUN_HEADER = 'x-orangebox-run-id';
 
+/**
+ * §13 — recording happens after the client has its bytes, but "off the hot
+ * path" is not the same as "free". Reassembling a 1 MB transcript, serializing
+ * it, and writing it are each a contiguous synchronous span, and fifty streams
+ * finishing together would stack fifty of them into one ~1 s stall — which
+ * shows up as inter-chunk latency on every *other* stream still in flight.
+ *
+ * So recording is a FIFO of one job at a time that yields to the loop between
+ * jobs. Peak event-loop lag becomes one call's work instead of fifty, and
+ * better-sqlite3 gets the serialized writer it wants anyway.
+ */
+function createRecordQueue() {
+  let tail = Promise.resolve();
+  return {
+    push(job) {
+      const run = tail.then(async () => {
+        try {
+          await job();
+        } finally {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+      });
+      tail = run.catch(() => {});
+      return run;
+    }
+  };
+}
+
 export function createProxy({ store, live, pricing, gapSeconds, providers }) {
+  const ctx = { store, live, pricing, gapSeconds, providers, recorder: createRecordQueue() };
   return {
     async handle(req, res, route) {
       try {
-        await proxyCall({ store, live, pricing, gapSeconds, providers }, req, res, route);
+        await proxyCall(ctx, req, res, route);
       } catch (err) {
         // A bug in the recorder must never take down the agent's request.
         if (!res.headersSent) {
@@ -217,10 +246,13 @@ async function relayStream(ctx, opts) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const buf = Buffer.from(value);
-        chunks.push(buf);
+        // Keep undici's chunk as-is. Buffer.from() would copy every chunk —
+        // 50 MB of pointless memcpy across fifty 1 MB streams — and undici
+        // never hands the same Uint8Array back twice. Buffer.concat takes
+        // them directly at the end.
+        chunks.push(value);
 
-        if (firstTokenAt === null && detector.sees(buf)) {
+        if (firstTokenAt === null && detector.sees(value)) {
           firstTokenAt = Date.now();
           live.publish('call.first_token', {
             call_id: base.id,
@@ -245,46 +277,52 @@ async function relayStream(ctx, opts) {
   const endedAt = Date.now();
   if (!res.writableEnded) res.end();
 
-  // §06.3 — fold the captured transcript back into a canonical response object.
-  const responseText = Buffer.concat(chunks).toString('utf8');
+  // Reassembly is the expensive part, so it happens inside the queued job
+  // rather than here, where it would compete with other live streams.
+  await persist(ctx, {
+    ...base,
+    streamed: 1,
+    status: upstream.status,
+    error_type: null, // decided during reassembly
+    first_token_at: firstTokenAt,
+    ended_at: endedAt,
+    requestBody,
+    requestJson,
+    overCap,
+    responseChunks: chunks,
+    upstreamOk: upstream.ok,
+    upstreamStatus: upstream.status,
+    streamOutcome: { clientAborted, streamError },
+    requestHeaders: req.headers,
+    parser
+  });
+}
+
+/** §06.3 — fold a captured transcript back into a canonical response object. */
+function foldStream(parser, responseText, { clientAborted, streamError }, upstreamOk, upstreamStatus) {
   const { response, error: sseError } = parser.reassembleStream(responseText);
 
   const errorType = clientAborted
     ? 'client_aborted'
     : streamError || sseError
       ? 'upstream_stream_error'
-      : upstream.ok
+      : upstreamOk
         ? null
-        : `http_${upstream.status}`;
+        : `http_${upstreamStatus}`;
 
-  let responseJson = null;
-  if (response) {
-    responseJson = {
-      ...response,
-      _orangebox: {
-        reassembled_from_stream: true,
-        ...(clientAborted || streamError ? { partial: true } : {}),
-        ...(sseError ? { stream_error: sseError } : {}),
-        ...(streamError ? { transport_error: String(streamError?.message ?? streamError) } : {})
+  const responseJson = response
+    ? {
+        ...response,
+        _orangebox: {
+          reassembled_from_stream: true,
+          ...(clientAborted || streamError ? { partial: true } : {}),
+          ...(sseError ? { stream_error: sseError } : {}),
+          ...(streamError ? { transport_error: String(streamError?.message ?? streamError) } : {})
+        }
       }
-    };
-  }
+    : null;
 
-  await persist(ctx, {
-    ...base,
-    streamed: 1,
-    status: upstream.status,
-    error_type: errorType,
-    first_token_at: firstTokenAt,
-    ended_at: endedAt,
-    requestBody,
-    requestJson,
-    overCap,
-    responseText,
-    responseJson,
-    requestHeaders: req.headers,
-    parser
-  });
+  return { responseJson, errorType };
 }
 
 /**
@@ -294,13 +332,14 @@ async function relayStream(ctx, opts) {
  */
 function makeFirstTokenDetector(provider) {
   const SCAN_LIMIT = 64 * 1024;
+  const decoder = new TextDecoder('utf-8', { fatal: false });
   let pending = '';
   let done = false;
 
   return {
     sees(chunk) {
       if (done) return false;
-      pending += chunk.toString('utf8');
+      pending += decoder.decode(chunk, { stream: true });
 
       for (const frame of parseSseFrames(pending)) {
         if (frame.data === '[DONE]') continue;
@@ -331,15 +370,48 @@ function makeFirstTokenDetector(provider) {
 
 // ============================================================== persistence
 
+/** Queue the record; the caller awaits its turn but the client already has its bytes. */
+function persist(ctx, input) {
+  return ctx.recorder.push(() => writeRecord(ctx, input));
+}
+
 /**
  * Build the normalized call record (§7.1) and commit it with its tool events in
  * one transaction (§09). Runs after the client response is finished.
  */
-async function persist(ctx, input) {
+async function writeRecord(ctx, input) {
   const { store, live, pricing } = ctx;
-  const { parser, requestJson, responseJson, responseText, requestHeaders, overCap } = input;
+  const { parser, requestJson, requestHeaders, overCap } = input;
+
+  // Streamed calls arrive here as raw chunks so the fold happens on the queue.
+  let { responseJson, responseText } = input;
+  let errorType = input.error_type ?? null;
+  if (input.responseChunks) {
+    responseText = Buffer.concat(input.responseChunks).toString('utf8');
+    input.responseChunks.length = 0; // release the capture buffers promptly
+    const folded = foldStream(
+      parser,
+      responseText,
+      input.streamOutcome,
+      input.upstreamOk,
+      input.upstreamStatus
+    );
+    responseJson = folded.responseJson;
+    errorType = folded.errorType;
+  }
 
   const extracted = responseJson ? parser.parseResponse(responseJson) : null;
+
+  // Tool payloads are extracted (and cloned) before the blobs are stripped in
+  // place below, so the two never fight over the same sub-objects.
+  const toolEvents = buildToolEvents({
+    store,
+    parser,
+    runId: input.run_id,
+    callId: input.id,
+    requestJson,
+    responseJson
+  });
 
   const requestBlob = buildRequestBlob({ requestJson, requestHeaders, input });
   const responseBlob = buildResponseBlob({ responseJson, responseText });
@@ -360,7 +432,7 @@ async function persist(ctx, input) {
     // §7.1: prefer the response's model — it names the snapshot actually served.
     model: extracted?.model ?? input.model ?? null,
     status: input.status ?? null,
-    error_type: input.error_type ?? null,
+    error_type: errorType,
     streamed: input.streamed ?? 0,
     started_at: input.started_at,
     first_token_at: input.first_token_at ?? null,
@@ -379,8 +451,6 @@ async function persist(ctx, input) {
   };
 
   call.cost_usd = pricing.costFor(call);
-
-  const toolEvents = buildToolEvents({ store, parser, call, requestJson, responseJson });
 
   try {
     store.insertCall(call, toolEvents);
@@ -407,12 +477,15 @@ function buildRequestBlob({ requestJson, requestHeaders, input }) {
     const raw = input.requestBody?.toString('utf8') ?? '';
     return { _orangebox: { ...meta, unparsed: true }, body: raw };
   }
-  return { ...stripBase64(structuredClone(requestJson)), _orangebox: meta };
+  // Stripped in place: this object came out of JSON.parse on a buffer we own
+  // and nothing else holds a reference, so cloning a multi-megabyte payload
+  // just to mutate the copy is pure cost (§13).
+  return { ...stripBase64(requestJson), _orangebox: meta };
 }
 
 function buildResponseBlob({ responseJson, responseText }) {
   if (responseJson !== null && responseJson !== undefined) {
-    return stripBase64(structuredClone(responseJson));
+    return stripBase64(responseJson); // ours alone, same reasoning as above
   }
   if (typeof responseText === 'string' && responseText !== '') {
     return { _orangebox: { unparsed: true }, body: responseText };
@@ -421,28 +494,28 @@ function buildResponseBlob({ responseJson, responseText }) {
 }
 
 /** §7.4 — tool_use from this response, plus any tool_result not yet recorded for the run. */
-function buildToolEvents({ store, parser, call, requestJson, responseJson }) {
+function buildToolEvents({ store, parser, runId, callId, requestJson, responseJson }) {
   const events = [];
 
   for (const use of responseJson ? parser.extractToolUses(responseJson) : []) {
-    events.push(toolRow(call, 'tool_use', use));
+    events.push(toolRow(runId, callId, 'tool_use', use));
   }
 
-  const alreadyRecorded = store.recordedToolResultIds(call.run_id);
+  const alreadyRecorded = store.recordedToolResultIds(runId);
   for (const result of requestJson ? parser.extractToolResults(requestJson) : []) {
     if (result.tool_use_id && alreadyRecorded.has(result.tool_use_id)) continue;
     if (result.tool_use_id) alreadyRecorded.add(result.tool_use_id);
-    events.push(toolRow(call, 'tool_result', result));
+    events.push(toolRow(runId, callId, 'tool_result', result));
   }
 
   return events;
 }
 
-function toolRow(call, kind, event) {
+function toolRow(runId, callId, kind, event) {
   return {
     id: newId(),
-    run_id: call.run_id,
-    call_id: call.id,
+    run_id: runId,
+    call_id: callId,
     kind,
     tool_name: event.tool_name ?? null,
     tool_use_id: event.tool_use_id ?? null,

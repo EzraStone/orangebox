@@ -11,7 +11,11 @@ export function parseSseFrames(text) {
   const frames = [];
   if (typeof text !== 'string' || text === '') return frames;
 
-  for (const block of text.replace(/\r\n/g, '\n').split(/\n\n+/)) {
+  // Rewriting CRLF costs a full copy of the transcript; skip it when there is
+  // nothing to rewrite, which is the common case (§13).
+  const normalized = text.includes('\r') ? text.replace(/\r\n/g, '\n') : text;
+
+  for (const block of normalized.split(/\n\n+/)) {
     let event = null;
     const dataLines = [];
 
