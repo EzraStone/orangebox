@@ -1,0 +1,11 @@
+# Keep LF in the repo and in working trees on every platform. Without this,
+# core.autocrlf=true on Windows rewrites checked-out files and tests stop
+# behaving the same way they do on Linux.
+* text=auto eol=lf
+
+# Recorded SSE transcripts are wire-format data, not prose. CRLF conversion
+# changes what they mean: frames are delimited by a blank line, so turning
+# "\n\n" into "\r\n\r\n" makes a splitter looking for "\n\n" see one giant
+# frame instead of twelve. That is exactly how a Windows checkout broke the
+# client-abort test while every Linux run stayed green.
+*.sse -text

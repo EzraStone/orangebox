@@ -21,8 +21,14 @@ import {
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const fixture = (name) => fs.readFileSync(path.join(FIXTURES, name), 'utf8');
 
-/** Split a transcript into its wire frames, so the mock can dribble them out. */
-const frames = (text) => text.split(/(?<=\n\n)/).filter(Boolean);
+/**
+ * Split a transcript into its wire frames, so the mock can dribble them out.
+ * Tolerates CRLF: a checkout that rewrote the fixtures would otherwise yield a
+ * single frame containing everything, which silently turns every streaming test
+ * into a non-streaming one. `.gitattributes` should prevent that; this makes
+ * sure a slip there fails loudly instead of quietly changing what is tested.
+ */
+const frames = (text) => text.split(/(?<=\r?\n\r?\n)/).filter(Boolean);
 
 async function withRig(handler, run, { gapSeconds = 120 } = {}) {
   const upstream = await startMockUpstream(handler);
