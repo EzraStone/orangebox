@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/EzraStone/orangebox/releases"><img src="https://img.shields.io/github/v/tag/EzraStone/orangebox?label=version&color=E8490F" alt="Latest version"></a>
   <a href="https://github.com/EzraStone/orangebox/actions/workflows/ci.yml"><img src="https://github.com/EzraStone/orangebox/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3FB868" alt="Node 20 or newer">
   <img src="https://img.shields.io/badge/dependencies-1-E8490F" alt="One runtime dependency">
@@ -52,7 +53,9 @@ Prefer not to touch environment variables? Let orangebox set them for you, and g
 npx -y github:EzraStone/orangebox run --name "checkout bot" -- node agent.js
 ```
 
-> **Not on npm yet.** That is why the commands read `github:EzraStone/orangebox` rather than the shorter `npx orangebox`. Installing from GitHub works today; once the package is published, the short form will work too and these will keep working.
+> **Not on npm yet**, which is why the commands read `github:EzraStone/orangebox`. Installing from GitHub works today and will keep working.
+>
+> The npm name `orangebox` belongs to an unrelated package abandoned in 2016, so the published name will be **`orangebox-ai`** (§18.2's first fallback) — `npx orangebox-ai`. The command it installs stays `orangebox` either way.
 
 ## Who this is for
 
