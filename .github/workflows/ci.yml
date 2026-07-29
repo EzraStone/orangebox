@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   test:
     name: node ${{ matrix.node }} · ${{ matrix.os }}
@@ -45,12 +49,15 @@ jobs:
           set -o pipefail
           npm test 2>&1 | tee test-output.txt
 
-      # Job logs need a token to read through the API, which makes a red run
-      # opaque to anything but a human with a browser. Put the tail of the
-      # failure in the job summary, where it is readable without one.
+      # Job logs and artifacts both need a token to read through the API, and
+      # job summaries do not appear in check-run output — which leaves a red run
+      # undiagnosable by anything but a human with a browser session. A check
+      # run's output *is* readable unauthenticated, so publish the failure there.
       - name: Surface the failure
         if: failure()
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           {
             echo "### \`npm test\` failed on ${{ matrix.os }} / node ${{ matrix.node }}"
@@ -59,6 +66,16 @@ jobs:
             tail -c 8000 test-output.txt || echo "(no test output captured)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+          jq -n \
+            --arg name "test output · ${{ matrix.os }} · node ${{ matrix.node }}" \
+            --arg sha "$GITHUB_SHA" \
+            --rawfile body test-output.txt \
+            '{name: $name, head_sha: $sha, status: "completed", conclusion: "neutral",
+              output: {title: "npm test output", summary: ("```\n" + $body + "\n```")}}' \
+            > check-payload.json
+          gh api "repos/$GITHUB_REPOSITORY/check-runs" --input check-payload.json > /dev/null \
+            || echo "could not publish check run (continuing)"
 
       - name: Upload test output
         if: failure()
