@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 250" width="900" height="250" role="img" aria-label="orangebox — flight data recorder for the agent you're building">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 160" width="900" height="160" role="img" aria-label="orangebox — flight data recorder for the agent you're building">
   <defs>
     <style>
       .disp { font-family: "IBM Plex Sans Condensed", "Arial Narrow", Helvetica, Arial, sans-serif; }
@@ -7,36 +7,12 @@
   </defs>
 
   <!-- riveted data plate, the way real flight recorders are labelled -->
-  <rect x="0" y="0" width="900" height="250" rx="8" fill="#E8490F"/>
-  <rect x="5.5" y="5.5" width="889" height="239" rx="5" fill="none" stroke="#FFFFFF" stroke-opacity=".3" stroke-width="1"/>
-  <rect x="11.5" y="11.5" width="877" height="227" rx="3" fill="none" stroke="#FFFFFF" stroke-opacity=".28" stroke-width="1"/>
+  <rect x="0" y="0" width="900" height="160" rx="8" fill="#E8490F"/>
+  <rect x="5.5" y="5.5" width="889" height="149" rx="5" fill="none" stroke="#FFFFFF" stroke-opacity=".3" stroke-width="1"/>
+  <rect x="11.5" y="11.5" width="877" height="137" rx="3" fill="none" stroke="#FFFFFF" stroke-opacity=".28" stroke-width="1"/>
 
   <text class="mono" x="868" y="42" text-anchor="end" font-size="10.5" letter-spacing="2.2" fill="#FFF7F2" fill-opacity=".85">●  UNIT DATA PLATE  ●</text>
 
   <text class="disp" x="40" y="104" font-size="62" font-weight="700" letter-spacing=".5" fill="#FFF7F2">orangebox</text>
   <text class="disp" x="42" y="132" font-size="17" font-weight="600" letter-spacing="1.6" fill="#FFE0D2">FLIGHT DATA RECORDER FOR THE AGENT YOU'RE BUILDING</text>
-
-  <!-- spec fields -->
-  <g>
-    <rect x="40" y="160" width="820" height="56" fill="none" stroke="#FFFFFF" stroke-opacity=".35"/>
-    <line x1="204" y1="160" x2="204" y2="216" stroke="#FFFFFF" stroke-opacity=".35"/>
-    <line x1="368" y1="160" x2="368" y2="216" stroke="#FFFFFF" stroke-opacity=".35"/>
-    <line x1="532" y1="160" x2="532" y2="216" stroke="#FFFFFF" stroke-opacity=".35"/>
-    <line x1="696" y1="160" x2="696" y2="216" stroke="#FFFFFF" stroke-opacity=".35"/>
-
-    <text class="mono" x="54" y="180" font-size="9" letter-spacing="1.5" fill="#FFD2BF">TYPE</text>
-    <text class="mono" x="54" y="202" font-size="12.5" font-weight="600" fill="#FFF7F2">LOCAL PROXY + UI</text>
-
-    <text class="mono" x="218" y="180" font-size="9" letter-spacing="1.5" fill="#FFD2BF">RUNTIME</text>
-    <text class="mono" x="218" y="202" font-size="12.5" font-weight="600" fill="#FFF7F2">NODE ≥ 20</text>
-
-    <text class="mono" x="382" y="180" font-size="9" letter-spacing="1.5" fill="#FFD2BF">DEPS</text>
-    <text class="mono" x="382" y="202" font-size="12.5" font-weight="600" fill="#FFF7F2">ONE (sqlite)</text>
-
-    <text class="mono" x="546" y="180" font-size="9" letter-spacing="1.5" fill="#FFD2BF">TELEMETRY</text>
-    <text class="mono" x="546" y="202" font-size="12.5" font-weight="600" fill="#FFF7F2">NONE — EVER</text>
-
-    <text class="mono" x="710" y="180" font-size="9" letter-spacing="1.5" fill="#FFD2BF">LICENSE</text>
-    <text class="mono" x="710" y="202" font-size="12.5" font-weight="600" fill="#FFF7F2">MIT</text>
-  </g>
 </svg>

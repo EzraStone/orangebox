@@ -7,3 +7,7 @@ node_modules/
 orangebox-run-*.json
 .DS_Store
 .tmp/
+
+# Local-only demo rig: starts a fake provider so the whole thing can be tried
+# with no API key. Deliberately not shipped — kept out of the repo on purpose.
+examples/demo-offline.mjs

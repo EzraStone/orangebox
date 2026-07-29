@@ -28,7 +28,6 @@ change is wrong.
 | `src/pricing.*` | Rate table and longest-prefix lookup. |
 | `ui/` | The web UI. No framework, no build step, no third-party anything. |
 | `examples/demo-agent.mjs` | Scripted agent producing the canonical three-call run. Needs a real `ANTHROPIC_API_KEY`. |
-| `examples/demo-offline.mjs` | The same shape against a fake provider — no key, no network. Start here. |
 | `docs/` | The published website (GitHub Pages serves this folder). |
 
 `docs/spec.html` is a **copy** of the canonical `orangebox-spec.html` at the
@@ -36,8 +35,13 @@ repo root, because Pages can only serve what is inside `docs/`. Edit the root
 file, then run `npm run docs:sync` so the published copy matches. Preview the
 site locally with `npm run docs:serve`.
 
-The four SVGs in `docs/img/` are hand-drawn to match the real UI and are used by
-both the README and the website; if the UI's look changes, they need updating.
+The SVGs in `docs/img/` are hand-drawn to match the real UI and are shared by the
+README and the website; if the UI's look changes, they need redrawing. `demo.svg`
+is the animated one — a CSS-driven 18 s loop standing in for a screen capture.
+Two rules keep it working: XML forbids `--` inside a comment (a `<!-- ---- -->`
+rule silently breaks the whole file when loaded as an `<img>`, which is how
+GitHub renders it), and every reveal shares one 18 s cycle so the storyboard
+stays in step.
 
 The full build specification is [`orangebox-spec.html`](orangebox-spec.html).
 Section references in code comments (`§06.3`, `§14.2`) point into it.
@@ -58,29 +62,6 @@ Section references in code comments (`§06.3`, `§14.2`) point into it.
 - **No telemetry, ever.** Not a version check, not an anonymous ping. Ever.
 
 ## Manual probes
-
-### Without an API key
-
-`node examples/demo-offline.mjs` starts a fake provider, points orangebox at it,
-and seeds two runs. Because it is a *real* proxy pointed at a *fake* provider,
-every probe below works against it — swap the model name to pick the response:
-
-| Model contains | Fake provider returns |
-| --- | --- |
-| `429` | 429 `rate_limit_error` with `retry-after` |
-| `500` | 500 `api_error` |
-| `slow` | a normal reply after 3 s |
-| `die` | a few SSE frames, then an `error` event |
-| anything, `"stream": true` | server-sent events |
-
-```bash
-# recorded as http_429, relayed to the client verbatim
-curl -s -D - -o /dev/null http://127.0.0.1:4100/anthropic/v1/messages \
-  -H 'content-type: application/json' \
-  -d '{"model":"claude-opus-5-429","max_tokens":16,"messages":[]}'
-```
-
-### Against the real providers
 
 Start the recorder first:
 

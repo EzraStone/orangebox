@@ -22,12 +22,12 @@ Point your agent at a local port and press play. orangebox records every LLM API
 
 *Aircraft black boxes are painted international orange so they can be found. Same idea: when your agent crashes, the evidence should survive.*
 
-<!-- The figures below are drawn to scale from real recorded runs. A screen-capture
-     GIF (§18.1: ~1280x720, under 15 MB, loop under 25 s) would still be better
-     above the fold and is the one launch asset not yet made. -->
+<!-- §18.1 asks for a screen-capture GIF above the fold. This is an animated SVG
+     standing in: it loops, weighs 11 KB instead of 15 MB, stays diffable in git,
+     and falls back to a still frame under prefers-reduced-motion. -->
 
 <p align="center">
-  <img src="docs/img/timeline.svg" width="900" alt="The orangebox UI: a runs list on the left, and a timeline of three calls — a planning call, a tool-loop call with two tool chips and a 2.1 second client-side gap, and a streaming call with a time-to-first-token of 108 milliseconds.">
+  <img src="docs/img/demo.svg" width="900" alt="An 18-second loop: starting orangebox in a terminal, running an agent, and watching three calls appear on the timeline — a plan, a tool loop with a client-side gap, and a streamed synthesis with a 108 millisecond time to first token.">
 </p>
 
 ---
@@ -54,17 +54,6 @@ npx -y github:EzraStone/orangebox run --name "checkout bot" -- node agent.js
 
 > **Not on npm yet.** That is why the commands read `github:EzraStone/orangebox` rather than the shorter `npx orangebox`. Installing from GitHub works today; once the package is published, the short form will work too and these will keep working.
 
-### No API key? See it working anyway
-
-```bash
-git clone https://github.com/EzraStone/orangebox && cd orangebox && npm install
-node examples/demo-offline.mjs
-```
-
-That starts a fake provider on loopback, points orangebox at it, seeds two realistic runs — a plan → tool-loop → streamed-synthesis run and a retry storm — then stays up so you can explore the UI and curl the proxy yourself. No API key, no network, and a throwaway database that never touches `~/.orangebox`.
-
-The fake provider reacts to the model name, so you can exercise the failure paths on demand: `claude-opus-5-429`, `-500`, `-slow`, `-die`.
-
 ## Who this is for
 
 **orangebox records the agent you are building, not the agent CLI you are using.**
@@ -84,6 +73,10 @@ Same mechanism, different target. Pick the one aimed at your problem.
 ## What you get
 
 **A timeline of the whole run.** Every call in order, with latency, token counts, stop reason, and estimated cost. A 40-second tool gap or a 3× retry storm is visible without reading anything.
+
+<p align="center">
+  <img src="docs/img/timeline.svg" width="900" alt="The orangebox UI: a runs list on the left, and a timeline of three calls — a planning call, a tool-loop call with two tool chips and a 2.1 second client-side gap, and a streaming call with a time-to-first-token of 108 milliseconds.">
+</p>
 
 **The exact prompt the model saw.** Click any call and read the full message history at that moment — system prompt, every turn, tool results injected — as the model received it, not as you think you assembled it.
 
