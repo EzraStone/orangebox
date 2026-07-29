@@ -393,6 +393,81 @@ pre.payload.clamped {
 .legend { display: flex; gap: 14px; font-size: 11px; color: var(--muted); margin-bottom: 14px; }
 .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
 
+/* ----------------------------------------------------------- §21.3 diff */
+
+.diffbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.diff-label { font-size: 11px; color: var(--muted); }
+
+.sel {
+  font: inherit;
+  font-size: 11.5px;
+  font-family: var(--mono);
+  color: var(--text);
+  background: var(--panel-hi);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 6px;
+  max-width: 190px;
+}
+
+.segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg { padding: 3px 9px; font-size: 11px; color: var(--muted); }
+.seg[aria-pressed="true"] { background: var(--panel-hi); color: var(--text); }
+
+.diffhead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding-bottom: 7px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.diff-from { color: #f4a9ab; }
+.diff-to { color: #86d9a5; }
+.diff-count { color: var(--muted); }
+
+.diff {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #15181d;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.diff-line { display: flex; white-space: pre; }
+.diff-gutter {
+  flex: 0 0 18px;
+  text-align: center;
+  color: var(--muted);
+  user-select: none;
+  border-right: 1px solid #22252b;
+}
+.diff-text { padding: 0 10px; }
+.diff-line.same { color: #8d949c; }
+/* Marked with a +/- gutter as well as a tint — color is never the only signal. */
+.diff-line.add { background: rgba(63, 184, 104, 0.1); color: #b9ecc9; }
+.diff-line.add .diff-gutter { color: var(--ok); }
+.diff-line.del { background: rgba(229, 72, 77, 0.1); color: #f4c2c4; }
+.diff-line.del .diff-gutter { color: var(--err); }
+
+.diff-skip {
+  padding: 3px 10px 3px 28px;
+  color: var(--muted);
+  background: #191c22;
+  border-top: 1px solid #22252b;
+  border-bottom: 1px solid #22252b;
+  font-size: 10.5px;
+}
+
 /* ------------------------------------------------------------- overlays */
 
 .btn {

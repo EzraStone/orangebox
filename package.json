@@ -1,7 +1,7 @@
 {
   "name": "orangebox",
   "version": "1.0.0",
-  "description": "Flight data recorder for AI agents — a zero-config local proxy that records every LLM API call into SQLite and renders each run as a visual timeline.",
+  "description": "Flight data recorder for the AI agent you're building — a zero-config local proxy that records every LLM API call your own agent code makes into SQLite, and renders each run as a visual timeline you can diff and export.",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "start": "node bin/orangebox.mjs",
-    "test": "node --test test/parse.test.mjs test/store.test.mjs test/proxy.test.mjs"
+    "test": "node --test test/parse.test.mjs test/store.test.mjs test/proxy.test.mjs test/diff.test.mjs"
   },
   "keywords": [
     "llm",

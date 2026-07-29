@@ -1,6 +1,7 @@
 // §11 — the web UI. Vanilla ES modules, no framework, no build step, no
 // third-party anything. Every piece of recorded content is inserted with
 // textContent; a prompt containing markup renders inert (§12.3).
+import { diffLines, collapseUnchanged, diffStats } from '/diff.js';
 
 // ============================================================ dom helpers
 
@@ -84,8 +85,22 @@ const state = {
   call: null, // full row, lazily fetched
   tab: 'conversation',
   follow: true,
-  online: true
+  online: true,
+  // §21.3 diff: which call we are comparing against, and on which side.
+  diff: { runId: null, callId: null, side: 'request', runCalls: null, runCallsFor: null, call: null, busy: false }
 };
+
+function resetDiff() {
+  state.diff = {
+    runId: null,
+    callId: null,
+    side: state.diff?.side ?? 'request',
+    runCalls: null,
+    runCallsFor: null,
+    call: null,
+    busy: false
+  };
+}
 
 const api = {
   async get(path) {
@@ -170,6 +185,7 @@ function selectRun(runId, { fromNav = false } = {}) {
 
 async function selectCall(callId, { open = true } = {}) {
   state.callId = callId;
+  resetDiff(); // the baseline is relative to the selected call
   renderTimeline();
   if (!open) return;
 
@@ -184,6 +200,7 @@ async function selectCall(callId, { open = true } = {}) {
     state.call = null;
   }
   renderDetail();
+  if (state.tab === 'diff') void prepareDiff();
 }
 
 function closeDetail() {
@@ -432,6 +449,7 @@ const TABS = [
   ['conversation', 'Conversation'],
   ['request', 'Request'],
   ['response', 'Response'],
+  ['diff', 'Diff'],
   ['timing', 'Timing']
 ];
 
@@ -464,6 +482,7 @@ function renderDetail() {
           click: () => {
             state.tab = id;
             renderDetail();
+            if (id === 'diff') void prepareDiff();
           }
         }
       })
@@ -485,6 +504,7 @@ function renderDetail() {
   if (state.tab === 'conversation') panel.append(...conversationView(call));
   else if (state.tab === 'request') panel.append(payloadView(call.request_json));
   else if (state.tab === 'response') panel.append(payloadView(call.response_json));
+  else if (state.tab === 'diff') panel.append(...diffView(call));
   else panel.append(...timingView(call, summary));
 }
 
@@ -683,6 +703,215 @@ function payloadView(json) {
     el('div', { class: 'legend' }, [copy]),
     el('pre', { class: 'payload', text: pretty })
   ]);
+}
+
+// ============================================================== diff view
+
+/** Default baseline: the call before this one, or the same seq in another run. */
+function defaultBaselineId(runCalls, runId) {
+  if (runId === state.runId) {
+    const index = runCalls.findIndex((c) => c.id === state.callId);
+    return index > 0 ? runCalls[index - 1].id : null;
+  }
+  const seq = state.calls.find((c) => c.id === state.callId)?.seq;
+  const match = runCalls.find((c) => c.seq === seq) ?? runCalls[runCalls.length - 1];
+  return match?.id ?? null;
+}
+
+async function prepareDiff() {
+  const d = state.diff;
+  if (d.busy) return;
+  d.busy = true;
+  const forCall = state.callId;
+
+  try {
+    const runId = d.runId ?? state.runId;
+    d.runId = runId;
+
+    if (d.runCallsFor !== runId) {
+      d.runCalls =
+        runId === state.runId ? state.calls : (await api.get(`/api/runs/${encodeURIComponent(runId)}`)).calls;
+      d.runCallsFor = runId;
+    }
+
+    if (d.callId === null) d.callId = defaultBaselineId(d.runCalls, runId);
+
+    if (d.callId && d.call?.id !== d.callId) {
+      d.call = (await api.get(`/api/calls/${encodeURIComponent(d.callId)}`)).call;
+    } else if (!d.callId) {
+      d.call = null;
+    }
+  } catch {
+    d.call = null;
+  } finally {
+    d.busy = false;
+  }
+
+  if (state.callId === forCall && state.tab === 'diff') renderDetail();
+}
+
+function diffView(call) {
+  const d = state.diff;
+  const out = [el('div', { class: 'diffbar' }, diffControls())];
+
+  if (d.busy && !d.call) {
+    out.push(el('p', { class: 'note', text: 'Loading baseline…' }));
+    return out;
+  }
+  if (!d.callId) {
+    out.push(
+      el('p', {
+        class: 'note',
+        text: 'This is the first call in the run, so there is nothing before it to compare against. Pick a baseline above — another call, or the same position in a different run.'
+      })
+    );
+    return out;
+  }
+  if (!d.call) {
+    out.push(el('p', { class: 'note', text: 'Baseline call could not be loaded.' }));
+    return out;
+  }
+
+  const field = d.side === 'response' ? 'response_json' : 'request_json';
+  const baseText = tryPretty(d.call[field] ?? '');
+  const thisText = tryPretty(call[field] ?? '');
+
+  if (!d.call[field] && !call[field]) {
+    out.push(el('p', { class: 'note', text: `Neither call recorded a ${d.side}.` }));
+    return out;
+  }
+
+  const ops = diffLines(baseText.split('\n'), thisText.split('\n'));
+  const { added, removed, identical } = diffStats(ops);
+
+  const baseSummary = d.runCalls?.find((c) => c.id === d.callId);
+  const baseLabel =
+    (d.runId === state.runId ? '' : `${runName(d.runId)} · `) +
+    `call ${String(baseSummary?.seq ?? '?').padStart(2, '0')}`;
+
+  out.push(
+    el('div', { class: 'diffhead' }, [
+      el('span', { class: 'diff-from', text: `− ${baseLabel}` }),
+      el('span', { class: 'diff-to', text: `+ this call` }),
+      el('span', { class: 'spacer' }),
+      identical
+        ? el('span', { class: 'chip', text: 'identical' })
+        : el('span', { class: 'num diff-count', text: `+${added} −${removed} lines` })
+    ])
+  );
+
+  if (identical) {
+    out.push(
+      el('p', {
+        class: 'note',
+        text: `The two ${d.side}s are byte-identical after pretty-printing. If you expected a change, it is not in this payload.`
+      })
+    );
+    return out;
+  }
+
+  const body = el('div', { class: 'diff' });
+  for (const op of collapseUnchanged(ops)) {
+    if (op.t === 'skip') {
+      body.append(el('div', { class: 'diff-skip', text: `⋯ ${op.count} unchanged lines` }));
+      continue;
+    }
+    const cls = op.t === '+' ? 'add' : op.t === '-' ? 'del' : 'same';
+    body.append(
+      el('div', { class: `diff-line ${cls}` }, [
+        el('span', { class: 'diff-gutter', text: op.t === '=' ? ' ' : op.t }),
+        el('span', { class: 'diff-text', text: op.text })
+      ])
+    );
+  }
+  out.push(body);
+  return out;
+}
+
+function runName(runId) {
+  const run = state.runs.find((r) => r.id === runId);
+  return run?.name || runId;
+}
+
+function diffControls() {
+  const d = state.diff;
+
+  const runPicker = el('select', {
+    class: 'sel',
+    'aria-label': 'Baseline run',
+    on: {
+      change: (e) => {
+        d.runId = e.target.value;
+        d.callId = null;
+        d.runCallsFor = null;
+        d.call = null;
+        renderDetail();
+        void prepareDiff();
+      }
+    }
+  });
+  for (const run of state.runs) {
+    runPicker.append(
+      el('option', {
+        value: run.id,
+        selected: run.id === (d.runId ?? state.runId),
+        text: run.id === state.runId ? 'this run' : run.name || run.id
+      })
+    );
+  }
+
+  const callPicker = el('select', {
+    class: 'sel',
+    'aria-label': 'Baseline call',
+    on: {
+      change: (e) => {
+        d.callId = e.target.value;
+        d.call = null;
+        renderDetail();
+        void prepareDiff();
+      }
+    }
+  });
+  for (const c of d.runCalls ?? []) {
+    if (d.runId === state.runId && c.id === state.callId) continue; // no self-diff
+    callPicker.append(
+      el('option', {
+        value: c.id,
+        selected: c.id === d.callId,
+        text: `call ${String(c.seq).padStart(2, '0')}  ${c.model ?? c.endpoint}`
+      })
+    );
+  }
+  if (callPicker.childElementCount === 0) {
+    callPicker.append(el('option', { value: '', text: 'no other calls' }));
+    callPicker.setAttribute('disabled', '');
+  }
+
+  const sides = el('span', { class: 'segmented' });
+  for (const side of ['request', 'response']) {
+    sides.append(
+      el('button', {
+        class: 'seg',
+        type: 'button',
+        'aria-pressed': String(d.side === side),
+        text: side,
+        on: {
+          click: () => {
+            d.side = side;
+            renderDetail();
+          }
+        }
+      })
+    );
+  }
+
+  return [
+    el('span', { class: 'diff-label', text: 'compare against' }),
+    runPicker,
+    callPicker,
+    el('span', { class: 'spacer' }),
+    sides
+  ];
 }
 
 function timingView(call, summary) {

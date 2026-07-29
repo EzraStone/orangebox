@@ -1,6 +1,6 @@
-# 🟧 orangebox — *the flight recorder for AI agents*
+# 🟧 orangebox — *the flight recorder for the agent you're building*
 
-A local proxy that records every LLM API call your agent makes and renders each run as a visual timeline you can inspect forever.
+A local proxy that records every LLM API call **your own agent code** makes — prompts, tool calls, streams, retries, tokens, cost — and renders each run as a visual timeline you can inspect, diff, and export.
 
 [![CI](https://github.com/EzraStone/orangebox/actions/workflows/ci.yml/badge.svg)](https://github.com/EzraStone/orangebox/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/orangebox.svg)](https://www.npmjs.com/package/orangebox)
@@ -42,6 +42,16 @@ Prefer not to touch environment variables? Let orangebox set them for you, and g
 npx orangebox run --name "checkout bot" -- node agent.js
 ```
 
+## Who this is for
+
+**orangebox records the agent you are building, not the agent CLI you are using.**
+
+If you are writing agent code yourself — against the Anthropic or OpenAI SDK, or on top of a framework like LangGraph — orangebox records that traffic. It sits at the HTTP layer, so it does not care which client library, language, or framework you chose, and there is nothing for it to fall behind on when you switch.
+
+If instead you want to inspect what an off-the-shelf coding-agent CLI is doing — Claude Code, Codex CLI, Gemini CLI, Cursor CLI and friends — a tool purpose-built for those, like [claude-tap](https://github.com/liaohch3/claude-tap), is the better fit: it knows those specific tools, auto-detects their auth, and needs no configuration at all. orangebox is deliberately not competing for that job.
+
+Same mechanism, different target. Pick the one aimed at your problem.
+
 ## Why
 
 - **Zero code changes.** One environment variable, or none at all with `orangebox run`. Nothing to instrument, nothing to forget.
@@ -55,6 +65,8 @@ npx orangebox run --name "checkout bot" -- node agent.js
 **The exact prompt the model saw.** Click any call and read the full message history at that moment — system prompt, every turn, tool results injected — as the model received it, not as you think you assembled it.
 
 **Tool calls, paired.** `tool_use` blocks and the `tool_result` that answered them, linked, with errors flagged. The wall-clock gap between calls is labelled "client-side ≈" because orangebox sees the result, not the execution.
+
+**Diffing, because prompts drift.** Any call can be diffed against another — the previous call in the run by default, or any call in any other run. Line-level, with long unchanged stretches collapsed, so "what changed in the prompt between turn 4 and turn 5?" is one click instead of an eyeball comparison of two 6,000-line payloads. Works on the request or the response.
 
 **Streaming, faithfully.** Chunks are relayed the instant they arrive — the recorder adds no measurable latency — then the captured transcript is folded back into a normal response object so a streamed call reads exactly like a non-streamed one. Time-to-first-token is recorded per call.
 
@@ -141,14 +153,19 @@ Outbound connections go to `api.anthropic.com` and `api.openai.com` only, and on
 
 **Does it work with `<my framework>`?** If it speaks HTTP to one of the two supported APIs, yes. That's the point of doing this at the proxy layer instead of as an SDK wrapper.
 
+**How is this different from claude-tap?** Different target, same good idea. [claude-tap](https://github.com/liaohch3/claude-tap) records off-the-shelf coding-agent CLIs and knows how each one authenticates; orangebox records agent code you wrote yourself and knows nothing about your stack beyond the two HTTP APIs. If you want to see inside Claude Code, use claude-tap. If you want to see inside the thing you are building, use this. See [Who this is for](#who-this-is-for).
+
+**Why not just use Langfuse / Helicone / LiteLLM?** Those are built for teams running agents in production — dashboards, evals, prompt versioning, multi-provider routing, and an account. orangebox is for one developer debugging on one machine, with no account and no data leaving it. Different job; graduate to one of those when you need it.
+
 **What happens if orangebox breaks?** Recording failures are logged and swallowed; your request still goes through. A recorder that takes down the thing it records is worse than no recorder.
 
 **Why "orangebox"?** Aircraft "black boxes" are painted international orange so they can be found. Same idea: when your agent crashes, the evidence should survive — and be easy to spot.
 
 ## Roadmap
 
+- [x] **Call diffing** — compare any two calls, in the same run or across runs
 - [ ] **Replay** — re-send any recorded call, optionally with an edited prompt or a different model, and diff the outputs
-- [ ] **Run diffing** — side-by-side timelines of two runs of the same agent
+- [ ] **Run diffing** — side-by-side timelines of two whole runs, aligned call by call
 - [ ] **More providers** — Gemini, Bedrock, Ollama and other local runtimes
 - [ ] **OpenTelemetry export** — for teams that already have tracing
 - [ ] **Cost dashboard** — spend over time, by model, by run name

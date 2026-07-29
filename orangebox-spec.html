@@ -105,7 +105,7 @@ footer{margin-top:80px;border-top:2px solid var(--ink);padding-top:14px;font-fam
 <header class="masthead">
   <div class="docline">
     <span>Engineering build specification</span>
-    <span>DOC OB-SPEC-001 · REV A · 2026-07-27</span>
+    <span>DOC OB-SPEC-001 · REV B · 2026-07-28</span>
   </div>
 
   <div class="plate" role="img" aria-label="Orange data plate reading: orangebox, the flight recorder for AI agents">
@@ -184,6 +184,7 @@ footer{margin-top:80px;border-top:2px solid var(--ink);padding-top:14px;font-fam
       <li><a href="#s18"><span class="n">§18</span>README &amp; launch</a></li>
       <li><a href="#s19"><span class="n">§19</span>v2 roadmap</a></li>
       <li><a href="#s20"><span class="n">§20</span>Glossary</a></li>
+      <li><a href="#s21"><span class="n">§21</span>Prior art &amp; positioning</a></li>
     </ol>
   </nav>
 
@@ -732,6 +733,41 @@ curl -sN http://127.0.0.1:4100/openai/v1/chat/completions \
     <tr><td class="m">stop reason</td><td>Provider's stated reason generation ended (<code>end_turn</code>, <code>tool_use</code>, <code>max_tokens</code>, …) — the single most diagnostic field on a call.</td></tr>
     <tr><td class="m">est. cost</td><td>Token counts × pricing.json rates (§08). An estimate, clearly labeled, never presented as billing truth.</td></tr>
   </table>
+</section>
+
+<section class="sec" id="s21">
+  <div class="eyebrow">§21 · Reality check</div>
+  <h2>Prior art &amp; positioning</h2>
+  <p><em>Added REV B, 2026-07-28, after competitive research. This section did not exist when the M0–M4 plan in §16 was written. It exists so the implementing AI does not build v1 blind — read this before M0.</em></p>
+
+  <div class="call warn">
+    <span class="lab">Headline finding</span>
+    <p>The pain orangebox targets is real and already validated by the market — but the specific niche this spec describes (generic local SQLite proxy, both providers, env-var integration) is being squeezed from both sides by projects that are further along. Shipping the spec exactly as written in §01–§20 will land as a smaller, later clone of an existing tool. §21.3 gives the two changes that avoid that.</p>
+  </div>
+
+  <h3><span class="sub">21.1</span>The closest analog: claude-tap</h3>
+  <p>A project called <strong>claude-tap</strong> is, mechanically, close to the same product as orangebox: a local proxy and trace viewer for AI agent traffic — system prompts, conversation history, tool schemas, tool calls, streaming responses, token usage — stored and viewed entirely locally, with common auth headers auto-redacted and a live SSE-driven viewer. It sits around 2.6–2.8k GitHub stars and has appeared on GitHub's trending page, so the format (local proxy → timeline UI) is proven to attract stars, not just plausible in theory.</p>
+  <p>The reason it's ahead is a sharper wedge than the one in §02: instead of asking the developer to set <code>ANTHROPIC_BASE_URL</code>/<code>OPENAI_BASE_URL</code> for their own agent code, it hooks directly into the CLI coding agents developers already run all day — Claude Code, Codex CLI, Gemini CLI, Cursor CLI, OpenCode, and others — with OAuth auto-detection so some setups need zero configuration at all. It also ships request diffing between turns and a static-HTML export for sharing, both of which are v2 items in this spec (§19).</p>
+
+  <h3><span class="sub">21.2</span>The rest of the landscape</h3>
+  <p>Figures below are approximate, self-reported star counts gathered mid-2026 for orientation only — verify current numbers before making a positioning decision, the same way §08 warns not to trust the shipped pricing table.</p>
+  <table>
+    <tr><th>Project</th><th>~Stars</th><th>Approach</th><th>Where it diverges from orangebox</th></tr>
+    <tr><td>claude-tap</td><td class="m">2.6–2.8k</td><td>Local proxy + trace viewer, zero cloud</td><td>Scoped to coding-agent CLIs, not raw SDK traffic; already has diffing + export.</td></tr>
+    <tr><td>Langfuse</td><td class="m">21–28k</td><td>Hosted + self-hostable platform</td><td>YC-backed, acquired by ClickHouse; full team platform — tracing, prompt versioning, evals, datasets.</td></tr>
+    <tr><td>Helicone</td><td class="m">—</td><td>Proxy-first gateway</td><td>Zero-code-change proxy like orangebox, but traffic is designed to route through hosted infra; strong cost dashboards.</td></tr>
+    <tr><td>OpenLLMetry (Traceloop)</td><td class="m">7.2k</td><td>OpenTelemetry SDK instrumentation</td><td>Feeds existing APM tools (Datadog, Honeycomb, Grafana) instead of shipping its own UI.</td></tr>
+    <tr><td>LiteLLM</td><td class="m">~54k</td><td>Universal provider gateway</td><td>Owns the "one API for 100+ providers" niche outright; observability is a feature, not the product.</td></tr>
+    <tr><td>PostHog (LLM analytics)</td><td class="m">32k+</td><td>Product analytics suite</td><td>LLM observability is one module inside a much larger product-analytics platform.</td></tr>
+  </table>
+  <p>Read together: the "single-player, fully local, zero-account debugging tool" shape is validated (claude-tap proves it draws stars), and the "production team platform" shape is validated at much larger scale (Langfuse, PostHog, LiteLLM). What's <em>not</em> validated, because nobody occupies it, is a fully-local tool aimed at raw SDK and custom-agent-framework traffic rather than the fixed set of CLI tools claude-tap already covers.</p>
+
+  <div class="call decision">
+    <span class="lab">Decision — how this changes the spec</span>
+    <p>Two changes, applied on top of §01–§20 rather than a rewrite:</p>
+    <p><strong>1. Reposition, don't rename the wedge.</strong> Keep the §06 proxy architecture exactly as specified (it's the right mechanism), but position orangebox explicitly for people writing their <em>own</em> agent code with the Anthropic/OpenAI SDKs or a framework like LangGraph — "the recorder for the agent you're building," not "the recorder for the agent CLI you're using." The README (§18) should name this distinction plainly rather than let a reader assume overlap with claude-tap.</p>
+    <p><strong>2. Pull one v2 item into v1 as the headline differentiator.</strong> Of the §19 roadmap, request diffing between two calls or two runs is the cheapest to build and the one competitors already treat as core — ship a basic version in M3 (§16) alongside the timeline, not after. Replay (§19.1) is the higher-leverage differentiator long-term but is correctly sequenced as v2; do not pull it forward, it's too large to fit the M0–M4 timeline without threatening the 2-minute install promise in §17.1.</p>
+  </div>
 </section>
 
 </main>
