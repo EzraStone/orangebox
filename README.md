@@ -191,7 +191,7 @@ Outbound connections go to `api.anthropic.com` and `api.openai.com` only, and on
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for manual probes and the layout of the codebase. The full build specification this was written from is [`orangebox-spec.html`](orangebox-spec.html), also published [on the website](https://ezrastone.github.io/orangebox-Website/spec.html).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for manual probes and the layout of the codebase. The full build specification this was written from is [`orangebox-spec.html`](orangebox-spec.html), also published [on the website](https://orangebox-website.vercel.app/spec.html).
 
 The landing page lives in its own repo: [EzraStone/orangebox-Website](https://github.com/EzraStone/orangebox-Website).
 

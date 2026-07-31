@@ -28,7 +28,7 @@ change is wrong.
 | `src/pricing.*` | Rate table and longest-prefix lookup. |
 | `ui/` | The web UI. No framework, no build step, no third-party anything. |
 | `examples/demo-agent.mjs` | Scripted agent producing the canonical three-call run. Needs a real `ANTHROPIC_API_KEY`. |
-| `docs/` | The published website (GitHub Pages serves this folder). |
+| `docs/` | Source of the website. The live copy is deployed from the EzraStone/orangebox-Website repo via Vercel. |
 
 `docs/spec.html` is a **copy** of the canonical `orangebox-spec.html` at the
 repo root, because Pages can only serve what is inside `docs/`. Edit the root
