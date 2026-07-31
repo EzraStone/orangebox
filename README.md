@@ -6,7 +6,7 @@
   <a href="https://orangebox-website.vercel.app/"><b>Website</b></a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="#who-this-is-for">Who it's for</a> ·
-  <a href="#how-it-works">How it works</a> ·
+  <a href="#how-it-works">How it works</a>
 </p>
 
 <p align="center">
