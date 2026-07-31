@@ -7,7 +7,6 @@
   <a href="#quickstart">Quickstart</a> ·
   <a href="#who-this-is-for">Who it's for</a> ·
   <a href="#how-it-works">How it works</a> ·
-  <a href="orangebox-spec.html">Build spec</a>
 </p>
 
 <p align="center">
