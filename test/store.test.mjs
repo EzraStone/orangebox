@@ -1,6 +1,10 @@
 // §09 / §12.2 / §14.2 — schema, transactions, redaction, truncation.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import Database from 'better-sqlite3';
 
 import {
   Store,
@@ -32,7 +36,7 @@ function call(store, runId, overrides = {}) {
 test('schema bootstraps and records its version', () => {
   const store = memStore();
   const version = store.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
-  assert.equal(version.value, '1');
+  assert.equal(version.value, '2');
 
   const tables = store.db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -42,6 +46,35 @@ test('schema bootstraps and records its version', () => {
     assert.ok(tables.includes(expected), `missing table ${expected}`);
   }
   store.close();
+});
+
+test('schema 1 databases migrate in place without losing runs', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orangebox-migration-'));
+  const file = path.join(dir, 'v1.db');
+  const legacy = new Database(file);
+  legacy.exec(`
+    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+    INSERT INTO meta VALUES ('schema_version', '1');
+    CREATE TABLE runs (
+      id TEXT PRIMARY KEY, name TEXT, source TEXT NOT NULL, started_at INTEGER NOT NULL,
+      ended_at INTEGER, call_count INTEGER NOT NULL DEFAULT 0,
+      input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_usd REAL NOT NULL DEFAULT 0, error_count INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO runs (id, name, source, started_at) VALUES ('legacy-run', 'Legacy', 'explicit', 1);
+  `);
+  legacy.close();
+
+  const store = new Store(file);
+  assert.equal(store.getRun('legacy-run').name, 'Legacy');
+  assert.equal(store.getRun('legacy-run').unknown_cost_count, 0);
+  assert.deepEqual(store.getRun('legacy-run').tags, []);
+  assert.equal(
+    store.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value,
+    '2'
+  );
+  store.close();
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('run aggregates are maintained incrementally, never rescanned', () => {

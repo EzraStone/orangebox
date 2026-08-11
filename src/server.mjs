@@ -4,6 +4,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { openStore, newId, safeStringify } from './store.mjs';
@@ -38,14 +39,19 @@ const MIME = {
  * Build (but do not start) the orangebox server.
  * Returns { server, store, live, listen(), close() }.
  */
-export function createServer({ dbPath, gapSeconds = 120, providers = PROVIDERS } = {}) {
+export function createServer({ dbPath, gapSeconds = 120, providers = PROVIDERS, authToken = null } = {}) {
   const store = openStore(dbPath);
   const live = createLiveHub();
   const pricing = loadPricing();
   const proxy = createProxy({ store, live, pricing, gapSeconds, providers });
+  const security = {
+    csrfToken: crypto.randomBytes(24).toString('base64url'),
+    authToken,
+    allowRemote: false
+  };
 
   const server = http.createServer((req, res) => {
-    handle(req, res, { store, live, proxy }).catch((err) => {
+    handle(req, res, { store, live, proxy, security }).catch((err) => {
       // Nothing below should throw, but a 500 beats a hung socket.
       if (!res.headersSent) sendJson(res, 500, { error: String(err?.message ?? err) });
       else res.end();
@@ -64,6 +70,7 @@ export function createServer({ dbPath, gapSeconds = 120, providers = PROVIDERS }
     pricing,
     listen(port, host) {
       return new Promise((resolve, reject) => {
+        security.allowRemote = !isLoopbackAddress(host);
         server.once('error', reject);
         server.listen(port, host, () => {
           server.removeListener('error', reject);
@@ -86,6 +93,22 @@ export function createServer({ dbPath, gapSeconds = 120, providers = PROVIDERS }
 async function handle(req, res, ctx) {
   const url = new URL(req.url, 'http://127.0.0.1');
   const pathname = decodeURIComponent(url.pathname);
+
+  if (!ctx.security.allowRemote && !isLoopbackHostHeader(req.headers.host)) {
+    return sendJson(res, 403, { error: 'invalid host' });
+  }
+
+  const protectedRoute =
+    pathname === '/api' || pathname.startsWith('/api/') ||
+    pathname.startsWith('/anthropic') || pathname.startsWith('/openai') || pathname.startsWith('/r/');
+  if (
+    protectedRoute &&
+    ctx.security.authToken &&
+    req.headers['x-orangebox-auth'] !== ctx.security.authToken &&
+    url.searchParams.get('token') !== ctx.security.authToken
+  ) {
+    return sendJson(res, 401, { error: 'orangebox authentication required' });
+  }
 
   // 1. Run-scoped proxy: /r/:runId/{anthropic,openai}/*
   const scoped = pathname.match(/^\/r\/([^/]+)\/(anthropic|openai)(\/.*)?$/);
@@ -128,9 +151,19 @@ async function handle(req, res, ctx) {
 // ================================================================= §10 API
 
 async function handleApi(req, res, ctx, pathname, url) {
-  const { store, live } = ctx;
+  const { store, live, security } = ctx;
   const method = req.method;
   const seg = pathname.split('/').filter(Boolean); // ['api', ...]
+
+  if (!['GET', 'HEAD'].includes(method)) {
+    if (!sameOrigin(req)) return sendJson(res, 403, { error: 'cross-origin request rejected' });
+    if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] ?? '')) {
+      return sendJson(res, 415, { error: 'application/json required' });
+    }
+    if (req.headers['x-orangebox-csrf'] !== security.csrfToken) {
+      return sendJson(res, 403, { error: 'invalid csrf token' });
+    }
+  }
 
   // GET /api/health
   if (method === 'GET' && pathname === '/api/health') {
@@ -138,7 +171,9 @@ async function handleApi(req, res, ctx, pathname, url) {
       ok: true,
       version: VERSION,
       db: store.path,
-      runs: store.countRuns()
+      runs: store.countRuns(),
+      csrf_token: security.csrfToken,
+      authenticated: Boolean(security.authToken)
     });
   }
 
@@ -191,6 +226,16 @@ async function handleApi(req, res, ctx, pathname, url) {
       const existed = store.deleteRun(id);
       if (!existed) return sendJson(res, 404, { error: 'no such run' });
       return sendJson(res, 200, { ok: true });
+    }
+    if (method === 'PATCH') {
+      const body = await readJsonBody(req);
+      if (!body || (body.tags !== undefined && !Array.isArray(body.tags))) {
+        return sendJson(res, 400, { error: 'name and tags expected' });
+      }
+      const run = store.updateRun(id, { name: body.name, tags: body.tags });
+      if (!run) return sendJson(res, 404, { error: 'no such run' });
+      live.publish('run.updated', { run });
+      return sendJson(res, 200, { run });
     }
   }
 
@@ -298,6 +343,29 @@ function clampInt(raw, fallback, min, max) {
   const n = Number.parseInt(raw ?? '', 10);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
+}
+
+function sameOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true; // CLI and other non-browser clients authenticate with CSRF.
+  try {
+    return new URL(origin).host === req.headers.host;
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackAddress(host) {
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+}
+
+function isLoopbackHostHeader(value) {
+  if (!value) return false;
+  try {
+    return isLoopbackAddress(new URL(`http://${value}`).hostname);
+  } catch {
+    return false;
+  }
 }
 
 export { PROVIDERS, newId };

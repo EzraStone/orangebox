@@ -12,7 +12,11 @@ const DEFAULTS = {
   db: null, // resolved to defaultDbPath() at start
   gap: 120,
   open: true,
-  retain: 0
+  retain: 0,
+  openaiUpstream: 'https://api.openai.com',
+  anthropicUpstream: 'https://api.anthropic.com',
+  authToken: null,
+  unsafeNoAuth: false
 };
 
 export async function main(argv) {
@@ -62,6 +66,10 @@ function parseFlags(args) {
       case '--db': out.db = next(); break;
       case '--gap': out.gap = int(next(), '--gap'); break;
       case '--retain': out.retain = int(next(), '--retain'); break;
+      case '--openai-upstream': out.openaiUpstream = next(); break;
+      case '--anthropic-upstream': out.anthropicUpstream = next(); break;
+      case '--auth-token': out.authToken = next(); break;
+      case '--unsafe-no-auth': out.unsafeNoAuth = true; break;
       case '--no-open': out.open = false; break;
       case '--help': case '-h': printHelp(); process.exit(0);
       default: fail(`unknown flag "${arg}"`);
@@ -73,10 +81,16 @@ function parseFlags(args) {
 // ------------------------------------------------------------------ start
 
 async function start(opts) {
+  requireRemoteSafety(opts);
   const dbPath = opts.db ?? defaultDbPath();
   let app;
   try {
-    app = createServer({ dbPath, gapSeconds: opts.gap });
+    app = createServer({
+      dbPath,
+      gapSeconds: opts.gap,
+      providers: providersFrom(opts),
+      authToken: opts.authToken
+    });
   } catch (err) {
     fail(err.message);
   }
@@ -96,9 +110,9 @@ async function start(opts) {
   }
 
   const origin = `http://${displayHost(opts.host)}:${opts.port}`;
-  banner({ origin, store: app.store, host: opts.host, willOpen: opts.open });
+  banner({ origin, store: app.store, host: opts.host, willOpen: opts.open, authToken: opts.authToken });
 
-  if (opts.open) openBrowser(origin);
+  if (opts.open) openBrowser(opts.authToken ? `${origin}?token=${encodeURIComponent(opts.authToken)}` : origin);
 
   const shutdown = () => {
     app.close().then(() => process.exit(0));
@@ -109,7 +123,7 @@ async function start(opts) {
   return app;
 }
 
-function banner({ origin, store, host, willOpen }) {
+function banner({ origin, store, host, willOpen, authToken }) {
   const size = store.sizeBytes();
   const runs = store.countRuns();
   console.log('');
@@ -120,9 +134,10 @@ function banner({ origin, store, host, willOpen }) {
   console.log(`  ▮   export ANTHROPIC_BASE_URL="${origin}/anthropic"`);
   console.log(`  ▮   export OPENAI_BASE_URL="${origin}/openai"`);
   console.log(`  ▮ ui             ${origin}${willOpen ? '  (opening browser…)' : ''}`);
+  if (authToken) console.log('  ▮ authentication x-orangebox-auth is required');
   console.log('');
 
-  if (!isLoopback(host)) {
+  if (!isLoopback(host) && !authToken) {
     console.error(
       `\x1b[31mWARNING: orangebox has no authentication. Binding to ${host} exposes every recorded prompt to your network.\x1b[0m\n`
     );
@@ -158,17 +173,28 @@ async function runWrapped(args) {
       case '--host': opts.host = next(); break;
       case '--db': opts.db = next(); break;
       case '--gap': opts.gap = int(next(), '--gap'); break;
+      case '--openai-upstream': opts.openaiUpstream = next(); break;
+      case '--anthropic-upstream': opts.anthropicUpstream = next(); break;
+      case '--auth-token': opts.authToken = next(); break;
+      case '--unsafe-no-auth': opts.unsafeNoAuth = true; break;
       default: fail(`unknown flag "${flags[i]}" (command arguments go after --)`);
     }
   }
 
   const origin = `http://${displayHost(opts.host)}:${opts.port}`;
+  requireRemoteSafety(opts);
 
   // Attach to a recorder that is already listening, otherwise run our own for
   // the lifetime of the child.
   let owned = null;
-  if (!(await healthy(origin))) {
-    owned = createServer({ dbPath: opts.db ?? defaultDbPath(), gapSeconds: opts.gap });
+  let health = await getHealth(origin, opts.authToken);
+  if (!health) {
+    owned = createServer({
+      dbPath: opts.db ?? defaultDbPath(),
+      gapSeconds: opts.gap,
+      providers: providersFrom(opts),
+      authToken: opts.authToken
+    });
     try {
       await owned.listen(opts.port, opts.host);
     } catch (err) {
@@ -177,11 +203,12 @@ async function runWrapped(args) {
       }
       fail(err.message);
     }
+    health = await getHealth(origin, opts.authToken);
   }
 
   const { id: runId } = await postJson(`${origin}/api/runs/begin`, {
     name: opts.name ?? [command, ...commandArgs].join(' ')
-  });
+  }, health, opts.authToken);
 
   console.log(`  ▮ recording   ${origin}/run/${runId}`);
 
@@ -189,12 +216,13 @@ async function runWrapped(args) {
     ...process.env,
     ANTHROPIC_BASE_URL: `${origin}/r/${runId}/anthropic`,
     OPENAI_BASE_URL: `${origin}/r/${runId}/openai`,
-    ORANGEBOX_RUN_ID: runId
+    ORANGEBOX_RUN_ID: runId,
+    ...(opts.authToken ? { ORANGEBOX_AUTH_TOKEN: opts.authToken } : {})
   };
 
   const code = await spawnChild(command, commandArgs, env);
 
-  await postJson(`${origin}/api/runs/${encodeURIComponent(runId)}/end`, {});
+  await postJson(`${origin}/api/runs/${encodeURIComponent(runId)}/end`, {}, health, opts.authToken);
   console.log(`\n  ▮ recorded    ${origin}/run/${runId}`);
 
   if (owned) await owned.close();
@@ -237,20 +265,28 @@ function spawnChild(command, args, env) {
   });
 }
 
-async function healthy(origin) {
+async function getHealth(origin, authToken = null) {
   try {
-    const res = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(1500) });
-    if (!res.ok) return false;
-    return (await res.json())?.ok === true;
+    const res = await fetch(`${origin}/api/health`, {
+      signal: AbortSignal.timeout(1500),
+      headers: authToken ? { 'x-orangebox-auth': authToken } : undefined
+    });
+    if (!res.ok) return null;
+    const health = await res.json();
+    return health?.ok === true && health?.csrf_token ? health : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
-async function postJson(url, body) {
+async function postJson(url, body, health, authToken = null) {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      'x-orangebox-csrf': health?.csrf_token ?? '',
+      ...(authToken ? { 'x-orangebox-auth': authToken } : {})
+    },
     body: JSON.stringify(body ?? {})
   });
   if (!res.ok) fail(`${url} answered ${res.status}`);
@@ -352,6 +388,29 @@ function isLoopback(host) {
   return host === '127.0.0.1' || host === 'localhost' || host === '::1';
 }
 
+function requireRemoteSafety(opts) {
+  if (!isLoopback(opts.host) && !opts.authToken && !opts.unsafeNoAuth) {
+    fail('non-loopback --host requires --auth-token <token> or --unsafe-no-auth');
+  }
+}
+
+function providersFrom(opts) {
+  return {
+    openai: upstream(opts.openaiUpstream, '--openai-upstream'),
+    anthropic: upstream(opts.anthropicUpstream, '--anthropic-upstream')
+  };
+}
+
+function upstream(value, flag) {
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
+    return url.href.replace(/\/$/, '');
+  } catch {
+    fail(`${flag} needs an http(s) URL, got "${value}"`);
+  }
+}
+
 function displayHost(host) {
   return host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host;
 }
@@ -391,6 +450,10 @@ OPTIONS (start)
   --host <addr>    bind address                       (default 127.0.0.1)
   --gap <seconds>  idle gap that starts a new run     (default 120)
   --retain <days>  delete runs older than N days      (default 0 = keep forever)
+  --openai-upstream <url>     OpenAI-compatible upstream
+  --anthropic-upstream <url>  Anthropic-compatible upstream
+  --auth-token <token>        require x-orangebox-auth (required for safe remote use)
+  --unsafe-no-auth            allow a non-loopback host without authentication
   --no-open        don't open the browser on start
 
 POINT YOUR AGENT AT IT

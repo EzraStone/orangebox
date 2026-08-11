@@ -6,7 +6,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 
-export const SCHEMA_VERSION = '1';
+export const SCHEMA_VERSION = '2';
 
 /** Max size of a single stored JSON blob before string leaves get trimmed (§14.2). */
 export const MAX_BLOB_BYTES = 2 * 1024 * 1024;
@@ -39,7 +39,9 @@ CREATE TABLE IF NOT EXISTS runs (
   input_tokens  INTEGER NOT NULL DEFAULT 0,
   output_tokens INTEGER NOT NULL DEFAULT 0,
   cost_usd      REAL    NOT NULL DEFAULT 0,
-  error_count   INTEGER NOT NULL DEFAULT 0
+  error_count   INTEGER NOT NULL DEFAULT 0,
+  unknown_cost_count INTEGER NOT NULL DEFAULT 0,
+  tags_json     TEXT    NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS calls (
@@ -84,6 +86,19 @@ CREATE INDEX IF NOT EXISTS idx_tools_run ON tool_events(run_id);
 CREATE INDEX IF NOT EXISTS idx_tools_use ON tool_events(tool_use_id);
 `;
 
+const MIGRATIONS = new Map([
+  [
+    '1',
+    {
+      to: '2',
+      sql: `
+        ALTER TABLE runs ADD COLUMN unknown_cost_count INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE runs ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
+      `
+    }
+  ]
+]);
+
 const CALL_SUMMARY_COLUMNS = `
   id, run_id, seq, provider, endpoint, model, status, error_type, streamed,
   started_at, first_token_at, ended_at, latency_ms, ttft_ms,
@@ -115,13 +130,40 @@ export class Store {
       throw err;
     }
 
-    // v1 migration policy: create-if-missing only. The version is recorded so a
-    // future release can tell what it is looking at.
-    this.db
-      .prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)')
-      .run('schema_version', SCHEMA_VERSION);
+    this.#migrate();
 
     this.#prepare();
+  }
+
+  #migrate() {
+    const getVersion = this.db.prepare('SELECT value FROM meta WHERE key = ?');
+    const setVersion = this.db.prepare(
+      `INSERT INTO meta (key, value) VALUES ('schema_version', ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    );
+
+    let version = getVersion.get('schema_version')?.value ?? null;
+    if (version === null) {
+      setVersion.run(SCHEMA_VERSION);
+      return;
+    }
+    if (Number(version) > Number(SCHEMA_VERSION)) {
+      throw new Error(
+        `database schema ${version} is newer than this orangebox supports (${SCHEMA_VERSION})`
+      );
+    }
+
+    while (version !== SCHEMA_VERSION) {
+      const migration = MIGRATIONS.get(version);
+      if (!migration) {
+        throw new Error(`no database migration from schema ${version} to ${SCHEMA_VERSION}`);
+      }
+      this.db.transaction(() => {
+        this.db.exec(migration.sql);
+        setVersion.run(migration.to);
+      })();
+      version = migration.to;
+    }
   }
 
   #prepare() {
@@ -133,6 +175,7 @@ export class Store {
       getRun: db.prepare('SELECT * FROM runs WHERE id = ?'),
       endRun: db.prepare('UPDATE runs SET ended_at = ? WHERE id = ? AND ended_at IS NULL'),
       renameRun: db.prepare('UPDATE runs SET name = ? WHERE id = ?'),
+      updateRun: db.prepare('UPDATE runs SET name = @name, tags_json = @tags_json WHERE id = @id'),
       deleteRun: db.prepare('DELETE FROM runs WHERE id = ?'),
       listRuns: db.prepare('SELECT * FROM runs ORDER BY started_at DESC, id DESC LIMIT ? OFFSET ?'),
       countRuns: db.prepare('SELECT COUNT(*) AS n FROM runs'),
@@ -174,7 +217,8 @@ export class Store {
           input_tokens  = input_tokens + @input_tokens,
           output_tokens = output_tokens + @output_tokens,
           cost_usd      = cost_usd + @cost_usd,
-          error_count   = error_count + @is_error
+          error_count   = error_count + @is_error,
+          unknown_cost_count = unknown_cost_count + @unknown_cost
         WHERE id = @run_id`),
       insertToolEvent: db.prepare(`
         INSERT INTO tool_events (id, run_id, call_id, kind, tool_name, tool_use_id, is_error, content_json)
@@ -206,7 +250,8 @@ export class Store {
         input_tokens: call.input_tokens ?? 0,
         output_tokens: call.output_tokens ?? 0,
         cost_usd: call.cost_usd ?? 0,
-        is_error: call.error_type ? 1 : 0
+        is_error: call.error_type ? 1 : 0,
+        unknown_cost: call.cost_usd === null || call.cost_usd === undefined ? 1 : 0
       });
     });
   }
@@ -219,12 +264,12 @@ export class Store {
   }
 
   getRun(id) {
-    return this.q.getRun.get(id) ?? null;
+    return normalizeRun(this.q.getRun.get(id) ?? null);
   }
 
   listRuns({ limit = 50, offset = 0 } = {}) {
     return {
-      runs: this.q.listRuns.all(limit, offset),
+      runs: this.q.listRuns.all(limit, offset).map(normalizeRun),
       total: this.q.countRuns.get().n
     };
   }
@@ -239,6 +284,18 @@ export class Store {
 
   renameRun(id, name) {
     return this.q.renameRun.run(name, id).changes > 0;
+  }
+
+  updateRun(id, { name, tags = [] }) {
+    const current = this.getRun(id);
+    if (!current) return null;
+    const cleanTags = [...new Set(tags.map((tag) => String(tag).trim()).filter(Boolean))].slice(0, 20);
+    this.q.updateRun.run({
+      id,
+      name: name === undefined ? current.name : String(name || '').trim() || null,
+      tags_json: JSON.stringify(cleanTags)
+    });
+    return this.getRun(id);
   }
 
   deleteRun(id) {
@@ -372,6 +429,18 @@ export class Store {
       /* already closed */
     }
   }
+}
+
+function normalizeRun(row) {
+  if (!row) return null;
+  let tags = [];
+  try {
+    tags = JSON.parse(row.tags_json ?? '[]');
+  } catch {
+    tags = [];
+  }
+  const { tags_json: _tagsJson, ...run } = row;
+  return { ...run, tags: Array.isArray(tags) ? tags : [] };
 }
 
 export function openStore(dbPath = defaultDbPath()) {

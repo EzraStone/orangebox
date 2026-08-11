@@ -2,6 +2,11 @@
 // agent, so the ordering matters: relay first, record afterwards. A recorder
 // that slows the thing it records is a recorder people turn off.
 import { Buffer } from 'node:buffer';
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
 
 import {
   newId,
@@ -18,6 +23,8 @@ const PARSERS = { anthropic, openai };
 
 /** Bodies are JSON; over this we forward anyway and store a stub (§06.1.2, §14). */
 const MAX_REQUEST_BODY = 10 * 1024 * 1024;
+const MAX_RESPONSE_CAPTURE = 10 * 1024 * 1024;
+const MAX_FORWARD_BODY = 512 * 1024 * 1024;
 
 /** No response headers within this window and we give up on upstream (§14.1). */
 const UPSTREAM_TIMEOUT_MS = 10 * 60 * 1000;
@@ -41,6 +48,7 @@ const HOP_BY_HOP = new Set([
 const STRIP_FROM_RESPONSE = new Set([...HOP_BY_HOP, 'content-encoding']);
 
 const RUN_HEADER = 'x-orangebox-run-id';
+const INTERNAL_HEADERS = new Set([RUN_HEADER, 'x-orangebox-auth', 'x-orangebox-csrf']);
 
 /**
  * §13 — recording happens after the client has its bytes, but "off the hot
@@ -94,8 +102,9 @@ async function proxyCall(ctx, req, res, route) {
   const parser = PARSERS[provider];
 
   // ---- 1. buffer the request body (§06.1.2)
-  const { body: requestBody, overCap } = await readBody(req, MAX_REQUEST_BODY);
-  const requestJson = tryParseJson(requestBody);
+  const request = await readBody(req, MAX_REQUEST_BODY);
+  const { body: requestBody, captured: capturedRequestBody, overCap } = request;
+  const requestJson = tryParseJson(capturedRequestBody);
   const requestInfo = parser.parseRequest(requestJson);
 
   // ---- 2. resolve the run before dispatch, so call.started can name it (§06.4)
@@ -152,9 +161,12 @@ async function proxyCall(ctx, req, res, route) {
       headers: buildUpstreamHeaders(req.headers),
       body: requestBody,
       signal: controller.signal,
-      redirect: 'manual'
+      redirect: 'manual',
+      ...(requestBody && !Buffer.isBuffer(requestBody) ? { duplex: 'half' } : {})
     });
+    await request.cleanup();
   } catch (err) {
+    await request.cleanup();
     clearTimeout(timeout);
     client.stop();
     const errorType = timedOut
@@ -178,7 +190,7 @@ async function proxyCall(ctx, req, res, route) {
       status: null,
       error_type: errorType,
       ended_at: Date.now(),
-      requestBody,
+      requestBody: capturedRequestBody,
       requestJson,
       overCap,
       responseText: null,
@@ -195,30 +207,83 @@ async function proxyCall(ctx, req, res, route) {
 
   if (isStream) {
     return relayStream(ctx, {
-      req, res, upstream, base, requestBody, requestJson, overCap, parser, client
+      req,
+      res,
+      upstream,
+      base,
+      requestBody: capturedRequestBody,
+      requestJson,
+      overCap,
+      parser,
+      client
     });
   }
 
   // ---- 4. non-streaming: full body through, unchanged (§06.2)
-  const raw = Buffer.from(await upstream.arrayBuffer());
-  const endedAt = Date.now();
+  return relayNonStream(ctx, {
+    res,
+    upstream,
+    base,
+    requestBody: capturedRequestBody,
+    requestJson,
+    overCap,
+    parser,
+    client,
+    requestHeaders: req.headers
+  });
+}
+
+async function relayNonStream(ctx, opts) {
+  const { res, upstream, base, requestBody, requestJson, overCap, parser, client, requestHeaders } = opts;
+  writeHeadFrom(res, upstream, null);
+  const captured = [];
+  let capturedBytes = 0;
+  let responseCaptureTruncated = false;
+  let transportError = null;
+  const reader = upstream.body?.getReader();
+
+  try {
+    if (reader) {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const appended = appendCaptured(captured, capturedBytes, value, MAX_RESPONSE_CAPTURE);
+        capturedBytes = appended.bytes;
+        responseCaptureTruncated ||= appended.truncated;
+        if (client.gone) {
+          await reader.cancel().catch(() => {});
+          break;
+        }
+        await writeChunk(res, value);
+      }
+    }
+  } catch (err) {
+    if (!client.gone) transportError = err;
+  }
+
+  const clientAborted = client.gone;
   client.stop();
-
-  writeHeadFrom(res, upstream, raw.length);
-  await endResponse(res, raw);
-
+  if (!res.writableEnded) res.end();
+  const raw = Buffer.concat(captured);
   const responseText = raw.toString('utf8');
   await persist(ctx, {
     ...base,
     status: upstream.status,
-    error_type: upstream.ok ? null : `http_${upstream.status}`,
-    ended_at: endedAt,
+    error_type: clientAborted
+      ? 'client_aborted'
+      : transportError
+        ? 'upstream_stream_error'
+        : upstream.ok
+          ? null
+          : `http_${upstream.status}`,
+    ended_at: Date.now(),
     requestBody,
     requestJson,
     overCap,
+    responseCaptureTruncated,
     responseText,
-    responseJson: tryParseJson(raw),
-    requestHeaders: req.headers,
+    responseJson: responseCaptureTruncated ? null : tryParseJson(raw),
+    requestHeaders,
     parser
   });
 }
@@ -235,6 +300,8 @@ async function relayStream(ctx, opts) {
   writeHeadFrom(res, upstream, null);
 
   const chunks = [];
+  let capturedBytes = 0;
+  let responseCaptureTruncated = false;
   const detector = makeFirstTokenDetector(base.provider);
   let firstTokenAt = null;
   let streamError = null;
@@ -250,7 +317,9 @@ async function relayStream(ctx, opts) {
         // 50 MB of pointless memcpy across fifty 1 MB streams — and undici
         // never hands the same Uint8Array back twice. Buffer.concat takes
         // them directly at the end.
-        chunks.push(value);
+        const appended = appendCaptured(chunks, capturedBytes, value, MAX_RESPONSE_CAPTURE);
+        capturedBytes = appended.bytes;
+        responseCaptureTruncated ||= appended.truncated;
 
         if (firstTokenAt === null && detector.sees(value)) {
           firstTokenAt = Date.now();
@@ -290,6 +359,7 @@ async function relayStream(ctx, opts) {
     requestJson,
     overCap,
     responseChunks: chunks,
+    responseCaptureTruncated,
     upstreamOk: upstream.ok,
     upstreamStatus: upstream.status,
     streamOutcome: { clientAborted, streamError },
@@ -414,7 +484,11 @@ async function writeRecord(ctx, input) {
   });
 
   const requestBlob = buildRequestBlob({ requestJson, requestHeaders, input });
-  const responseBlob = buildResponseBlob({ responseJson, responseText });
+  const responseBlob = buildResponseBlob({
+    responseJson,
+    responseText,
+    captureTruncated: input.responseCaptureTruncated
+  });
 
   const request = serializeForStorage(requestBlob);
   const response =
@@ -447,7 +521,8 @@ async function writeRecord(ctx, input) {
     cost_usd: null,
     request_json: request.json,
     response_json: response.json,
-    truncated: request.truncated || response.truncated || (overCap ? 1 : 0) ? 1 : 0
+    truncated:
+      request.truncated || response.truncated || overCap || input.responseCaptureTruncated ? 1 : 0
   };
 
   call.cost_usd = pricing.costFor(call);
@@ -483,7 +558,13 @@ function buildRequestBlob({ requestJson, requestHeaders, input }) {
   return { ...stripBase64(requestJson), _orangebox: meta };
 }
 
-function buildResponseBlob({ responseJson, responseText }) {
+function buildResponseBlob({ responseJson, responseText, captureTruncated = false }) {
+  if (captureTruncated) {
+    return {
+      _orangebox: { capture_truncated: true, captured_bytes: MAX_RESPONSE_CAPTURE },
+      body: responseText ?? ''
+    };
+  }
   if (responseJson !== null && responseJson !== undefined) {
     return stripBase64(responseJson); // ours alone, same reasoning as above
   }
@@ -555,7 +636,7 @@ function buildUpstreamHeaders(incoming) {
   for (const [name, value] of Object.entries(incoming)) {
     const lower = name.toLowerCase();
     if (HOP_BY_HOP.has(lower) || lower.startsWith('proxy-')) continue;
-    if (lower === RUN_HEADER) continue; // ours, not the provider's
+    if (INTERNAL_HEADERS.has(lower)) continue; // ours, not the provider's
     if (value === undefined) continue;
     headers.set(lower, Array.isArray(value) ? value.join(', ') : String(value));
   }
@@ -590,17 +671,67 @@ function endResponse(res, body) {
 }
 
 async function readBody(req, cap) {
-  if (!hasBody(req.method)) return { body: undefined, overCap: false };
+  if (!hasBody(req.method)) {
+    return { body: undefined, captured: undefined, overCap: false, cleanup: async () => {} };
+  }
   const chunks = [];
   let size = 0;
   let overCap = false;
+  let tempPath = null;
+  let temp = null;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > cap) overCap = true;
-    chunks.push(chunk);
+    if (size > MAX_FORWARD_BODY) {
+      await temp?.close().catch(() => {});
+      if (tempPath) await fsp.unlink(tempPath).catch(() => {});
+      throw new Error(`request body exceeds ${MAX_FORWARD_BODY} bytes`);
+    }
+    if (!overCap && size <= cap) {
+      chunks.push(chunk);
+      continue;
+    }
+    if (!overCap) {
+      overCap = true;
+      tempPath = path.join(
+        os.tmpdir(),
+        `orangebox-${process.pid}-${crypto.randomUUID()}.body`
+      );
+      temp = await fsp.open(tempPath, 'wx');
+      for (const buffered of chunks) await temp.writeFile(buffered);
+      chunks.length = 0;
+    }
+    await temp.writeFile(chunk);
   }
-  if (chunks.length === 0) return { body: undefined, overCap: false };
-  return { body: Buffer.concat(chunks), overCap };
+  if (temp) {
+    await temp.close();
+    let cleaned = false;
+    return {
+      body: fs.createReadStream(tempPath),
+      captured: undefined,
+      overCap: true,
+      cleanup: async () => {
+        if (cleaned) return;
+        cleaned = true;
+        await fsp.unlink(tempPath).catch(() => {});
+      }
+    };
+  }
+  if (chunks.length === 0) {
+    return { body: undefined, captured: undefined, overCap: false, cleanup: async () => {} };
+  }
+  const body = Buffer.concat(chunks);
+  return { body, captured: body, overCap: false, cleanup: async () => {} };
+}
+
+function appendCaptured(chunks, bytes, chunk, limit) {
+  if (bytes >= limit) return { bytes, truncated: true };
+  const remaining = limit - bytes;
+  if (chunk.length <= remaining) {
+    chunks.push(chunk);
+    return { bytes: bytes + chunk.length, truncated: false };
+  }
+  chunks.push(chunk.subarray(0, remaining));
+  return { bytes: limit, truncated: true };
 }
 
 function hasBody(method) {

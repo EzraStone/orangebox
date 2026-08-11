@@ -25,6 +25,8 @@ function el(tag, props = {}, children = []) {
 }
 
 const $ = (id) => document.getElementById(id);
+const authToken = new URLSearchParams(location.search).get('token');
+let csrfToken = null;
 
 // ============================================================= formatting
 
@@ -104,15 +106,21 @@ function resetDiff() {
 
 const api = {
   async get(path) {
-    const res = await fetch(path);
+    const res = await fetch(path, {
+      headers: authToken ? { 'x-orangebox-auth': authToken } : undefined
+    });
     if (!res.ok) throw new Error(`${res.status} ${path}`);
     return res.json();
   },
   async send(method, path, body) {
     const res = await fetch(path, {
       method,
-      headers: body ? { 'content-type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined
+      headers: {
+        'content-type': 'application/json',
+        'x-orangebox-csrf': csrfToken ?? '',
+        ...(authToken ? { 'x-orangebox-auth': authToken } : {})
+      },
+      body: JSON.stringify(body ?? {})
     });
     if (!res.ok) throw new Error(`${res.status} ${path}`);
     return res.json();
@@ -284,7 +292,7 @@ function lastActivity() {
 
 async function deleteRun(run) {
   if (!confirm(`Delete "${run.name || run.id}" and its ${run.call_count} recorded call(s)?`)) return;
-  await api.send('DELETE', `/api/runs/${encodeURIComponent(run.id)}`);
+  await api.send('DELETE', `/api/runs/${encodeURIComponent(run.id)}`, {});
   state.runId = null;
   await loadRuns();
   navigate(state.runs[0]?.id ?? null, { replace: true });
@@ -955,7 +963,7 @@ let source = null;
 let backoff = 1000;
 
 function connectLive() {
-  source = new EventSource('/api/live');
+  source = new EventSource(`/api/live${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}`);
 
   source.addEventListener('open', () => {
     backoff = 1000;
@@ -1112,6 +1120,8 @@ try {
 
 // =================================================================== boot
 
+const health = await api.get('/api/health');
+csrfToken = health.csrf_token;
 state.runId = pathRunId();
 renderPill();
 await loadRuns();

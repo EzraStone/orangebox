@@ -227,7 +227,10 @@ test('run attribution: path prefix, header, and idle gap (§06.4)', async () => 
       // 1. explicit, via POST /api/runs/begin + the run-scoped prefix
       const begun = await getJson(`${app.origin}/api/runs/begin`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          'x-orangebox-csrf': (await getJson(`${app.origin}/api/health`)).body.csrf_token
+        },
         body: JSON.stringify({ name: 'checkout bot' })
       });
       const explicitId = begun.body.id;
@@ -748,14 +751,88 @@ test('DELETE /api/runs/:id and POST /api/clear remove data (§10)', async () => 
       }
       assert.ok(await settle(app, () => app.store.countRuns() === 2));
 
-      assert.equal((await fetch(`${app.origin}/api/runs/run-x`, { method: 'DELETE' })).status, 200);
+      const csrf = (await getJson(`${app.origin}/api/health`)).body.csrf_token;
+      const mutation = {
+        headers: { 'content-type': 'application/json', 'x-orangebox-csrf': csrf },
+        body: '{}'
+      };
+      assert.equal((await fetch(`${app.origin}/api/runs/run-x`, { method: 'DELETE', ...mutation })).status, 200);
       assert.equal(app.store.countRuns(), 1);
-      assert.equal((await fetch(`${app.origin}/api/runs/run-x`, { method: 'DELETE' })).status, 404);
+      assert.equal((await fetch(`${app.origin}/api/runs/run-x`, { method: 'DELETE', ...mutation })).status, 404);
 
-      await fetch(`${app.origin}/api/clear`, { method: 'POST' });
+      await fetch(`${app.origin}/api/clear`, { method: 'POST', ...mutation });
       assert.equal(app.store.countRuns(), 0);
     }
   );
+});
+
+test('mutating APIs require JSON, same origin, and the startup CSRF token', async () => {
+  const app = await startOrangebox();
+  try {
+    const url = `${app.origin}/api/clear`;
+    assert.equal((await fetch(url, { method: 'POST' })).status, 415);
+    assert.equal(
+      (await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}'
+      })).status,
+      403
+    );
+    const csrf = (await getJson(`${app.origin}/api/health`)).body.csrf_token;
+    assert.equal(
+      (await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-orangebox-csrf': csrf,
+          origin: 'https://attacker.example'
+        },
+        body: '{}'
+      })).status,
+      403
+    );
+    assert.equal(
+      (await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-orangebox-csrf': csrf },
+        body: '{}'
+      })).status,
+      200
+    );
+  } finally {
+    await app.stop();
+  }
+});
+
+test('optional remote auth protects API and proxy routes without leaking upstream', async () => {
+  const upstream = await startMockUpstream((req, res) => jsonResponse(res, 200, ANTHROPIC_MESSAGE));
+  const app = await startOrangebox({
+    providers: { anthropic: upstream.origin, openai: upstream.origin },
+    authToken: 'review-token'
+  });
+  try {
+    assert.equal((await fetch(`${app.origin}/api/health`)).status, 401);
+    assert.equal(
+      (await fetch(`${app.origin}/api/health`, {
+        headers: { 'x-orangebox-auth': 'review-token' }
+      })).status,
+      200
+    );
+    const response = await fetch(`${app.origin}/anthropic/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-orangebox-auth': 'review-token'
+      },
+      body: JSON.stringify(anthropicRequest)
+    });
+    assert.equal(response.status, 200);
+    assert.equal(upstream.requests[0].headers['x-orangebox-auth'], undefined);
+  } finally {
+    await app.stop();
+    await upstream.close();
+  }
 });
 
 test('unknown routes 404 with the routing hint (§04)', async () => {
