@@ -259,6 +259,78 @@ test('openai: reassembly stops at [DONE] and tolerates junk frames', () => {
   assert.deepEqual(openai.reassembleStream(''), { response: null, error: null });
 });
 
+test('openai responses: usage, function calls, and function outputs normalize', () => {
+  const response = {
+    id: 'resp_1',
+    object: 'response',
+    model: 'gpt-5.6-terra',
+    status: 'completed',
+    output: [
+      {
+        type: 'function_call',
+        id: 'fc_1',
+        call_id: 'call_weather',
+        name: 'get_weather',
+        arguments: '{"city":"Paris"}'
+      }
+    ],
+    usage: {
+      input_tokens: 120,
+      output_tokens: 35,
+      input_tokens_details: { cached_tokens: 80 }
+    }
+  };
+  assert.deepEqual(openai.parseResponse(response), {
+    model: 'gpt-5.6-terra',
+    stop_reason: 'completed',
+    input_tokens: 120,
+    output_tokens: 35,
+    cache_read_tokens: 80,
+    cache_write_tokens: null
+  });
+  assert.deepEqual(openai.extractToolUses(response)[0], {
+    tool_name: 'get_weather',
+    tool_use_id: 'call_weather',
+    is_error: 0,
+    content: { city: 'Paris' }
+  });
+  assert.deepEqual(openai.extractToolResults({
+    input: [{ type: 'function_call_output', call_id: 'call_weather', output: '18C' }]
+  })[0], {
+    tool_name: null,
+    tool_use_id: 'call_weather',
+    is_error: 0,
+    content: '18C'
+  });
+});
+
+test('openai responses: semantic SSE events reassemble into a canonical response', () => {
+  const event = (payload) => `event: ${payload.type}\ndata: ${JSON.stringify(payload)}\n\n`;
+  const transcript = [
+    { type: 'response.created', response: { id: 'resp_stream', object: 'response', model: 'gpt-5.6-terra', status: 'in_progress', output: [] } },
+    { type: 'response.output_item.added', output_index: 0, item: { id: 'msg_1', type: 'message', role: 'assistant', status: 'in_progress', content: [] } },
+    { type: 'response.output_text.delta', output_index: 0, item_id: 'msg_1', content_index: 0, delta: 'Hello' },
+    { type: 'response.output_item.done', output_index: 0, item: { id: 'msg_1', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'Hello', annotations: [] }] } },
+    { type: 'response.completed', response: { id: 'resp_stream', object: 'response', model: 'gpt-5.6-terra', status: 'completed', output: [{ id: 'msg_1', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'Hello', annotations: [] }] }], usage: { input_tokens: 10, output_tokens: 2 } } }
+  ].map(event).join('');
+
+  const { response, error } = openai.reassembleStream(transcript);
+  assert.equal(error, null);
+  assert.equal(response.id, 'resp_stream');
+  assert.equal(response.output[0].content[0].text, 'Hello');
+  assert.equal(openai.parseResponse(response).output_tokens, 2);
+});
+
+test('openai responses: interrupted semantic streams retain partial text', () => {
+  const transcript =
+    'data: {"type":"response.created","response":{"id":"resp_partial","model":"gpt-5.6-terra","status":"in_progress","output":[]}}\n\n' +
+    'data: {"type":"response.output_item.added","output_index":0,"item":{"id":"msg_1","type":"message","role":"assistant","content":[]}}\n\n' +
+    'data: {"type":"response.output_text.delta","output_index":0,"item_id":"msg_1","content_index":0,"delta":"partial"}\n\n';
+  const { response } = openai.reassembleStream(transcript);
+  assert.equal(response.status, 'in_progress');
+  assert.equal(response.output[0].content[0].text, 'partial');
+});
+
 // ================================================================ pricing
 
 test('pricing matches the longest key that prefixes the model (§08)', () => {

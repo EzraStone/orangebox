@@ -161,6 +161,50 @@ test('OpenAI usage fields map onto the normalized record (§7.3)', async () => {
   );
 });
 
+test('OpenAI Responses API records output items, usage, and function calls', async () => {
+  const responseBody = {
+    id: 'resp_test',
+    object: 'response',
+    model: 'gpt-4o-mini',
+    status: 'completed',
+    output: [{
+      id: 'fc_1',
+      type: 'function_call',
+      call_id: 'call_weather',
+      name: 'get_weather',
+      arguments: '{"city":"Paris"}'
+    }],
+    usage: {
+      input_tokens: 30,
+      output_tokens: 8,
+      input_tokens_details: { cached_tokens: 7 }
+    }
+  };
+  await withRig(
+    (req, res) => jsonResponse(res, 200, responseBody),
+    async ({ app }) => {
+      const res = await fetch(`${app.origin}/openai/v1/responses`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer sk-test' },
+        body: JSON.stringify({ model: 'gpt-4o-mini', input: 'weather in Paris?' })
+      });
+      assert.equal(res.status, 200);
+      assert.deepEqual(await res.json(), responseBody);
+      assert.ok(await settle(app, () => app.store.countRuns() === 1));
+      const run = app.store.listRuns().runs[0];
+      const call = app.store.callSummaries(run.id)[0];
+      assert.equal(call.endpoint, '/v1/responses');
+      assert.equal(call.input_tokens, 30);
+      assert.equal(call.output_tokens, 8);
+      assert.equal(call.cache_read_tokens, 7);
+      assert.equal(call.stop_reason, 'completed');
+      const tools = app.store.toolEvents(run.id);
+      assert.equal(tools[0].tool_name, 'get_weather');
+      assert.equal(tools[0].tool_use_id, 'call_weather');
+    }
+  );
+});
+
 test('upstream 429 is relayed verbatim and classified http_429 (§17.1 check 7)', async () => {
   const errorBody = { type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } };
   await withRig(

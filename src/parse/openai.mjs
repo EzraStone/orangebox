@@ -1,5 +1,5 @@
-// §7.3 — OpenAI Chat Completions. Same interface as the Anthropic module, same
-// rule: unrecognized shapes degrade to nulls rather than throwing.
+// §7.3 — OpenAI Chat Completions and Responses API. Same interface as the
+// Anthropic module; unrecognized shapes degrade to nulls rather than throwing.
 import { parseSseFrames, parseFrameJson } from './sse.mjs';
 
 export const provider = 'openai';
@@ -15,6 +15,18 @@ export function parseRequest(json) {
 export function parseResponse(json) {
   if (!isObject(json)) return emptyResult();
   const usage = isObject(json.usage) ? json.usage : {};
+  if (Array.isArray(json.output) || json.object === 'response') {
+    return {
+      model: str(json.model),
+      stop_reason:
+        str(json.incomplete_details?.reason) ??
+        (json.status === 'completed' ? 'completed' : str(json.status)),
+      input_tokens: int(usage.input_tokens),
+      output_tokens: int(usage.output_tokens),
+      cache_read_tokens: int(usage.input_tokens_details?.cached_tokens),
+      cache_write_tokens: null
+    };
+  }
   const choice = Array.isArray(json.choices) && isObject(json.choices[0]) ? json.choices[0] : {};
   return {
     model: str(json.model),
@@ -35,6 +47,15 @@ export function parseResponse(json) {
  * otherwise the token fields stay null and the UI says why.
  */
 export function reassembleStream(sseText) {
+  const frames = parseSseFrames(sseText);
+  const isResponses = frames.some((frame) => {
+    const event = parseFrameJson(frame.data);
+    return typeof event?.type === 'string' && event.type.startsWith('response.');
+  });
+  return isResponses ? reassembleResponsesStream(frames) : reassembleChatStream(frames);
+}
+
+function reassembleChatStream(frames) {
   const message = { role: 'assistant', content: null, tool_calls: [] };
   const toolCalls = new Map(); // index -> { id, type, function: { name, arguments } }
 
@@ -48,7 +69,7 @@ export function reassembleStream(sseText) {
   let sawAnything = false;
   let error = null;
 
-  for (const frame of parseSseFrames(sseText)) {
+  for (const frame of frames) {
     if (frame.data === '[DONE]') break;
 
     const chunk = parseFrameJson(frame.data);
@@ -120,8 +141,78 @@ export function reassembleStream(sseText) {
   };
 }
 
+function reassembleResponsesStream(frames) {
+  let response = null;
+  let error = null;
+  const output = new Map();
+
+  for (const frame of frames) {
+    const event = parseFrameJson(frame.data);
+    if (!isObject(event)) continue;
+
+    if (event.type === 'error' || event.type === 'response.failed') {
+      error = event.error ?? event.response?.error ?? event;
+    }
+    if (isObject(event.response)) {
+      response = { ...(response ?? {}), ...event.response };
+      if (Array.isArray(event.response.output)) {
+        event.response.output.forEach((item, index) => output.set(index, structuredClone(item)));
+      }
+    }
+
+    const index = int(event.output_index);
+    if (index !== null && isObject(event.item)) {
+      if (event.type === 'response.output_item.done') {
+        output.set(index, structuredClone(event.item));
+      } else if (!output.has(index)) {
+        output.set(index, structuredClone(event.item));
+      }
+    }
+
+    if (event.type === 'response.output_text.delta' && index !== null) {
+      const item = ensureOutputMessage(output, index, event.item_id);
+      const contentIndex = int(event.content_index) ?? 0;
+      item.content[contentIndex] ??= { type: 'output_text', text: '', annotations: [] };
+      item.content[contentIndex].text += typeof event.delta === 'string' ? event.delta : '';
+    }
+
+    if (event.type === 'response.function_call_arguments.delta' && index !== null) {
+      const item = output.get(index) ?? {
+        type: 'function_call',
+        id: event.item_id ?? null,
+        call_id: event.item_id ?? null,
+        name: null,
+        arguments: ''
+      };
+      item.arguments = (item.arguments ?? '') + (typeof event.delta === 'string' ? event.delta : '');
+      output.set(index, item);
+    }
+  }
+
+  if (!response && output.size === 0) return { response: null, error };
+  return {
+    response: {
+      object: 'response',
+      status: error ? 'failed' : 'incomplete',
+      ...(response ?? {}),
+      output: [...output.entries()].sort((a, b) => a[0] - b[0]).map(([, item]) => item)
+    },
+    error
+  };
+}
+
 /** §7.4 — tool_calls the model asked for. `arguments` is a JSON string; keep the raw on parse failure. */
 export function extractToolUses(response) {
+  if (isObject(response) && Array.isArray(response.output)) {
+    return response.output
+      .filter((item) => isObject(item) && item.type === 'function_call')
+      .map((item) => ({
+        tool_name: str(item.name),
+        tool_use_id: str(item.call_id) ?? str(item.id),
+        is_error: 0,
+        content: parseArguments(item.arguments)
+      }));
+  }
   if (!isObject(response) || !Array.isArray(response.choices)) return [];
   const choice = response.choices[0];
   const message = isObject(choice) ? choice.message : null;
@@ -142,6 +233,16 @@ export function extractToolUses(response) {
 
 /** §7.4 — `role: 'tool'` messages carrying results back to the model. */
 export function extractToolResults(request) {
+  if (isObject(request) && Array.isArray(request.input)) {
+    return request.input
+      .filter((item) => isObject(item) && item.type === 'function_call_output')
+      .map((item) => ({
+        tool_name: null,
+        tool_use_id: str(item.call_id),
+        is_error: item.status === 'failed' ? 1 : 0,
+        content: item.output ?? null
+      }));
+  }
   if (!isObject(request) || !Array.isArray(request.messages)) return [];
   return request.messages
     .filter((m) => isObject(m) && m.role === 'tool')
@@ -163,6 +264,23 @@ function parseArguments(raw) {
   } catch {
     return { _orangebox_unparsed_arguments: raw };
   }
+}
+
+function ensureOutputMessage(output, index, id) {
+  const existing = output.get(index);
+  if (isObject(existing) && existing.type === 'message') {
+    existing.content ??= [];
+    return existing;
+  }
+  const item = {
+    type: 'message',
+    id: id ?? null,
+    role: 'assistant',
+    status: 'in_progress',
+    content: []
+  };
+  output.set(index, item);
+  return item;
 }
 
 function emptyResult() {

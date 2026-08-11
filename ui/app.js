@@ -88,6 +88,7 @@ const state = {
   tab: 'conversation',
   follow: true,
   online: true,
+  inFlight: new Map(),
   // §21.3 diff: which call we are comparing against, and on which side.
   diff: { runId: null, callId: null, side: 'request', runCalls: null, runCallsFor: null, call: null, busy: false }
 };
@@ -171,6 +172,15 @@ async function loadRun(runId) {
     state.run = data.run;
     state.calls = data.calls;
     state.tools = data.tools;
+    for (const call of state.inFlight.values()) {
+      if (call.run_id === runId && !state.calls.some((saved) => saved.id === call.id)) {
+        state.calls.push(call);
+      }
+    }
+    state.calls.sort((a, b) => a.started_at - b.started_at);
+    state.calls.forEach((call, index) => {
+      if (call.ended_at === null) call.seq = index + 1;
+    });
   } catch {
     state.run = null;
     state.calls = [];
@@ -529,8 +539,27 @@ function conversationView(call) {
   if (request.system !== undefined && request.system !== null) {
     out.push(messageCard('system', normalizeContent(request.system), { collapsed: true }));
   }
+  if (request.instructions !== undefined && request.instructions !== null) {
+    out.push(messageCard('system', normalizeContent(request.instructions), { collapsed: true }));
+  }
   for (const message of request.messages ?? []) {
     out.push(messageCard(message.role ?? 'user', normalizeContent(message.content), { message }));
+  }
+  if (typeof request.input === 'string') {
+    out.push(messageCard('user', normalizeContent(request.input)));
+  } else {
+    for (const item of request.input ?? []) {
+      if (item?.type === 'message' || item?.role) {
+        out.push(messageCard(item.role ?? 'user', normalizeContent(item.content), { message: item }));
+      } else if (item?.type === 'function_call_output') {
+        out.push(messageCard('tool', [{
+          type: 'tool_result',
+          tool_use_id: item.call_id,
+          is_error: item.status === 'failed',
+          content: item.output
+        }]));
+      }
+    }
   }
 
   // The model's own turn is the response, not part of the sent history.
@@ -548,6 +577,18 @@ function conversationView(call) {
       parts.push({ type: 'tool_use', name: tc.function?.name, id: tc.id, input: tc.function?.arguments });
     }
     if (parts.length > 0) out.push(messageCard('assistant', parts, { label: 'response' }));
+    for (const item of response.output ?? []) {
+      if (item?.type === 'message') {
+        out.push(messageCard(item.role ?? 'assistant', normalizeContent(item.content), { label: 'response' }));
+      } else if (item?.type === 'function_call') {
+        out.push(messageCard('assistant', [{
+          type: 'tool_use',
+          name: item.name,
+          id: item.call_id ?? item.id,
+          input: item.arguments
+        }], { label: 'response' }));
+      }
+    }
   }
 
   if (out.length === 0) out.push(el('p', { class: 'note', text: 'No conversation content in this call.' }));
@@ -560,7 +601,11 @@ function normalizeContent(content) {
   if (typeof content === 'string') return [{ type: 'text', text: content }];
   if (Array.isArray(content)) {
     return content.map((part) =>
-      typeof part === 'string' ? { type: 'text', text: part } : (part ?? { type: 'unknown' })
+      typeof part === 'string'
+        ? { type: 'text', text: part }
+        : ['input_text', 'output_text'].includes(part?.type)
+          ? { ...part, type: 'text' }
+          : (part ?? { type: 'unknown' })
     );
   }
   return [{ type: 'unknown', value: content }];
@@ -975,11 +1020,61 @@ function connectLive() {
     if (state.runId) loadRun(state.runId).catch(() => {});
   };
 
-  // The feed is an invalidation hint, not the source of truth (§10.1) — every
-  // event just triggers a refetch, so a dropped event costs one stale render.
-  for (const name of ['run.created', 'call.started', 'call.first_token', 'call.completed']) {
-    source.addEventListener(name, refresh);
-  }
+  source.addEventListener('run.created', refresh);
+  source.addEventListener('run.updated', refresh);
+  source.addEventListener('call.started', (event) => {
+    const call = eventData(event);
+    loadRuns().catch(() => {});
+    if (!call) return;
+    const seq = Math.max(0, ...state.calls.map((existing) => Number(existing.seq) || 0)) + 1;
+    const placeholder = {
+      id: call.call_id,
+      run_id: call.run_id,
+      seq,
+      provider: call.provider,
+      endpoint: call.endpoint,
+      model: call.model,
+      status: null,
+      error_type: null,
+      streamed: call.streamed,
+      started_at: call.started_at,
+      first_token_at: null,
+      ended_at: null,
+      latency_ms: null,
+      ttft_ms: null,
+      input_tokens: null,
+      output_tokens: null,
+      cache_read_tokens: null,
+      cache_write_tokens: null,
+      stop_reason: null,
+      cost_usd: null,
+      truncated: 0
+    };
+    state.inFlight.set(call.call_id, placeholder);
+    if (call.run_id !== state.runId) return;
+    if (!state.calls.some((existing) => existing.id === call.call_id)) state.calls.push(placeholder);
+    renderTimeline();
+    if (state.follow) scrollToLive();
+  });
+  source.addEventListener('call.first_token', (event) => {
+    const update = eventData(event);
+    if (!update || update.run_id !== state.runId) return;
+    const call = state.calls.find((candidate) => candidate.id === update.call_id);
+    if (!call) return;
+    call.first_token_at = call.started_at + update.ttft_ms;
+    call.ttft_ms = update.ttft_ms;
+    const pending = state.inFlight.get(update.call_id);
+    if (pending) {
+      pending.first_token_at = call.first_token_at;
+      pending.ttft_ms = update.ttft_ms;
+    }
+    renderTimeline();
+  });
+  source.addEventListener('call.completed', (event) => {
+    const update = eventData(event);
+    if (update?.call_id) state.inFlight.delete(update.call_id);
+    refresh();
+  });
 
   source.addEventListener('error', () => {
     setOnline(false);
@@ -987,6 +1082,14 @@ function connectLive() {
     setTimeout(connectLive, backoff);
     backoff = Math.min(backoff * 2, 30_000);
   });
+}
+
+function eventData(event) {
+  try {
+    return JSON.parse(event.data);
+  } catch {
+    return null;
+  }
 }
 
 function setOnline(online) {

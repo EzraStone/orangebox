@@ -138,6 +138,7 @@ async function proxyCall(ctx, req, res, route) {
     run_id: run.id,
     call_id: callId,
     provider,
+    endpoint: upstreamPath,
     model: requestInfo.model,
     started_at: startedAt,
     streamed: requestInfo.stream ? 1 : 0
@@ -324,6 +325,7 @@ async function relayStream(ctx, opts) {
         if (firstTokenAt === null && detector.sees(value)) {
           firstTokenAt = Date.now();
           live.publish('call.first_token', {
+            run_id: base.run_id,
             call_id: base.id,
             ttft_ms: firstTokenAt - base.started_at
           });
@@ -421,6 +423,13 @@ function makeFirstTokenDetector(provider) {
             return true;
           }
         } else {
+          if (
+            payload?.type === 'response.output_text.delta' ||
+            payload?.type === 'response.function_call_arguments.delta'
+          ) {
+            done = true;
+            return true;
+          }
           const delta = payload?.choices?.[0]?.delta;
           if (delta && typeof delta === 'object' && Object.keys(delta).length > 0) {
             done = true;
