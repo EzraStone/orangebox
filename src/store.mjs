@@ -94,6 +94,9 @@ const MIGRATIONS = new Map([
       sql: `
         ALTER TABLE runs ADD COLUMN unknown_cost_count INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE runs ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
+        UPDATE runs SET unknown_cost_count = (
+          SELECT COUNT(*) FROM calls WHERE calls.run_id = runs.id AND calls.cost_usd IS NULL
+        );
       `
     }
   ]
@@ -267,10 +270,59 @@ export class Store {
     return normalizeRun(this.q.getRun.get(id) ?? null);
   }
 
-  listRuns({ limit = 50, offset = 0 } = {}) {
+  listRuns({
+    limit = 50,
+    offset = 0,
+    search = '',
+    model = '',
+    tool = '',
+    error = '',
+    minLatency = null,
+    minCost = null,
+    from = null,
+    to = null
+  } = {}) {
+    const where = [];
+    const params = { limit, offset };
+    if (search) {
+      where.push('(COALESCE(r.name, \'\') LIKE @search OR r.id LIKE @search OR r.tags_json LIKE @search)');
+      params.search = `%${search}%`;
+    }
+    if (model) {
+      where.push('EXISTS (SELECT 1 FROM calls c WHERE c.run_id = r.id AND c.model LIKE @model)');
+      params.model = `%${model}%`;
+    }
+    if (tool) {
+      where.push('EXISTS (SELECT 1 FROM tool_events t WHERE t.run_id = r.id AND t.tool_name LIKE @tool)');
+      params.tool = `%${tool}%`;
+    }
+    if (error === 'errors') where.push('r.error_count > 0');
+    if (error === 'clean') where.push('r.error_count = 0');
+    if (Number.isFinite(minLatency)) {
+      where.push('EXISTS (SELECT 1 FROM calls c WHERE c.run_id = r.id AND c.latency_ms >= @minLatency)');
+      params.minLatency = minLatency;
+    }
+    if (Number.isFinite(minCost)) {
+      where.push('r.cost_usd >= @minCost');
+      params.minCost = minCost;
+    }
+    if (Number.isFinite(from)) {
+      where.push('r.started_at >= @from');
+      params.from = from;
+    }
+    if (Number.isFinite(to)) {
+      where.push('r.started_at <= @to');
+      params.to = to;
+    }
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const runs = this.db
+      .prepare(`SELECT r.* FROM runs r ${clause} ORDER BY r.started_at DESC, r.id DESC LIMIT @limit OFFSET @offset`)
+      .all(params)
+      .map(normalizeRun);
+    const total = this.db.prepare(`SELECT COUNT(*) AS n FROM runs r ${clause}`).get(params).n;
     return {
-      runs: this.q.listRuns.all(limit, offset).map(normalizeRun),
-      total: this.q.countRuns.get().n
+      runs,
+      total
     };
   }
 

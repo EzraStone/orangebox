@@ -173,7 +173,8 @@ async function handleApi(req, res, ctx, pathname, url) {
       db: store.path,
       runs: store.countRuns(),
       csrf_token: security.csrfToken,
-      authenticated: Boolean(security.authToken)
+      authenticated: Boolean(security.authToken),
+      platform: process.platform
     });
   }
 
@@ -186,7 +187,18 @@ async function handleApi(req, res, ctx, pathname, url) {
   if (method === 'GET' && pathname === '/api/runs') {
     const limit = clampInt(url.searchParams.get('limit'), 50, 1, 500);
     const offset = clampInt(url.searchParams.get('offset'), 0, 0, Number.MAX_SAFE_INTEGER);
-    return sendJson(res, 200, store.listRuns({ limit, offset }));
+    return sendJson(res, 200, store.listRuns({
+      limit,
+      offset,
+      search: url.searchParams.get('search')?.trim() ?? '',
+      model: url.searchParams.get('model')?.trim() ?? '',
+      tool: url.searchParams.get('tool')?.trim() ?? '',
+      error: url.searchParams.get('error') ?? '',
+      minLatency: optionalNumber(url.searchParams.get('min_latency')),
+      minCost: optionalNumber(url.searchParams.get('min_cost')),
+      from: optionalNumber(url.searchParams.get('from')),
+      to: optionalNumber(url.searchParams.get('to'))
+    }));
   }
 
   // POST /api/runs/begin
@@ -343,6 +355,12 @@ function clampInt(raw, fallback, min, max) {
   const n = Number.parseInt(raw ?? '', 10);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
+}
+
+function optionalNumber(raw) {
+  if (raw === null || raw === '') return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
 }
 
 function sameOrigin(req) {

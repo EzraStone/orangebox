@@ -19,8 +19,21 @@
       <span class="pane-title" id="runs-count"></span>
       <button class="iconbtn" id="runs-collapse" type="button" title="Collapse runs (\)" aria-label="Collapse runs pane" aria-expanded="true">&#x00AB;</button>
     </div>
+    <div class="run-filters" aria-label="Filter runs">
+      <input id="run-search" type="search" placeholder="Search runs or tags" aria-label="Search runs or tags">
+      <div class="run-filter-row">
+        <input id="run-model" type="search" placeholder="Model" aria-label="Filter by model">
+        <input id="run-tool" type="search" placeholder="Tool" aria-label="Filter by tool">
+        <select id="run-errors" aria-label="Filter by error state">
+          <option value="">All</option>
+          <option value="errors">Errors</option>
+          <option value="clean">Clean</option>
+        </select>
+      </div>
+    </div>
     <div class="pane-body">
       <ul class="runlist" id="runlist"></ul>
+      <button class="load-more" id="runs-more" type="button" hidden>Load more</button>
     </div>
     <footer class="trust">This database contains your prompts. So do its exports.</footer>
   </aside>

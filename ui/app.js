@@ -79,6 +79,9 @@ const fmt = {
 
 const state = {
   runs: [],
+  runTotal: 0,
+  platform: 'unknown',
+  filters: { search: '', model: '', tool: '', error: '' },
   runId: null,
   run: null,
   calls: [],
@@ -139,15 +142,24 @@ function navigate(runId, { replace = false } = {}) {
   const url = runId ? `/run/${encodeURIComponent(runId)}` : '/';
   if (location.pathname !== url) history[replace ? 'replaceState' : 'pushState']({}, '', url);
   selectRun(runId, { fromNav: true });
+  if (window.innerWidth <= 900) setRunsCollapsed(true);
 }
 
 window.addEventListener('popstate', () => selectRun(pathRunId(), { fromNav: true }));
 
 // ============================================================== data load
 
-async function loadRuns() {
-  const { runs } = await api.get('/api/runs?limit=200');
-  state.runs = runs;
+const RUN_PAGE_SIZE = 100;
+
+async function loadRuns({ append = false } = {}) {
+  const params = new URLSearchParams({
+    limit: String(RUN_PAGE_SIZE),
+    offset: String(append ? state.runs.length : 0)
+  });
+  for (const [key, value] of Object.entries(state.filters)) if (value) params.set(key, value);
+  const { runs, total } = await api.get(`/api/runs?${params}`);
+  state.runs = append ? [...state.runs, ...runs] : runs;
+  state.runTotal = total;
   renderRuns();
 
   // Nothing selected yet: land on the newest run, or the empty state.
@@ -231,7 +243,10 @@ function closeDetail() {
 function renderRuns() {
   const list = $('runlist');
   list.replaceChildren();
-  $('runs-count').textContent = state.runs.length ? `${state.runs.length} runs` : '';
+  $('runs-count').textContent = state.runTotal
+    ? `${state.runs.length}${state.runs.length < state.runTotal ? `/${state.runTotal}` : ''} runs`
+    : '';
+  $('runs-more').hidden = state.runs.length >= state.runTotal;
 
   for (const run of state.runs) {
     const item = el('li', {}, [
@@ -248,9 +263,16 @@ function renderRuns() {
             el('span', { class: 'run-name', text: run.name || run.id }),
             el('span', { class: 'run-when', text: fmt.when(run.started_at) })
           ]),
+          run.tags?.length
+            ? el('span', { class: 'run-tags' }, run.tags.map((tag) => el('span', { class: 'tag', text: tag })))
+            : null,
           el('span', { class: 'run-meta' }, [
             el('span', { class: 'num', text: `${run.call_count} call${run.call_count === 1 ? '' : 's'}` }),
-            el('span', { class: 'num', text: fmt.usd(run.cost_usd) }),
+            el('span', {
+              class: 'num',
+              title: run.unknown_cost_count ? `${run.unknown_cost_count} call(s) have unknown cost` : '',
+              text: `${fmt.usd(run.cost_usd)}${run.unknown_cost_count ? '+' : ''}`
+            }),
             run.error_count > 0
               ? el('span', { class: 'run-err', text: `▲ ${run.error_count} error${run.error_count === 1 ? '' : 's'}` })
               : null
@@ -273,13 +295,28 @@ function renderRunHeader() {
   const duration = run.ended_at ? run.ended_at - run.started_at : lastActivity() - run.started_at;
 
   head.append(
-    el('div', { class: 'run-head' }, [el('h1', { text: run.name || run.id })]),
+    el('div', { class: 'run-head' }, [
+      el('h1', { text: run.name || run.id }),
+      ...(run.tags ?? []).map((tag) => el('span', { class: 'tag', text: tag }))
+    ]),
     el('div', { class: 'spacer' }),
     el('div', { class: 'run-stats' }, [
       el('span', { class: 'num', text: `${fmt.tokens(run.input_tokens)} in / ${fmt.tokens(run.output_tokens)} out` }),
-      el('span', { class: 'num', title: 'estimated from pricing.json', text: `${fmt.usd(run.cost_usd)} est.` }),
+      el('span', {
+        class: 'num',
+        title: run.unknown_cost_count
+          ? `${run.unknown_cost_count} call(s) have unknown cost; total is partial`
+          : 'estimated from pricing.json',
+        text: `${fmt.usd(run.cost_usd)}${run.unknown_cost_count ? '+' : ''} est.${run.unknown_cost_count ? ' partial' : ''}`
+      }),
       el('span', { class: 'num', text: fmt.ms(duration) })
     ]),
+    el('button', {
+      class: 'btn',
+      type: 'button',
+      text: 'Edit',
+      on: { click: () => editRun(run) }
+    }),
     el('button', {
       class: 'btn',
       type: 'button',
@@ -293,6 +330,20 @@ function renderRunHeader() {
       on: { click: () => deleteRun(run) }
     })
   );
+}
+
+async function editRun(run) {
+  const name = prompt('Run name', run.name ?? '');
+  if (name === null) return;
+  const tags = prompt('Tags (comma-separated)', (run.tags ?? []).join(', '));
+  if (tags === null) return;
+  const result = await api.send('PATCH', `/api/runs/${encodeURIComponent(run.id)}`, {
+    name,
+    tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+  });
+  state.run = result.run;
+  await loadRuns();
+  renderTimeline();
 }
 
 function lastActivity() {
@@ -434,7 +485,10 @@ function whyNoCost(call) {
 
 function emptyState() {
   const origin = location.origin;
-  const lines = `export ANTHROPIC_BASE_URL="${origin}/anthropic"\nexport OPENAI_BASE_URL="${origin}/openai"`;
+  const primary = 'npx orangebox-ai run --name "my agent" -- node agent.js';
+  const envLines = state.platform === 'win32'
+    ? `$env:ANTHROPIC_BASE_URL="${origin}/anthropic"\n$env:OPENAI_BASE_URL="${origin}/openai"`
+    : `export ANTHROPIC_BASE_URL="${origin}/anthropic"\nexport OPENAI_BASE_URL="${origin}/openai"`;
 
   const copy = el('button', {
     class: 'btn',
@@ -443,7 +497,7 @@ function emptyState() {
     on: {
       click: async (e) => {
         try {
-          await navigator.clipboard.writeText(lines);
+          await navigator.clipboard.writeText(primary);
           e.target.textContent = 'Copied';
           setTimeout(() => (e.target.textContent = 'Copy'), 1200);
         } catch {
@@ -456,8 +510,11 @@ function emptyState() {
   return el('div', { class: 'empty' }, [
     el('h2', { text: 'Nothing recorded yet.' }),
     el('p', { text: 'Point your agent at orangebox and run it. Calls appear here as they happen — no code changes, no account, nothing leaves this machine.' }),
-    el('div', { class: 'setup' }, [copy, el('pre', { text: lines })]),
-    el('p', { class: 'note', text: 'Works with any language or framework that talks to the Anthropic or OpenAI HTTP APIs. For precise run boundaries, use "orangebox run -- your-command" or send an x-orangebox-run-id header.' })
+    el('p', { class: 'note', text: 'Easiest start — replace node agent.js with your command:' }),
+    el('div', { class: 'setup' }, [copy, el('pre', { text: primary })]),
+    el('p', { class: 'note', text: 'Or point an already-running process at this recorder:' }),
+    el('div', { class: 'setup' }, [el('pre', { text: envLines })]),
+    el('p', { class: 'note', text: 'Works with the Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses APIs, including compatible custom upstreams.' })
   ]);
 }
 
@@ -1179,6 +1236,11 @@ document.addEventListener('keydown', (e) => {
 
 /** §11.2 — 280px, collapsible. The choice sticks for the session. */
 function setRunsCollapsed(collapsed) {
+  if (window.innerWidth <= 900) {
+    $('shell').classList.toggle('mobile-runs-open', !collapsed);
+    $('runs-collapse').setAttribute('aria-expanded', String(!collapsed));
+    return;
+  }
   $('shell').classList.toggle('runs-collapsed', collapsed);
   $('runs-collapse').setAttribute('aria-expanded', String(!collapsed));
   try {
@@ -1190,6 +1252,25 @@ function setRunsCollapsed(collapsed) {
 
 $('runs-collapse').addEventListener('click', () => setRunsCollapsed(true));
 $('runs-expand').addEventListener('click', () => setRunsCollapsed(false));
+$('runs-more').addEventListener('click', () => loadRuns({ append: true }).catch(() => {}));
+
+let filterTimer = null;
+function scheduleRunFilter() {
+  clearTimeout(filterTimer);
+  filterTimer = setTimeout(() => {
+    state.filters = {
+      search: $('run-search').value.trim(),
+      model: $('run-model').value.trim(),
+      tool: $('run-tool').value.trim(),
+      error: $('run-errors').value
+    };
+    loadRuns().catch(() => {});
+  }, 180);
+}
+for (const id of ['run-search', 'run-model', 'run-tool']) {
+  $(id).addEventListener('input', scheduleRunFilter);
+}
+$('run-errors').addEventListener('change', scheduleRunFilter);
 
 try {
   if (localStorage.getItem('orangebox.runsCollapsed') === '1') setRunsCollapsed(true);
@@ -1225,6 +1306,7 @@ try {
 
 const health = await api.get('/api/health');
 csrfToken = health.csrf_token;
+state.platform = health.platform;
 state.runId = pathRunId();
 renderPill();
 await loadRuns();

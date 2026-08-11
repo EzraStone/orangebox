@@ -130,9 +130,9 @@ function banner({ origin, store, host, willOpen, authToken }) {
   console.log(`  ▮ orangebox v${VERSION} — flight recorder for AI agents`);
   console.log(`  ▮ recording on   ${origin}`);
   console.log(`  ▮ database       ${store.path}  (${runs} run${runs === 1 ? '' : 's'}, ${formatBytes(size)})`);
-  console.log('  ▮ point your agent at it:');
-  console.log(`  ▮   export ANTHROPIC_BASE_URL="${origin}/anthropic"`);
-  console.log(`  ▮   export OPENAI_BASE_URL="${origin}/openai"`);
+  console.log('  ▮ easiest start   orangebox run --name "my agent" -- node agent.js');
+  console.log('  ▮ or point an existing process at it:');
+  for (const line of environmentCommands(origin)) console.log(`  ▮   ${line}`);
   console.log(`  ▮ ui             ${origin}${willOpen ? '  (opening browser…)' : ''}`);
   if (authToken) console.log('  ▮ authentication x-orangebox-auth is required');
   console.log('');
@@ -415,6 +415,19 @@ function displayHost(host) {
   return host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host;
 }
 
+function environmentCommands(origin) {
+  if (process.platform === 'win32') {
+    return [
+      `$env:ANTHROPIC_BASE_URL="${origin}/anthropic"`,
+      `$env:OPENAI_BASE_URL="${origin}/openai"`
+    ];
+  }
+  return [
+    `export ANTHROPIC_BASE_URL="${origin}/anthropic"`,
+    `export OPENAI_BASE_URL="${origin}/openai"`
+  ];
+}
+
 export function formatBytes(n) {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -456,11 +469,10 @@ OPTIONS (start)
   --unsafe-no-auth            allow a non-loopback host without authentication
   --no-open        don't open the browser on start
 
-POINT YOUR AGENT AT IT
-  export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"
-  export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"
-
-  …or skip the env vars entirely and let orangebox set them for you:
+EASIEST START
   orangebox run --name "checkout bot" -- node agent.js
+
+POINT AN EXISTING PROCESS AT IT
+  ${environmentCommands('http://127.0.0.1:4100').join('\n  ')}
 `);
 }

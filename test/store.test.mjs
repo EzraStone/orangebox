@@ -91,8 +91,44 @@ test('run aggregates are maintained incrementally, never rescanned', () => {
   assert.equal(after.output_tokens, 6);
   assert.ok(Math.abs(after.cost_usd - 0.03) < 1e-9);
   assert.equal(after.error_count, 1);
+  assert.equal(after.unknown_cost_count, 1);
 
   assert.deepEqual(store.callSummaries(run.id).map((c) => c.seq), [1, 2, 3]);
+  store.close();
+});
+
+test('run metadata and filters support daily-driver navigation', () => {
+  const store = memStore();
+  const checkout = store.createRun({ source: 'explicit', name: 'Checkout regression' });
+  const support = store.createRun({ source: 'explicit', name: 'Support bot' });
+  store.updateRun(checkout.id, { name: 'Checkout regression', tags: ['prod', 'payments', 'prod'] });
+
+  const checkoutCall = call(store, checkout.id, {
+    model: 'gpt-5.6-terra',
+    latency_ms: 4200,
+    cost_usd: 0.08,
+    error_type: 'http_429'
+  });
+  store.insertCall(checkoutCall, [{
+    id: newId(),
+    run_id: checkout.id,
+    call_id: checkoutCall.id,
+    kind: 'tool_use',
+    tool_name: 'charge_card',
+    tool_use_id: 'charge-1',
+    is_error: 0,
+    content_json: '{}'
+  }]);
+  store.insertCall(call(store, support.id, { model: 'claude-haiku-4-5', cost_usd: 0.001 }));
+
+  assert.deepEqual(store.getRun(checkout.id).tags, ['prod', 'payments']);
+  assert.equal(store.listRuns({ search: 'payments' }).runs[0].id, checkout.id);
+  assert.equal(store.listRuns({ model: '5.6-terra' }).runs[0].id, checkout.id);
+  assert.equal(store.listRuns({ tool: 'charge' }).runs[0].id, checkout.id);
+  assert.equal(store.listRuns({ error: 'errors' }).runs[0].id, checkout.id);
+  assert.equal(store.listRuns({ minLatency: 4000 }).runs[0].id, checkout.id);
+  assert.equal(store.listRuns({ minCost: 0.05 }).runs[0].id, checkout.id);
+  assert.equal(store.listRuns({ search: 'does-not-exist' }).total, 0);
   store.close();
 });
 

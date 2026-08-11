@@ -849,6 +849,39 @@ test('mutating APIs require JSON, same origin, and the startup CSRF token', asyn
   }
 });
 
+test('run API supports rename, tags, search, and pagination', async () => {
+  const app = await startOrangebox();
+  try {
+    const health = (await getJson(`${app.origin}/api/health`)).body;
+    const headers = {
+      'content-type': 'application/json',
+      'x-orangebox-csrf': health.csrf_token
+    };
+    const created = await getJson(`${app.origin}/api/runs/begin`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'Before' })
+    });
+    const id = created.body.id;
+    const updated = await getJson(`${app.origin}/api/runs/${id}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ name: 'Checkout regression', tags: ['prod', 'payments'] })
+    });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.body.run.name, 'Checkout regression');
+    assert.deepEqual(updated.body.run.tags, ['prod', 'payments']);
+
+    const found = await getJson(`${app.origin}/api/runs?search=payments&limit=1&offset=0`);
+    assert.equal(found.body.total, 1);
+    assert.equal(found.body.runs[0].id, id);
+    const missing = await getJson(`${app.origin}/api/runs?search=missing`);
+    assert.equal(missing.body.total, 0);
+  } finally {
+    await app.stop();
+  }
+});
+
 test('optional remote auth protects API and proxy routes without leaking upstream', async () => {
   const upstream = await startMockUpstream((req, res) => jsonResponse(res, 200, ANTHROPIC_MESSAGE));
   const app = await startOrangebox({
