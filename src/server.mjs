@@ -11,6 +11,7 @@ import { openStore, newId, safeStringify } from './store.mjs';
 import { createLiveHub } from './live.mjs';
 import { loadPricing } from './pricing.mjs';
 import { createProxy } from './proxy.mjs';
+import { compareRuns, sanitizeExport, buildHtmlReport, buildOtelExport } from './export.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UI_DIR = path.join(HERE, '..', 'ui');
@@ -258,13 +259,88 @@ async function handleApi(req, res, ctx, pathname, url) {
     return sendJson(res, 200, { call });
   }
 
+  // POST /api/calls/:id/replay
+  if (method === 'POST' && seg.length === 4 && seg[1] === 'calls' && seg[3] === 'replay') {
+    const original = store.getCall(seg[2]);
+    if (!original) return sendJson(res, 404, { error: 'no such call' });
+    if (original.truncated) {
+      return sendJson(res, 409, { error: 'truncated calls cannot be replayed safely' });
+    }
+    const body = await readJsonBody(req);
+    if (!body || (body.request !== undefined && !isPlainObject(body.request))) {
+      return sendJson(res, 400, { error: 'request must be a JSON object' });
+    }
+    const stored = parseJson(original.request_json);
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
+      return sendJson(res, 409, { error: 'the recorded request is not replayable JSON' });
+    }
+    delete stored._orangebox;
+    const replayRequest = body.request === undefined ? stored : body.request;
+    if (body.model !== undefined) replayRequest.model = String(body.model);
+
+    const sourceRun = store.getRun(original.run_id);
+    const run = store.createRun({
+      name: String(body.name || `replay of ${sourceRun?.name || original.run_id}`).slice(0, 200),
+      source: 'explicit'
+    });
+    live.publish('run.created', { run });
+
+    const headers = replayHeaders(original.provider, security.authToken);
+    const replayUrl = `http://${req.headers.host}/r/${encodeURIComponent(run.id)}/${original.provider}${original.endpoint}`;
+    let upstreamResponse;
+    try {
+      upstreamResponse = await fetch(replayUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(replayRequest),
+        signal: AbortSignal.timeout(10 * 60 * 1000)
+      });
+      await upstreamResponse.text();
+    } catch (error) {
+      return sendJson(res, 502, { error: 'replay failed', detail: String(error?.message ?? error), run_id: run.id });
+    }
+
+    const replayed = await waitForCall(store, run.id);
+    store.endRun(run.id);
+    return sendJson(res, replayed ? 200 : 202, {
+      run_id: run.id,
+      call_id: replayed?.id ?? null,
+      status: upstreamResponse.status
+    });
+  }
+
+  // GET /api/compare?left=:runId&right=:runId
+  if (method === 'GET' && pathname === '/api/compare') {
+    const comparison = compareRuns(store, url.searchParams.get('left'), url.searchParams.get('right'));
+    if (!comparison) return sendJson(res, 404, { error: 'one or both runs do not exist' });
+    return sendJson(res, 200, comparison);
+  }
+
   // GET /api/export/:runId
   if (method === 'GET' && seg.length === 3 && seg[1] === 'export') {
-    const payload = buildExport(store, seg[2]);
+    let payload = buildExport(store, seg[2]);
     if (!payload) return sendJson(res, 404, { error: 'no such run' });
+    const sanitize = url.searchParams.get('sanitize');
+    if (sanitize) payload = sanitizeExport(payload, { full: sanitize === 'full' });
+    const format = url.searchParams.get('format') ?? 'json';
+    const safeId = seg[2].replace(/[^a-zA-Z0-9_-]/g, '_');
+    if (format === 'html') {
+      if (!sanitize) payload = sanitizeExport(payload);
+      const html = buildHtmlReport(payload);
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'content-disposition': `attachment; filename="orangebox-run-${safeId}.html"`,
+        'content-length': Buffer.byteLength(html),
+        'x-content-type-options': 'nosniff'
+      });
+      return void res.end(html);
+    }
+    if (format === 'otel') payload = buildOtelExport(payload);
+    else if (format !== 'json') return sendJson(res, 400, { error: 'format must be json, html, or otel' });
+    const filename = format === 'otel' ? `orangebox-run-${safeId}.otel.json` : `orangebox-run-${safeId}.json`;
     res.writeHead(200, {
       'content-type': 'application/json; charset=utf-8',
-      'content-disposition': `attachment; filename="orangebox-run-${seg[2]}.json"`
+      'content-disposition': `attachment; filename="${filename}"`
     });
     return void res.end(safeStringify(payload));
   }
@@ -361,6 +437,43 @@ function optionalNumber(raw) {
   if (raw === null || raw === '') return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;
+}
+
+function parseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function replayHeaders(provider, authToken) {
+  const headers = {
+    'content-type': 'application/json',
+    ...(authToken ? { 'x-orangebox-auth': authToken } : {})
+  };
+  if (provider === 'openai' && process.env.OPENAI_API_KEY) {
+    headers.authorization = `Bearer ${process.env.OPENAI_API_KEY}`;
+  }
+  if (provider === 'anthropic') {
+    if (process.env.ANTHROPIC_API_KEY) headers['x-api-key'] = process.env.ANTHROPIC_API_KEY;
+    headers['anthropic-version'] = process.env.ANTHROPIC_VERSION || '2023-06-01';
+  }
+  return headers;
+}
+
+async function waitForCall(store, runId, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const call = store.lastCallOfRun(runId);
+    if (call) return call;
+    if (Date.now() >= deadline) return null;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 function sameOrigin(req) {

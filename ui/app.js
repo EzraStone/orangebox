@@ -81,7 +81,7 @@ const state = {
   runs: [],
   runTotal: 0,
   platform: 'unknown',
-  filters: { search: '', model: '', tool: '', error: '' },
+  filters: { search: '', model: '', tool: '', error: '', min_latency: '', min_cost: '', from: '', to: '' },
   runId: null,
   run: null,
   calls: [],
@@ -92,6 +92,7 @@ const state = {
   follow: true,
   online: true,
   inFlight: new Map(),
+  comparison: null,
   // §21.3 diff: which call we are comparing against, and on which side.
   diff: { runId: null, callId: null, side: 'request', runCalls: null, runCallsFor: null, call: null, busy: false }
 };
@@ -141,8 +142,9 @@ function pathRunId() {
 function navigate(runId, { replace = false } = {}) {
   const url = runId ? `/run/${encodeURIComponent(runId)}` : '/';
   if (location.pathname !== url) history[replace ? 'replaceState' : 'pushState']({}, '', url);
-  selectRun(runId, { fromNav: true });
+  const loaded = selectRun(runId, { fromNav: true });
   if (window.innerWidth <= 900) setRunsCollapsed(true);
+  return loaded;
 }
 
 window.addEventListener('popstate', () => selectRun(pathRunId(), { fromNav: true }));
@@ -207,10 +209,11 @@ function selectRun(runId, { fromNav = false } = {}) {
   state.runId = runId;
   state.callId = null;
   state.call = null;
+  state.comparison = null;
   state.follow = true;
   closeDetail();
   renderRuns();
-  loadRun(runId);
+  return loadRun(runId);
 }
 
 async function selectCall(callId, { open = true } = {}) {
@@ -320,8 +323,28 @@ function renderRunHeader() {
     el('button', {
       class: 'btn',
       type: 'button',
-      text: 'Export',
-      on: { click: () => window.open(`/api/export/${encodeURIComponent(run.id)}`, '_blank') }
+      text: 'Compare',
+      on: { click: () => compareRun(run) }
+    }),
+    el('button', {
+      class: 'btn',
+      type: 'button',
+      text: 'JSON',
+      on: { click: () => openExport(run.id) }
+    }),
+    el('button', {
+      class: 'btn',
+      type: 'button',
+      text: 'Share',
+      title: 'Download a sanitized, self-contained HTML report',
+      on: { click: () => openExport(run.id, { format: 'html', sanitize: '1' }) }
+    }),
+    el('button', {
+      class: 'btn',
+      type: 'button',
+      text: 'OTel',
+      title: 'Download an OpenTelemetry JSON export',
+      on: { click: () => openExport(run.id, { format: 'otel' }) }
     }),
     el('button', {
       class: 'btn danger',
@@ -330,6 +353,35 @@ function renderRunHeader() {
       on: { click: () => deleteRun(run) }
     })
   );
+}
+
+function openExport(runId, options = {}) {
+  const params = new URLSearchParams(options);
+  if (authToken) params.set('token', authToken);
+  const query = params.size ? `?${params}` : '';
+  window.open(`/api/export/${encodeURIComponent(runId)}${query}`, '_blank');
+}
+
+async function compareRun(run) {
+  const suggestions = state.runs
+    .filter((candidate) => candidate.id !== run.id)
+    .slice(0, 8)
+    .map((candidate) => `${candidate.id}  ${candidate.name || ''}`)
+    .join('\n');
+  const requested = prompt(`Compare "${run.name || run.id}" with which run ID?\n\n${suggestions}`);
+  if (!requested) return;
+  const match = state.runs.find(
+    (candidate) => candidate.id === requested.trim() || candidate.name === requested.trim()
+  );
+  const otherId = match?.id ?? requested.trim();
+  try {
+    state.comparison = await api.get(
+      `/api/compare?left=${encodeURIComponent(otherId)}&right=${encodeURIComponent(run.id)}`
+    );
+    renderTimeline();
+  } catch {
+    alert(`Could not find run "${requested.trim()}".`);
+  }
 }
 
 async function editRun(run) {
@@ -366,6 +418,7 @@ function renderTimeline() {
 
   if (state.runs.length === 0) return void root.append(emptyState());
   if (!state.run) return void root.append(el('p', { class: 'note', text: 'Select a run.' }));
+  if (state.comparison) return void root.append(comparisonView(state.comparison));
   if (state.calls.length === 0) {
     return void root.append(el('p', { class: 'note', text: 'No calls recorded in this run yet.' }));
   }
@@ -409,6 +462,65 @@ function renderTimeline() {
     } else if (gap !== null && gap > 5000) {
       root.append(el('div', { class: 'gapbreak', text: `· · ·  ${fmt.ms(gap)} idle  · · ·` }));
     }
+  });
+}
+
+function comparisonView(comparison) {
+  const container = el('section', { class: 'comparison' });
+  container.append(
+    el('div', { class: 'comparison-head' }, [
+      el('div', {}, [el('strong', { text: comparison.left.name || comparison.left.id }), el('span', { text: ' baseline' })]),
+      el('div', {}, [el('strong', { text: comparison.right.name || comparison.right.id }), el('span', { text: ' current' })]),
+      el('button', {
+        class: 'btn',
+        type: 'button',
+        text: 'Close comparison',
+        on: { click: () => { state.comparison = null; renderTimeline(); } }
+      })
+    ])
+  );
+  for (const pair of comparison.pairs) {
+    container.append(el('article', { class: 'compare-row' }, [
+      compareSide(pair.left, pair.index),
+      compareSide(pair.right, pair.index),
+      el('div', { class: 'compare-deltas' }, [
+        deltaChip('latency', pair.delta.latency_ms, 'ms'),
+        deltaChip('input', pair.delta.input_tokens, ' tok'),
+        deltaChip('output', pair.delta.output_tokens, ' tok'),
+        deltaChip('cost', pair.delta.cost_usd, '', true),
+        pair.delta.model_changed ? el('span', { class: 'chip changed', text: 'model changed' }) : null,
+        pair.delta.error_changed ? el('span', { class: 'chip changed', text: 'error changed' }) : null,
+        pair.delta.prompt_changed ? el('span', { class: 'chip changed', text: 'prompt changed' }) : null,
+        pair.delta.output_changed ? el('span', { class: 'chip changed', text: 'output changed' }) : null,
+        pair.delta.tools_changed ? el('span', { class: 'chip changed', text: 'tools changed' }) : null
+      ])
+    ]));
+  }
+  return container;
+}
+
+function compareSide(call, index) {
+  if (!call) {
+    return el('div', { class: 'compare-side missing', text: `call ${String(index).padStart(2, '0')} missing` });
+  }
+  return el('div', { class: 'compare-side' }, [
+    el('span', { class: 'num', text: `call ${String(call.seq).padStart(2, '0')}` }),
+    el('strong', { text: call.model || call.endpoint }),
+    el('span', {
+      text: `${fmt.ms(call.latency_ms)} · ${fmt.tokens(call.input_tokens)} in / ${fmt.tokens(call.output_tokens)} out · ${fmt.usd(call.cost_usd)}`
+    }),
+    call.error_type ? el('span', { class: 'run-err', text: call.error_type }) : null
+  ]);
+}
+
+function deltaChip(label, value, suffix = '', money = false) {
+  if (value === null) return null;
+  const rendered = money
+    ? `${value >= 0 ? '+' : '-'}${fmt.usd(Math.abs(value))}`
+    : `${value >= 0 ? '+' : ''}${Math.round(value)}${suffix}`;
+  return el('span', {
+    class: `chip delta ${value > 0 ? 'worse' : value < 0 ? 'better' : ''}`,
+    text: `${label} ${rendered}`
   });
 }
 
@@ -542,6 +654,14 @@ function renderDetail() {
   head.append(
     el('span', { class: 'pane-title', text: `call ${String(summary.seq).padStart(2, '0')} · ${summary.provider}` }),
     el('div', { class: 'spacer' }),
+    state.call
+      ? el('button', {
+          class: 'btn replay',
+          type: 'button',
+          text: 'Replay & edit',
+          on: { click: () => replayCall(state.call) }
+        })
+      : null,
     el('button', { class: 'btn', type: 'button', text: 'Close  esc', on: { click: closeDetail } })
   );
 
@@ -581,6 +701,35 @@ function renderDetail() {
   else if (state.tab === 'response') panel.append(payloadView(call.response_json));
   else if (state.tab === 'diff') panel.append(...diffView(call));
   else panel.append(...timingView(call, summary));
+}
+
+async function replayCall(call) {
+  if (call.truncated) return void alert('This call was truncated and cannot be replayed safely.');
+  let request;
+  try {
+    request = JSON.parse(call.request_json);
+    delete request._orangebox;
+  } catch {
+    return void alert('The recorded request is not valid JSON.');
+  }
+  const edited = prompt('Edit the request JSON, then press OK to replay it.', JSON.stringify(request, null, 2));
+  if (edited === null) return;
+  try {
+    request = JSON.parse(edited);
+  } catch {
+    return void alert('That request is not valid JSON.');
+  }
+  try {
+    const result = await api.send('POST', `/api/calls/${encodeURIComponent(call.id)}/replay`, { request });
+    await loadRuns();
+    await navigate(result.run_id);
+    state.comparison = await api.get(
+      `/api/compare?left=${encodeURIComponent(call.run_id)}&right=${encodeURIComponent(result.run_id)}`
+    );
+    renderTimeline();
+  } catch (error) {
+    alert(`Replay failed: ${error.message}`);
+  }
 }
 
 function conversationView(call) {
@@ -1262,15 +1411,25 @@ function scheduleRunFilter() {
       search: $('run-search').value.trim(),
       model: $('run-model').value.trim(),
       tool: $('run-tool').value.trim(),
-      error: $('run-errors').value
+      error: $('run-errors').value,
+      min_latency: $('run-latency').value,
+      min_cost: $('run-cost').value,
+      from: dateBoundary($('run-from').value, false),
+      to: dateBoundary($('run-to').value, true)
     };
     loadRuns().catch(() => {});
   }, 180);
 }
-for (const id of ['run-search', 'run-model', 'run-tool']) {
+function dateBoundary(value, endOfDay) {
+  if (!value) return '';
+  const date = new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}`);
+  return String(date.getTime());
+}
+
+for (const id of ['run-search', 'run-model', 'run-tool', 'run-latency', 'run-cost']) {
   $(id).addEventListener('input', scheduleRunFilter);
 }
-$('run-errors').addEventListener('change', scheduleRunFilter);
+for (const id of ['run-errors', 'run-from', 'run-to']) $(id).addEventListener('change', scheduleRunFilter);
 
 try {
   if (localStorage.getItem('orangebox.runsCollapsed') === '1') setRunsCollapsed(true);

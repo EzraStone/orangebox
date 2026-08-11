@@ -733,6 +733,71 @@ test('export carries everything needed to understand a run (§10.6, §17.1 check
   );
 });
 
+test('replay, comparison, sanitized sharing, and OTel export work end to end', async () => {
+  await withRig(
+    (req, res, raw) => {
+      const request = JSON.parse(raw);
+      jsonResponse(res, 200, {
+        ...OPENAI_COMPLETION,
+        model: request.model,
+        choices: [{ index: 0, message: { role: 'assistant', content: `echo:${request.messages.at(-1).content}` }, finish_reason: 'stop' }]
+      });
+    },
+    async ({ app, upstream }) => {
+      await fetch(`${app.origin}/r/original/openai/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: 'internal instructions' },
+            { role: 'user', content: 'contact dev@example.com' }
+          ]
+        })
+      });
+      assert.ok(await settle(app, () => app.store.callSummaries('original').length === 1));
+      const original = app.store.callSummaries('original')[0];
+      const csrf = (await getJson(`${app.origin}/api/health`)).body.csrf_token;
+
+      const replayResponse = await fetch(`${app.origin}/api/calls/${original.id}/replay`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-orangebox-csrf': csrf },
+        body: JSON.stringify({
+          request: {
+            model: 'gpt-4.1-mini',
+            messages: [{ role: 'user', content: 'edited prompt' }]
+          }
+        })
+      });
+      assert.equal(replayResponse.status, 200);
+      const replay = await replayResponse.json();
+      assert.ok(replay.run_id);
+      assert.ok(replay.call_id);
+      assert.equal(upstream.requests.length, 2);
+      assert.equal(JSON.parse(upstream.requests[1].body).messages[0].content, 'edited prompt');
+
+      const comparison = await getJson(
+        `${app.origin}/api/compare?left=original&right=${encodeURIComponent(replay.run_id)}`
+      );
+      assert.equal(comparison.status, 200);
+      assert.equal(comparison.body.pairs.length, 1);
+      assert.equal(comparison.body.pairs[0].delta.model_changed, true);
+
+      const html = await fetch(`${app.origin}/api/export/original?format=html&sanitize=1`);
+      assert.match(html.headers.get('content-type'), /text\/html/);
+      const report = await html.text();
+      assert.equal(report.includes('dev@example.com'), false);
+      assert.equal(report.includes('internal instructions'), false);
+      assert.ok(report.includes('[redacted-system-prompt]'));
+
+      const otel = await getJson(`${app.origin}/api/export/original?format=otel`);
+      assert.equal(otel.status, 200);
+      const span = otel.body.resourceSpans[0].scopeSpans[0].spans[0];
+      assert.equal(span.name.includes('gpt-4o-mini'), true);
+    }
+  );
+});
+
 test('runs survive a restart and deep links still resolve (§17.1 check 6)', async () => {
   const upstream = await startMockUpstream((req, res) => jsonResponse(res, 200, ANTHROPIC_MESSAGE));
   const first = await startOrangebox({

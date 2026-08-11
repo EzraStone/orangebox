@@ -147,6 +147,10 @@ button {
   font: 11px var(--sans);
 }
 .run-filter-row { display: grid; grid-template-columns: 1fr 1fr 64px; gap: 5px; }
+.run-filter-row.numeric-filters,
+.run-filter-row.date-filters { grid-template-columns: 1fr 1fr; }
+.date-filters label { display: grid; gap: 2px; color: var(--muted); font-size: 9px; text-transform: uppercase; }
+.date-filters input { color-scheme: dark; }
 .load-more {
   display: block;
   margin: 8px auto 14px;
@@ -212,6 +216,42 @@ button {
 .run-stats { display: flex; gap: 12px; font-size: 11.5px; color: var(--muted); }
 
 .timeline { padding: 18px 22px 120px; max-width: 940px; }
+
+.comparison { display: grid; gap: 8px; }
+.comparison-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.comparison-head strong { display: block; color: var(--text); font-size: 13px; }
+.compare-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  padding: 8px;
+}
+.compare-side {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 4px;
+  background: #15181d;
+  color: var(--muted);
+  font-size: 11px;
+}
+.compare-side strong { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.compare-side.missing { place-items: center; color: var(--muted); border: 1px dashed var(--line); }
+.compare-deltas { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 8px; }
+.chip.delta.better { color: var(--ok); border-color: #225c39; }
+.chip.delta.worse, .chip.changed { color: var(--amber); border-color: #5a4318; }
 
 .call {
   display: block;
@@ -613,4 +653,8 @@ footer.trust {
   }
   .shell.detail-open .pane-timeline { display: none; }
   .shell.detail-open .pane-detail { display: flex; }
+  .comparison-head { grid-template-columns: 1fr 1fr; }
+  .comparison-head .btn { grid-column: 1 / -1; justify-self: start; }
+  .compare-row { grid-template-columns: 1fr; }
+  .compare-deltas { grid-column: 1; }
 }

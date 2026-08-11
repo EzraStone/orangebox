@@ -30,6 +30,14 @@
           <option value="clean">Clean</option>
         </select>
       </div>
+      <div class="run-filter-row numeric-filters">
+        <input id="run-latency" type="number" min="0" step="100" placeholder="Min latency ms" aria-label="Minimum call latency in milliseconds">
+        <input id="run-cost" type="number" min="0" step="0.001" placeholder="Min cost $" aria-label="Minimum run cost in dollars">
+      </div>
+      <div class="run-filter-row date-filters">
+        <label>From<input id="run-from" type="date" aria-label="Runs from date"></label>
+        <label>To<input id="run-to" type="date" aria-label="Runs through date"></label>
+      </div>
     </div>
     <div class="pane-body">
       <ul class="runlist" id="runlist"></ul>

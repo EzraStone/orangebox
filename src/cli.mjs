@@ -5,6 +5,7 @@ import process from 'node:process';
 
 import { createServer, VERSION } from './server.mjs';
 import { defaultDbPath } from './store.mjs';
+import { evaluateRunAssertions } from './assertions.mjs';
 
 const DEFAULTS = {
   port: 4100,
@@ -33,6 +34,8 @@ export async function main(argv) {
       return runWrapped(rest);
     case 'export':
       return exportRun(rest);
+    case 'assert':
+      return assertRun(rest);
     case 'clear':
       return clear(rest);
     default:
@@ -325,6 +328,51 @@ async function exportRun(args) {
   }
 }
 
+// --------------------------------------------------------------- assert
+
+async function assertRun(args) {
+  const positional = [];
+  let dbPath = null;
+  const limits = {};
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--max-cost': limits.maxCost = number(next(), '--max-cost'); break;
+      case '--max-latency': limits.maxLatency = number(next(), '--max-latency'); break;
+      case '--max-errors': limits.maxErrors = int(next(), '--max-errors'); break;
+      case '--max-calls': limits.maxCalls = int(next(), '--max-calls'); break;
+      case '--require-known-cost': limits.requireKnownCost = true; break;
+      default:
+        if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
+        positional.push(args[i]);
+    }
+  }
+
+  const runId = positional[0];
+  if (!runId) fail('usage: orangebox assert <run-id> [thresholds]');
+  const { openStore } = await import('./store.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+  try {
+    const run = store.getRun(runId);
+    if (!run) fail(`no run with id "${runId}"`);
+    const result = evaluateRunAssertions(run, store.callSummaries(runId), limits);
+    if (result.ok) {
+      console.log(`orangebox assertions passed for ${runId}`);
+      return;
+    }
+    console.error(`orangebox assertions failed for ${runId}:`);
+    for (const failure of result.failures) console.error(`  - ${failure}`);
+    process.exitCode = 1;
+  } finally {
+    store.close();
+  }
+}
+
 // ---------------------------------------------------------------- clear
 
 async function clear(args) {
@@ -441,6 +489,12 @@ function int(value, flag) {
   return n;
 }
 
+function number(value, flag) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) fail(`${flag} needs a non-negative number, got "${value}"`);
+  return n;
+}
+
 function fail(message) {
   console.error(`orangebox: ${message}`);
   process.exit(1);
@@ -454,6 +508,7 @@ USAGE
   orangebox [start] [options]          start recording (default command)
   orangebox run [--name "..."] -- CMD  run CMD with its calls grouped into one run
   orangebox export <run-id> [-o file]  write a run to a self-contained JSON file
+  orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
   orangebox clear [--yes]              delete all recorded data
   orangebox --version | --help
 
@@ -468,6 +523,13 @@ OPTIONS (start)
   --auth-token <token>        require x-orangebox-auth (required for safe remote use)
   --unsafe-no-auth            allow a non-loopback host without authentication
   --no-open        don't open the browser on start
+
+ASSERT LIMITS
+  --max-cost <usd>          maximum total estimated cost
+  --max-latency <ms>        maximum latency of any call
+  --max-errors <n>          maximum error count
+  --max-calls <n>           maximum agent-loop call count
+  --require-known-cost      fail when any call has unknown cost
 
 EASIEST START
   orangebox run --name "checkout bot" -- node agent.js
