@@ -98,9 +98,10 @@ test('OpenTelemetry export uses GenAI attributes and tool events', () => {
   const otel = buildOtelExport(payload);
   const span = otel.resourceSpans[0].scopeSpans[0].spans[0];
   const attributes = Object.fromEntries(span.attributes.map(({ key, value }) => [key, value]));
-  assert.equal(attributes['gen_ai.operation.name'].stringValue, 'responses');
+  assert.equal(attributes['gen_ai.operation.name'].stringValue, 'chat');
   assert.equal(attributes['gen_ai.provider.name'].stringValue, 'openai');
   assert.equal(attributes['gen_ai.usage.input_tokens'].intValue, '10');
+  assert.equal(attributes['openai.api.type'].stringValue, 'responses');
   assert.equal(span.events[0].name, 'gen_ai.tool_use');
   assert.match(span.traceId, /^[a-f0-9]{32}$/);
 });

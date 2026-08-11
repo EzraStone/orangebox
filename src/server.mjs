@@ -105,6 +105,7 @@ async function handle(req, res, ctx) {
   if (
     protectedRoute &&
     ctx.security.authToken &&
+    !(ctx.security.allowRemote && isLoopbackSocket(req.socket.remoteAddress)) &&
     req.headers['x-orangebox-auth'] !== ctx.security.authToken &&
     url.searchParams.get('token') !== ctx.security.authToken
   ) {
@@ -329,9 +330,10 @@ async function handleApi(req, res, ctx, pathname, url) {
       const html = buildHtmlReport(payload);
       res.writeHead(200, {
         'content-type': 'text/html; charset=utf-8',
-        'content-disposition': `attachment; filename="orangebox-run-${safeId}.html"`,
+        'content-disposition': `${url.searchParams.get('download') === '1' ? 'attachment' : 'inline'}; filename="orangebox-run-${safeId}.html"`,
         'content-length': Buffer.byteLength(html),
-        'x-content-type-options': 'nosniff'
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:"
       });
       return void res.end(html);
     }
@@ -488,6 +490,10 @@ function sameOrigin(req) {
 
 function isLoopbackAddress(host) {
   return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+}
+
+function isLoopbackSocket(address) {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 }
 
 function isLoopbackHostHeader(value) {

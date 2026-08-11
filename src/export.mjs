@@ -111,9 +111,15 @@ export function buildOtelExport(payload) {
       'gen_ai.provider.name': call.provider,
       'gen_ai.request.model': call.model,
       'gen_ai.response.model': call.model,
+      'gen_ai.request.stream': Boolean(call.streamed),
+      'gen_ai.response.time_to_first_chunk': call.ttft_ms == null ? null : call.ttft_ms / 1000,
       'gen_ai.usage.input_tokens': call.input_tokens,
       'gen_ai.usage.output_tokens': call.output_tokens,
-      'server.address': call.endpoint,
+      'gen_ai.usage.cache_read.input_tokens': call.cache_read_tokens,
+      'gen_ai.usage.cache_creation.input_tokens': call.cache_write_tokens,
+      'openai.api.type': call.provider === 'openai'
+        ? (call.endpoint?.includes('/responses') ? 'responses' : 'chat_completions')
+        : null,
       'error.type': call.error_type
     }),
     events: (toolsByCall.get(call.id) ?? []).map((tool) => ({
@@ -199,7 +205,7 @@ function attributeValue(value) {
 }
 
 function operationName(call) {
-  return call.endpoint?.includes('/responses') ? 'responses' : 'chat';
+  return 'chat';
 }
 
 function digest(value, length) {

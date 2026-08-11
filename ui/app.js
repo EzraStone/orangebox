@@ -28,6 +28,61 @@ const $ = (id) => document.getElementById(id);
 const authToken = new URLSearchParams(location.search).get('token');
 let csrfToken = null;
 
+function openModal({ title, message = '', fields = [], confirmText = 'Save', danger = false }) {
+  return new Promise((resolve) => {
+    const form = el('form', { class: 'modal-card' }, [
+      el('h2', { text: title }),
+      message ? el('p', { class: 'note', text: message }) : null
+    ]);
+    for (const field of fields) {
+      let control;
+      if (field.type === 'textarea') {
+        control = el('textarea', { name: field.name, rows: field.rows ?? 14 });
+      } else if (field.type === 'select') {
+        control = el('select', { name: field.name }, field.options.map((option) =>
+          el('option', { value: option.value, text: option.label })
+        ));
+      } else {
+        control = el('input', { name: field.name, type: field.type ?? 'text' });
+      }
+      control.value = field.value ?? '';
+      if (field.required) control.required = true;
+      form.append(el('label', { class: 'modal-field' }, [el('span', { text: field.label }), control]));
+    }
+    const cancel = el('button', { class: 'btn', type: 'button', text: 'Cancel' });
+    const submit = el('button', {
+      class: `btn primary${danger ? ' danger' : ''}`,
+      type: 'submit',
+      text: confirmText
+    });
+    form.append(el('div', { class: 'modal-actions' }, [cancel, submit]));
+    const layer = el('div', { class: 'modal-layer' }, [form]);
+    const finish = (value) => {
+      document.removeEventListener('keydown', onKey);
+      layer.remove();
+      resolve(value);
+    };
+    const onKey = (event) => {
+      if (event.key === 'Escape') finish(null);
+    };
+    cancel.addEventListener('click', () => finish(null));
+    layer.addEventListener('click', (event) => {
+      if (event.target === layer) finish(null);
+    });
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      finish(Object.fromEntries(new FormData(form)));
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.append(layer);
+    setTimeout(() => form.querySelector('input, textarea, select, button')?.focus(), 0);
+  });
+}
+
+function showNotice(title, message) {
+  return openModal({ title, message, confirmText: 'OK' });
+}
+
 // ============================================================= formatting
 
 const fmt = {
@@ -314,44 +369,46 @@ function renderRunHeader() {
       }),
       el('span', { class: 'num', text: fmt.ms(duration) })
     ]),
-    el('button', {
-      class: 'btn',
-      type: 'button',
-      text: 'Edit',
-      on: { click: () => editRun(run) }
-    }),
-    el('button', {
-      class: 'btn',
-      type: 'button',
-      text: 'Compare',
-      on: { click: () => compareRun(run) }
-    }),
-    el('button', {
-      class: 'btn',
-      type: 'button',
-      text: 'JSON',
-      on: { click: () => openExport(run.id) }
-    }),
-    el('button', {
-      class: 'btn',
-      type: 'button',
-      text: 'Share',
-      title: 'Download a sanitized, self-contained HTML report',
-      on: { click: () => openExport(run.id, { format: 'html', sanitize: '1' }) }
-    }),
-    el('button', {
-      class: 'btn',
-      type: 'button',
-      text: 'OTel',
-      title: 'Download an OpenTelemetry JSON export',
-      on: { click: () => openExport(run.id, { format: 'otel' }) }
-    }),
-    el('button', {
-      class: 'btn danger',
-      type: 'button',
-      text: 'Delete',
-      on: { click: () => deleteRun(run) }
-    })
+    el('div', { class: 'run-actions' }, [
+      el('button', {
+        class: 'btn',
+        type: 'button',
+        text: 'Edit',
+        on: { click: () => editRun(run) }
+      }),
+      el('button', {
+        class: 'btn',
+        type: 'button',
+        text: 'Compare',
+        on: { click: () => compareRun(run) }
+      }),
+      el('button', {
+        class: 'btn',
+        type: 'button',
+        text: 'JSON',
+        on: { click: () => openExport(run.id) }
+      }),
+      el('button', {
+        class: 'btn',
+        type: 'button',
+        text: 'Share',
+        title: 'Preview a sanitized, self-contained HTML report',
+        on: { click: () => openExport(run.id, { format: 'html', sanitize: 'full' }) }
+      }),
+      el('button', {
+        class: 'btn',
+        type: 'button',
+        text: 'OTel',
+        title: 'Download an OpenTelemetry JSON export',
+        on: { click: () => openExport(run.id, { format: 'otel' }) }
+      }),
+      el('button', {
+        class: 'btn danger',
+        type: 'button',
+        text: 'Delete',
+        on: { click: () => deleteRun(run) }
+      })
+    ])
   );
 }
 
@@ -368,7 +425,13 @@ async function compareRun(run) {
     .slice(0, 8)
     .map((candidate) => `${candidate.id}  ${candidate.name || ''}`)
     .join('\n');
-  const requested = prompt(`Compare "${run.name || run.id}" with which run ID?\n\n${suggestions}`);
+  const answer = await openModal({
+    title: 'Compare runs',
+    message: suggestions ? `Recent runs:\n${suggestions}` : 'Enter another run ID.',
+    fields: [{ name: 'run', label: 'Baseline run ID or exact name', required: true }],
+    confirmText: 'Compare'
+  });
+  const requested = answer?.run;
   if (!requested) return;
   const match = state.runs.find(
     (candidate) => candidate.id === requested.trim() || candidate.name === requested.trim()
@@ -380,18 +443,22 @@ async function compareRun(run) {
     );
     renderTimeline();
   } catch {
-    alert(`Could not find run "${requested.trim()}".`);
+    await showNotice('Run not found', `Could not find run "${requested.trim()}".`);
   }
 }
 
 async function editRun(run) {
-  const name = prompt('Run name', run.name ?? '');
-  if (name === null) return;
-  const tags = prompt('Tags (comma-separated)', (run.tags ?? []).join(', '));
-  if (tags === null) return;
+  const answer = await openModal({
+    title: 'Edit run',
+    fields: [
+      { name: 'name', label: 'Run name', value: run.name ?? '' },
+      { name: 'tags', label: 'Tags (comma-separated)', value: (run.tags ?? []).join(', ') }
+    ]
+  });
+  if (!answer) return;
   const result = await api.send('PATCH', `/api/runs/${encodeURIComponent(run.id)}`, {
-    name,
-    tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+    name: answer.name,
+    tags: answer.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
   });
   state.run = result.run;
   await loadRuns();
@@ -404,7 +471,13 @@ function lastActivity() {
 }
 
 async function deleteRun(run) {
-  if (!confirm(`Delete "${run.name || run.id}" and its ${run.call_count} recorded call(s)?`)) return;
+  const confirmed = await openModal({
+    title: 'Delete run?',
+    message: `Delete "${run.name || run.id}" and its ${run.call_count} recorded call(s)? This cannot be undone.`,
+    confirmText: 'Delete',
+    danger: true
+  });
+  if (!confirmed) return;
   await api.send('DELETE', `/api/runs/${encodeURIComponent(run.id)}`, {});
   state.runId = null;
   await loadRuns();
@@ -704,20 +777,25 @@ function renderDetail() {
 }
 
 async function replayCall(call) {
-  if (call.truncated) return void alert('This call was truncated and cannot be replayed safely.');
+  if (call.truncated) return void await showNotice('Replay unavailable', 'This call was truncated and cannot be replayed safely.');
   let request;
   try {
     request = JSON.parse(call.request_json);
     delete request._orangebox;
   } catch {
-    return void alert('The recorded request is not valid JSON.');
+    return void await showNotice('Replay unavailable', 'The recorded request is not valid JSON.');
   }
-  const edited = prompt('Edit the request JSON, then press OK to replay it.', JSON.stringify(request, null, 2));
-  if (edited === null) return;
+  const answer = await openModal({
+    title: 'Replay & edit',
+    message: 'Edit the request. The replay is recorded as a new run and compared with this one.',
+    fields: [{ name: 'request', label: 'Request JSON', type: 'textarea', value: JSON.stringify(request, null, 2), required: true }],
+    confirmText: 'Replay'
+  });
+  if (!answer) return;
   try {
-    request = JSON.parse(edited);
+    request = JSON.parse(answer.request);
   } catch {
-    return void alert('That request is not valid JSON.');
+    return void await showNotice('Invalid JSON', 'The request must be valid JSON before it can be replayed.');
   }
   try {
     const result = await api.send('POST', `/api/calls/${encodeURIComponent(call.id)}/replay`, { request });
@@ -728,7 +806,7 @@ async function replayCall(call) {
     );
     renderTimeline();
   } catch (error) {
-    alert(`Replay failed: ${error.message}`);
+    await showNotice('Replay failed', error.message);
   }
 }
 

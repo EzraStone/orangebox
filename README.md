@@ -36,25 +36,26 @@ Point your agent at a local port and press play. orangebox records every LLM API
 
 Needs **Node 20 or newer**. Nothing to sign up for, nothing to configure.
 
-```bash
-npx -y github:EzraStone/orangebox
-```
+The easiest path lets orangebox set the provider URLs and create a precise run boundary for you:
 
 ```bash
-export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"   # then run your agent
+npx orangebox-ai run --name "checkout bot" -- node agent.js
 ```
 
-That's it. The UI opens at <http://127.0.0.1:4100> and fills in as your agent runs.
-
-Prefer not to touch environment variables? Let orangebox set them for you, and get precise run boundaries for free:
+The UI opens at <http://127.0.0.1:4100> and calls appear immediately, including in-flight streaming calls. Install it globally if you use it every day:
 
 ```bash
-npx -y github:EzraStone/orangebox run --name "checkout bot" -- node agent.js
+npm install --global orangebox-ai
+orangebox run --name "checkout bot" -- node agent.js
 ```
 
-> **Not on npm yet**, which is why the commands read `github:EzraStone/orangebox`. Installing from GitHub works today and will keep working.
->
-> The npm name `orangebox` belongs to an unrelated package abandoned in 2016, so the published name will be **`orangebox-ai`** (§18.2's first fallback) — `npx orangebox-ai`. The command it installs stays `orangebox` either way.
+To point an already-running process at orangebox, start the recorder with `npx orangebox-ai`, then set the base URL for your shell:
+
+| Shell | Commands |
+| --- | --- |
+| Bash / zsh | `export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"`<br>`export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"` |
+| PowerShell | `$env:ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"`<br>`$env:OPENAI_BASE_URL="http://127.0.0.1:4100/openai"` |
+| cmd.exe | `set ANTHROPIC_BASE_URL=http://127.0.0.1:4100/anthropic`<br>`set OPENAI_BASE_URL=http://127.0.0.1:4100/openai` |
 
 ## Who this is for
 
@@ -94,6 +95,18 @@ Same mechanism, different target. Pick the one aimed at your problem.
 
 **Cost, labelled honestly.** Token counts × the rates in `src/pricing.json`. Always shown as "est.", never as billing truth. Unpriced model or missing counts? You get an em-dash and a tooltip saying which, not a confident $0.00.
 
+**Replay and edit.** Open a call, choose **Replay & edit**, change the prompt, model, tools, or parameters, and orangebox sends it again in a new run. The original and replay are automatically aligned so output, latency, token, cost, model, error, prompt, and tool changes are visible together.
+
+Replay uses `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` from the orangebox process environment. Credentials are never recovered from a recording because orangebox deliberately does not store them.
+
+**Whole-run comparison.** Compare any two runs call by call. Missing calls and regressions are explicit instead of being buried in two timelines.
+
+**Find old evidence.** Search run names and tags; filter by model, tool, error state, minimum latency, minimum cost, or date; rename and tag runs; and page through the complete history.
+
+**Share without shipping the database.** **Share** previews a self-contained sanitized HTML report that redacts system prompts, tool payloads, emails, IDs, credential-shaped values, and secrets; save that page to share it. JSON and OpenTelemetry exports remain available for machine workflows.
+
+**OpenAI Responses API.** Chat Completions and Responses are both parsed, including semantic streaming events, function calls and outputs, usage, cached tokens, partial streams, and first-token timing.
+
 <!-- §18.1 asks for one screenshot per feature. The figures above cover the
      timeline, the detail drawer, and the diff; real screen captures should
      replace them once there is a run worth photographing. -->
@@ -122,16 +135,27 @@ Recording happens **after** your client's response is finished — never in the 
 | `orangebox` | Start recording (default command). |
 | `orangebox run [--name "…"] -- CMD` | Run `CMD` with `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` pointed at a run-scoped prefix, so its calls group exactly. Exits with the child's exit code. |
 | `orangebox export <run-id> [-o file]` | Write a self-contained JSON file of the run — commit it to a bug report. |
+| `orangebox assert <run-id> [limits]` | Exit non-zero when cost, latency, errors, call count, or unknown costs exceed a CI threshold. |
 | `orangebox clear [--yes]` | Delete all recorded data. |
 
 | Flag | Default | Behavior |
 | --- | --- | --- |
 | `--port <n>` | `4100` | Listen port. |
 | `--db <path>` | `~/.orangebox/orangebox.db` | Database location; parent dirs are created. |
-| `--host <addr>` | `127.0.0.1` | Bind address. Anything non-loopback prints a warning — there is no auth. |
+| `--host <addr>` | `127.0.0.1` | Bind address. Non-loopback use requires authentication or an explicit unsafe override. |
 | `--gap <seconds>` | `120` | Idle gap that starts a new implicit run. |
 | `--retain <days>` | `0` (forever) | On start, delete runs older than N days. |
+| `--openai-upstream <url>` | `https://api.openai.com` | Use Azure OpenAI, OpenRouter, Ollama, vLLM, or another OpenAI-compatible endpoint. |
+| `--anthropic-upstream <url>` | `https://api.anthropic.com` | Use an Anthropic-compatible endpoint. |
+| `--auth-token <token>` | — | Require `x-orangebox-auth`; use this for non-loopback binding. |
+| `--unsafe-no-auth` | — | Explicitly allow an unauthenticated non-loopback bind. |
 | `--no-open` | — | Don't open the browser. |
+
+CI example:
+
+```bash
+orangebox assert "$RUN_ID" --max-cost 0.25 --max-latency 5000 --max-errors 0 --max-calls 12 --require-known-cost
+```
 
 ## Grouping calls into runs
 
@@ -157,13 +181,13 @@ Rates live in [`src/pricing.json`](src/pricing.json), matched by the longest key
 
 What orangebox does *not* store: API keys. Request headers are reduced to an allowlist (`content-type`, `anthropic-version`, `user-agent`) before anything is written, and any header whose name looks like a credential is dropped regardless. Keys live in process memory only for the duration of the upstream request and never reach the database, the logs, an export, or the UI.
 
-Bind address is `127.0.0.1` by default and there is no authentication, so `--host 0.0.0.0` exposes every recorded prompt to your network. orangebox tells you so, in red, when you do it.
+Bind address is `127.0.0.1` by default. Browser mutations require same-origin requests, JSON, and a per-start CSRF token. A non-loopback `--host` is refused unless you provide `--auth-token` or deliberately opt into `--unsafe-no-auth`.
 
-Outbound connections go to `api.anthropic.com` and `api.openai.com` only, and only in direct response to a request you proxied. No version checks, no telemetry, no analytics — not in this version and not in any future one.
+Outbound connections go only to the configured provider upstreams and only for traffic you proxy or explicitly replay. There are no version checks, telemetry calls, or analytics.
 
 ## FAQ
 
-**Which providers?** Anthropic Messages and OpenAI Chat Completions today. More are planned — the parser interface is the extension point. Vote in issues.
+**Which providers?** Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses. `--openai-upstream` also supports OpenAI-compatible gateways and local runtimes without adding provider-specific code.
 
 **Where's my data?** One SQLite file, `~/.orangebox/orangebox.db` (override with `--db`). Delete it and it's gone.
 
@@ -182,12 +206,16 @@ Outbound connections go to `api.anthropic.com` and `api.openai.com` only, and on
 ## Roadmap
 
 - [x] **Call diffing** — compare any two calls, in the same run or across runs
-- [ ] **Replay** — re-send any recorded call, optionally with an edited prompt or a different model, and diff the outputs
-- [ ] **Run diffing** — side-by-side timelines of two whole runs, aligned call by call
-- [ ] **More providers** — Gemini, Bedrock, Ollama and other local runtimes
-- [ ] **OpenTelemetry export** — for teams that already have tracing
+- [x] **Replay** — re-send any recorded call, optionally with an edited prompt or a different model, and diff the outputs
+- [x] **Run diffing** — side-by-side timelines of two whole runs, aligned call by call
+- [x] **OpenAI Responses** — semantic stream events, tools, usage, and partial responses
+- [x] **Configurable upstreams** — Azure OpenAI, OpenRouter, Ollama, vLLM, and compatible gateways
+- [x] **OpenTelemetry export** — GenAI semantic attributes for teams that already have tracing
+- [x] **Search, filters, rename, and tags** — navigate a large local history
+- [x] **Sanitized HTML sharing** — portable reports with configurable redaction
 - [ ] **Cost dashboard** — spend over time, by model, by run name
-- [ ] **Assertions** — fail CI when a run exceeds a cost, latency, or loop-count threshold
+- [x] **Assertions** — fail CI when a run exceeds a cost, latency, error, or loop-count threshold
+- [ ] **Provider-native replay credentials UI** — choose stored credential aliases without putting secrets in the database
 
 ## Contributing
 
