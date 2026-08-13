@@ -2,6 +2,22 @@
 
 All notable changes to orangebox are documented here. Versions follow semantic versioning.
 
+## Unreleased
+
+### Added
+
+- Installable responsive PWA shell with phone navigation, safe-area support, and an offline app shell that never caches prompts or API data.
+- Preview `--mobile` mode with high-entropy LAN pairing, rate limiting, revocable read-only sessions, and local device management.
+- Opt-in browser notifications for completed calls when orangebox is running in a secure browser context.
+
+### Security
+
+- Mobile credentials are stored as hashed, in-memory sessions and delivered in HttpOnly, `SameSite=Strict` cookies. Paired devices cannot mutate recordings, replay calls, clear data, or proxy provider traffic.
+
+### Known limitations
+
+- Mobile LAN transport is currently HTTP. Use the preview only on a trusted private network; local HTTPS and QR onboarding remain planned.
+
 ## [1.1.0] - 2026-08-11
 
 First public npm release.

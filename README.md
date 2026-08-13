@@ -49,6 +49,16 @@ npm install --global orangebox-ai
 orangebox run --name "checkout bot" -- node agent.js
 ```
 
+To monitor a run from a phone on the same trusted network, start the preview mobile mode:
+
+```bash
+npx orangebox-ai --mobile
+```
+
+Open the printed LAN pairing link on the phone or enter its one-time code. The phone receives a revocable, read-only session: it can inspect live runs and exports, but cannot replay, edit, delete, clear, or proxy model traffic. Use the **M** control in the desktop UI to rotate the code or revoke a device. Pairing sessions expire after 30 days and all disappear when orangebox restarts.
+
+Mobile mode is an early preview. Its LAN URL currently uses HTTP, so traffic is not encrypted and install/notification support depends on the browser's secure-context rules. Use it only on a private network you trust; HTTPS onboarding is the next mobile milestone.
+
 To point an already-running process at orangebox, start the recorder with `npx orangebox-ai`, then set the base URL for your shell:
 
 | Shell | Commands |
@@ -148,6 +158,7 @@ Recording happens **after** your client's response is finished — never in the 
 | `--openai-upstream <url>` | `https://api.openai.com` | Use Azure OpenAI, OpenRouter, Ollama, vLLM, or another OpenAI-compatible endpoint. |
 | `--anthropic-upstream <url>` | `https://api.anthropic.com` | Use an Anthropic-compatible endpoint. |
 | `--auth-token <token>` | — | Require `x-orangebox-auth`; use this for non-loopback binding. |
+| `--mobile` | — | Bind to the LAN and enable revocable, read-only mobile pairing. |
 | `--unsafe-no-auth` | — | Explicitly allow an unauthenticated non-loopback bind. |
 | `--no-open` | — | Don't open the browser. |
 
@@ -181,7 +192,9 @@ Rates live in [`src/pricing.json`](src/pricing.json), matched by the longest key
 
 What orangebox does *not* store: API keys. Request headers are reduced to an allowlist (`content-type`, `anthropic-version`, `user-agent`) before anything is written, and any header whose name looks like a credential is dropped regardless. Keys live in process memory only for the duration of the upstream request and never reach the database, the logs, an export, or the UI.
 
-Bind address is `127.0.0.1` by default. Browser mutations require same-origin requests, JSON, and a per-start CSRF token. A non-loopback `--host` is refused unless you provide `--auth-token` or deliberately opt into `--unsafe-no-auth`.
+Bind address is `127.0.0.1` by default. Browser mutations require same-origin requests, JSON, and a per-start CSRF token. A non-loopback `--host` is refused unless you provide `--auth-token`, enable read-only `--mobile` pairing, or deliberately opt into `--unsafe-no-auth`.
+
+`--mobile` exposes recorded data to explicitly paired devices on your LAN. Pairing codes carry 120 bits of randomness, attempts are rate-limited, session tokens are hashed in memory, and cookies are HttpOnly with `SameSite=Strict`. Mobile sessions can only make read requests to the orangebox API. The current preview does not encrypt LAN traffic, so do not use it on public, shared, or otherwise untrusted networks.
 
 Outbound connections go only to the configured provider upstreams and only for traffic you proxy or explicitly replay. There are no version checks, telemetry calls, or analytics.
 
@@ -215,6 +228,8 @@ Outbound connections go only to the configured provider upstreams and only for t
 - [x] **Sanitized HTML sharing** — portable reports with configurable redaction
 - [ ] **Cost dashboard** — spend over time, by model, by run name
 - [x] **Assertions** — fail CI when a run exceeds a cost, latency, error, or loop-count threshold
+- [x] **Mobile preview** — responsive installable shell plus read-only LAN pairing, live monitoring, and session revocation
+- [ ] **Encrypted mobile onboarding** — local HTTPS and QR pairing without weakening the local-first security model
 - [ ] **Provider-native replay credentials UI** — choose stored credential aliases without putting secrets in the database
 
 ## Contributing
