@@ -847,6 +847,34 @@ test('runs survive a restart and deep links still resolve (§17.1 check 6)', asy
   }
 });
 
+test('the UI is an installable PWA whose service worker never caches recorded data', async () => {
+  const app = await startOrangebox();
+  try {
+    const index = await fetch(`${app.origin}/`);
+    assert.equal(index.status, 200);
+    const html = await index.text();
+    assert.match(html, /rel="manifest" href="\/manifest\.webmanifest"/);
+    assert.match(html, /viewport-fit=cover/);
+    assert.match(html, /class="mobile-nav"/);
+
+    const manifestResponse = await fetch(`${app.origin}/manifest.webmanifest`);
+    assert.match(manifestResponse.headers.get('content-type'), /application\/manifest\+json/);
+    const manifest = await manifestResponse.json();
+    assert.equal(manifest.display, 'standalone');
+    assert.equal(manifest.scope, '/');
+    assert.ok(manifest.icons.some((icon) => icon.purpose === 'maskable'));
+
+    const workerResponse = await fetch(`${app.origin}/service-worker.js`);
+    assert.equal(workerResponse.headers.get('service-worker-allowed'), '/');
+    const worker = await workerResponse.text();
+    assert.match(worker, /url\.pathname\.startsWith\('\/api\/\'/);
+    assert.match(worker, /Prompt data and live feeds must never enter browser-managed caches/);
+    assert.doesNotMatch(worker.match(/const SHELL = \[[\s\S]*?\];/)?.[0] ?? '', /\/api\//);
+  } finally {
+    await app.stop();
+  }
+});
+
 test('DELETE /api/runs/:id and POST /api/clear remove data (§10)', async () => {
   await withRig(
     (req, res) => jsonResponse(res, 200, ANTHROPIC_MESSAGE),

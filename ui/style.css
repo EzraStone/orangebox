@@ -21,6 +21,7 @@
 
   --runs-w: 280px;
   --detail-w: 45%;
+  --mobile-nav-h: 58px;
 }
 
 * { box-sizing: border-box; }
@@ -61,6 +62,7 @@ button {
   display: grid;
   grid-template-columns: var(--runs-w) minmax(0, 1fr) 0px;
   height: 100vh;
+  height: 100dvh;
 }
 .shell.detail-open { grid-template-columns: var(--runs-w) minmax(0, 1fr) var(--detail-w); }
 .shell.runs-collapsed { grid-template-columns: 0px minmax(0, 1fr) 0px; }
@@ -112,6 +114,8 @@ button {
   line-height: 1;
 }
 .iconbtn:hover { color: var(--text); border-color: #3a3f47; }
+.install-btn { color: var(--orange); font-weight: 700; }
+.install-btn[hidden] { display: none; }
 #runs-expand { display: none; }
 .shell.runs-collapsed #runs-expand { display: inline-block; }
 .run-head-slot { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; }
@@ -640,6 +644,13 @@ pre.payload.clamped {
 .pill.offline { border-color: #5c2226; color: #f4a9ab; }
 .pill[hidden] { display: none; }
 
+/* ------------------------------------------------------ mobile controls */
+
+.mobile-nav,
+.mobile-scrim { display: none; }
+
+.mobile-nav button:disabled { opacity: 0.38; cursor: default; }
+
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: 0 0 auto; }
 .dot.down { background: var(--err); }
 
@@ -673,27 +684,71 @@ footer.trust {
 /* ------------------------------------------------------------ narrow UI */
 
 @media (max-width: 900px) {
-  .shell { grid-template-columns: 1fr; }
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  .shell {
+    grid-template-columns: 1fr;
+    height: calc(100dvh - var(--mobile-nav-h) - env(safe-area-inset-bottom));
+  }
   .shell.detail-open { grid-template-columns: 1fr; }
   #runs-expand { display: inline-block; }
   .pane-runs {
     display: none;
     position: fixed;
-    inset: 0 auto 0 0;
+    inset: 0 auto calc(var(--mobile-nav-h) + env(safe-area-inset-bottom)) 0;
     width: min(88vw, 340px);
     z-index: 20;
     box-shadow: 18px 0 40px rgba(0, 0, 0, 0.45);
   }
   .shell.mobile-runs-open .pane-runs { display: flex; }
-  .shell.mobile-runs-open::after {
-    content: '';
+  .mobile-scrim {
+    display: none;
     position: fixed;
-    inset: 0;
+    inset: 0 0 calc(var(--mobile-nav-h) + env(safe-area-inset-bottom)) 0;
     z-index: 19;
     background: rgba(0, 0, 0, 0.46);
+    cursor: default;
   }
+  .shell.mobile-runs-open + .mobile-scrim { display: block; }
   .shell.detail-open .pane-timeline { display: none; }
   .shell.detail-open .pane-detail { display: flex; }
+  .drag { display: none; }
+  .mobile-nav {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 30;
+    height: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom));
+    padding: 4px max(8px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(8px, env(safe-area-inset-left));
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    align-items: stretch;
+    gap: 3px;
+    border-top: 1px solid var(--line);
+    background: rgba(22, 24, 29, 0.97);
+    backdrop-filter: blur(16px);
+  }
+  .mobile-nav button {
+    min-height: 48px;
+    display: grid;
+    place-content: center;
+    gap: 1px;
+    border-radius: 7px;
+    color: var(--muted);
+    font-size: 10px;
+  }
+  .mobile-nav button > span:first-child { font: 17px var(--mono); line-height: 1.1; }
+  .mobile-nav button[aria-current="page"] { color: #fff; background: var(--panel-hi); }
+  .mobile-live {
+    min-width: 48px;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 3px;
+    color: var(--muted);
+    font-size: 9.5px;
+  }
+  .mobile-live.offline .dot { background: var(--err); }
+  .iconbtn { width: 34px; height: 34px; }
+  .btn { min-height: 34px; }
   .comparison-head { grid-template-columns: 1fr 1fr; }
   .comparison-head .btn { grid-column: 1 / -1; justify-self: start; }
   .compare-row { grid-template-columns: 1fr; }
@@ -714,4 +769,8 @@ footer.trust {
   .run-stats { display: none; }
   .run-actions { flex: 1 1 100%; gap: 6px; overflow-x: auto; padding-bottom: 1px; }
   .run-actions .btn { flex: 0 0 auto; }
+}
+
+@media (display-mode: standalone) and (max-width: 900px) {
+  .pane-head { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
 }

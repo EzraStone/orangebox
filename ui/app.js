@@ -199,6 +199,7 @@ function navigate(runId, { replace = false } = {}) {
   if (location.pathname !== url) history[replace ? 'replaceState' : 'pushState']({}, '', url);
   const loaded = selectRun(runId, { fromNav: true });
   if (window.innerWidth <= 900) setRunsCollapsed(true);
+  syncMobileNav();
   return loaded;
 }
 
@@ -278,6 +279,7 @@ async function selectCall(callId, { open = true } = {}) {
   if (!open) return;
 
   $('shell').classList.add('detail-open');
+  syncMobileNav();
   state.call = null;
   renderDetail();
   try {
@@ -294,6 +296,7 @@ async function selectCall(callId, { open = true } = {}) {
 function closeDetail() {
   $('shell').classList.remove('detail-open');
   state.call = null;
+  syncMobileNav();
 }
 
 // ============================================================ runs render
@@ -1379,6 +1382,7 @@ function eventData(event) {
 function setOnline(online) {
   state.online = online;
   renderPill();
+  syncMobileNav();
 }
 
 function renderPill() {
@@ -1466,6 +1470,7 @@ function setRunsCollapsed(collapsed) {
   if (window.innerWidth <= 900) {
     $('shell').classList.toggle('mobile-runs-open', !collapsed);
     $('runs-collapse').setAttribute('aria-expanded', String(!collapsed));
+    syncMobileNav();
     return;
   }
   $('shell').classList.toggle('runs-collapsed', collapsed);
@@ -1479,7 +1484,24 @@ function setRunsCollapsed(collapsed) {
 
 $('runs-collapse').addEventListener('click', () => setRunsCollapsed(true));
 $('runs-expand').addEventListener('click', () => setRunsCollapsed(false));
+$('mobile-scrim').addEventListener('click', () => setRunsCollapsed(true));
+$('mobile-runs').addEventListener('click', () => setRunsCollapsed(false));
+$('mobile-timeline').addEventListener('click', () => closeDetail());
+$('mobile-detail').addEventListener('click', () => {
+  if (state.callId) void selectCall(state.callId);
+});
 $('runs-more').addEventListener('click', () => loadRuns({ append: true }).catch(() => {}));
+
+function syncMobileNav() {
+  const runsOpen = $('shell').classList.contains('mobile-runs-open');
+  const detailOpen = $('shell').classList.contains('detail-open');
+  $('mobile-runs').setAttribute('aria-current', runsOpen ? 'page' : 'false');
+  $('mobile-timeline').setAttribute('aria-current', !runsOpen && !detailOpen ? 'page' : 'false');
+  $('mobile-detail').setAttribute('aria-current', detailOpen ? 'page' : 'false');
+  $('mobile-detail').disabled = !state.callId;
+  $('mobile-live').classList.toggle('offline', !state.online);
+  $('mobile-live').lastElementChild.textContent = state.online ? 'Live' : 'Offline';
+}
 
 let filterTimer = null;
 function scheduleRunFilter() {
@@ -1539,13 +1561,55 @@ try {
   handle.addEventListener('pointercancel', () => (dragging = false));
 })();
 
+// ============================================================ installable app
+
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
+  installPrompt = event;
+  $('pwa-install').hidden = false;
+});
+
+$('pwa-install').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  await installPrompt.prompt();
+  await installPrompt.userChoice;
+  installPrompt = null;
+  $('pwa-install').hidden = true;
+});
+
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  $('pwa-install').hidden = true;
+});
+
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+}
+
 // =================================================================== boot
 
-const health = await api.get('/api/health');
-csrfToken = health.csrf_token;
-state.platform = health.platform;
-state.runId = pathRunId();
-renderPill();
-await loadRuns();
-if (state.runId) await loadRun(state.runId);
-connectLive();
+async function boot() {
+  try {
+    const health = await api.get('/api/health');
+    csrfToken = health.csrf_token;
+    state.platform = health.platform;
+    state.runId = pathRunId();
+    renderPill();
+    await loadRuns();
+    if (state.runId) await loadRun(state.runId);
+    connectLive();
+  } catch {
+    setOnline(false);
+    $('timeline').replaceChildren(
+      el('div', { class: 'empty' }, [
+        el('h2', { text: 'Recorder unavailable' }),
+        el('p', { text: 'The app shell is installed, but it cannot reach the orangebox recorder. Start orangebox on this computer and reload.' }),
+        el('button', { class: 'btn primary', type: 'button', text: 'Reload', on: { click: () => location.reload() } })
+      ])
+    );
+  }
+  syncMobileNav();
+}
+
+await boot();

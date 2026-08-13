@@ -30,6 +30,7 @@ const MIME = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.png': 'image/png',
@@ -385,11 +386,13 @@ async function serveStatic(req, res, pathname) {
   }
 
   const body = fs.readFileSync(file);
-  res.writeHead(200, {
+  const headers = {
     'content-type': MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream',
     'content-length': body.length,
     'cache-control': 'no-cache'
-  });
+  };
+  if (path.basename(file) === 'service-worker.js') headers['service-worker-allowed'] = '/';
+  res.writeHead(200, headers);
   res.end(req.method === 'HEAD' ? undefined : body);
   return true;
 }

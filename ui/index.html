@@ -2,11 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>orangebox</title>
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#111318">
+<meta name="application-name" content="orangebox">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="orangebox">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon.svg">
 <link rel="stylesheet" href="/style.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%23FF5A1F'/></svg>">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 </head>
 <body>
 <noscript>orangebox's UI needs JavaScript. The JSON API under /api works without it.</noscript>
@@ -17,6 +24,7 @@
       <span class="brand"><span class="mark">▮</span>orangebox</span>
       <span class="spacer"></span>
       <span class="pane-title" id="runs-count"></span>
+      <button class="iconbtn install-btn" id="pwa-install" type="button" title="Install orangebox" aria-label="Install orangebox" hidden>+</button>
       <button class="iconbtn" id="runs-collapse" type="button" title="Collapse runs (\)" aria-label="Collapse runs pane" aria-expanded="true">&#x00AB;</button>
     </div>
     <div class="run-filters" aria-label="Filter runs">
@@ -63,6 +71,14 @@
     <div class="pane-body"><div class="tabpanel" id="tabpanel" role="tabpanel"></div></div>
   </section>
 </div>
+
+<button class="mobile-scrim" id="mobile-scrim" type="button" aria-label="Close runs pane" tabindex="-1"></button>
+<nav class="mobile-nav" aria-label="Mobile navigation">
+  <button id="mobile-runs" type="button" aria-label="Show runs"><span aria-hidden="true">&#9776;</span><span>Runs</span></button>
+  <button id="mobile-timeline" type="button" aria-label="Show timeline"><span aria-hidden="true">&#9646;</span><span>Timeline</span></button>
+  <button id="mobile-detail" type="button" aria-label="Show selected call detail" disabled><span aria-hidden="true">{ }</span><span>Detail</span></button>
+  <span class="mobile-live" id="mobile-live" role="status"><span class="dot"></span><span>Live</span></span>
+</nav>
 
 <div class="pill" id="status-pill" hidden></div>
 
