@@ -115,7 +115,11 @@ button {
 }
 .iconbtn:hover { color: var(--text); border-color: #3a3f47; }
 .install-btn { color: var(--orange); font-weight: 700; }
-.install-btn[hidden] { display: none; }
+.mobile-manage-btn { color: var(--orange); font-weight: 700; }
+.notify-btn.enabled { color: var(--ok); border-color: #28613c; }
+.install-btn[hidden],
+.mobile-manage-btn[hidden],
+.notify-btn[hidden] { display: none; }
 #runs-expand { display: none; }
 .shell.runs-collapsed #runs-expand { display: inline-block; }
 .run-head-slot { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; }
@@ -623,6 +627,30 @@ pre.payload.clamped {
 }
 .modal-field textarea { min-height: 260px; resize: vertical; font-family: var(--mono); line-height: 1.5; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.device-list { display: grid; gap: 8px; }
+.device-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #111318;
+}
+.device-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.device-meta { color: var(--muted); font-size: 10.5px; }
+.device-row .btn { grid-column: 2; grid-row: 1 / span 2; }
+.pairing-code {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #111318;
+  color: var(--orange);
+  font: 13px var(--mono);
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
+}
 
 .pill {
   position: fixed;
@@ -672,6 +700,13 @@ pre.payload.clamped {
 .setup .btn { position: absolute; top: 9px; right: 9px; }
 
 .note { font-size: 11.5px; color: var(--muted); margin-top: 14px; }
+
+.pair-card { max-width: 430px; }
+.pair-mark { display: inline-block; margin-bottom: 10px; color: var(--orange); font-size: 28px; }
+.pair-form { display: grid; grid-template-columns: 1fr auto; gap: 9px; align-items: end; }
+.pair-form .modal-field input { min-height: 40px; text-transform: uppercase; font-family: var(--mono); letter-spacing: 0.08em; }
+.pair-form .btn { min-height: 40px; }
+.pair-error { min-height: 1.5em; margin: 8px 0 0; color: #f4a9ab; font-size: 11.5px; }
 
 footer.trust {
   padding: 8px 14px;
@@ -769,6 +804,7 @@ footer.trust {
   .run-stats { display: none; }
   .run-actions { flex: 1 1 100%; gap: 6px; overflow-x: auto; padding-bottom: 1px; }
   .run-actions .btn { flex: 0 0 auto; }
+  .pair-form { grid-template-columns: 1fr; }
 }
 
 @media (display-mode: standalone) and (max-width: 900px) {

@@ -12,6 +12,7 @@ import { createLiveHub } from './live.mjs';
 import { loadPricing } from './pricing.mjs';
 import { createProxy } from './proxy.mjs';
 import { compareRuns, sanitizeExport, buildHtmlReport, buildOtelExport } from './export.mjs';
+import { createMobileAccess, mobileSessionCanAccess, MOBILE_SESSION_TTL_SECONDS } from './mobile.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UI_DIR = path.join(HERE, '..', 'ui');
@@ -41,11 +42,12 @@ const MIME = {
  * Build (but do not start) the orangebox server.
  * Returns { server, store, live, listen(), close() }.
  */
-export function createServer({ dbPath, gapSeconds = 120, providers = PROVIDERS, authToken = null } = {}) {
+export function createServer({ dbPath, gapSeconds = 120, providers = PROVIDERS, authToken = null, mobileAccess = false } = {}) {
   const store = openStore(dbPath);
   const live = createLiveHub();
   const pricing = loadPricing();
   const proxy = createProxy({ store, live, pricing, gapSeconds, providers });
+  const mobile = createMobileAccess({ enabled: mobileAccess });
   const security = {
     csrfToken: crypto.randomBytes(24).toString('base64url'),
     authToken,
@@ -53,7 +55,7 @@ export function createServer({ dbPath, gapSeconds = 120, providers = PROVIDERS, 
   };
 
   const server = http.createServer((req, res) => {
-    handle(req, res, { store, live, proxy, security }).catch((err) => {
+    handle(req, res, { store, live, proxy, security, mobile }).catch((err) => {
       // Nothing below should throw, but a 500 beats a hung socket.
       if (!res.headersSent) sendJson(res, 500, { error: String(err?.message ?? err) });
       else res.end();
@@ -69,6 +71,7 @@ export function createServer({ dbPath, gapSeconds = 120, providers = PROVIDERS, 
     server,
     store,
     live,
+    mobile,
     pricing,
     listen(port, host) {
       return new Promise((resolve, reject) => {
@@ -100,17 +103,54 @@ async function handle(req, res, ctx) {
     return sendJson(res, 403, { error: 'invalid host' });
   }
 
+  // Pairing is the only unauthenticated API surface exposed in mobile mode.
+  // The high-entropy code is printed locally and never returned by this route.
+  if (pathname === '/api/mobile/status' && req.method === 'GET') {
+    if (!ctx.mobile.enabled) return sendJson(res, 404, { error: 'mobile access is disabled' });
+    return sendJson(res, 200, { enabled: true, paired: Boolean(mobileToken(req) && ctx.mobile.authenticate(mobileToken(req))) });
+  }
+  if (pathname === '/api/mobile/pair' && req.method === 'POST') {
+    if (!ctx.mobile.enabled) return sendJson(res, 404, { error: 'mobile access is disabled' });
+    if (!sameOrigin(req)) return sendJson(res, 403, { error: 'cross-origin request rejected' });
+    if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] ?? '')) {
+      return sendJson(res, 415, { error: 'application/json required' });
+    }
+    const body = await readJsonBody(req, 4_096);
+    if (!body) return sendJson(res, 400, { error: 'pairing code expected' });
+    const paired = ctx.mobile.pair({ code: body.code, name: body.name, address: req.socket.remoteAddress ?? '' });
+    if (!paired.ok) return sendJson(res, paired.status, { error: paired.error });
+    return sendJson(res, paired.status, { session: paired.session }, {
+      'set-cookie': mobileCookie(paired.token, req.socket.encrypted === true)
+    });
+  }
+
   const protectedRoute =
     pathname === '/api' || pathname.startsWith('/api/') ||
     pathname.startsWith('/anthropic') || pathname.startsWith('/openai') || pathname.startsWith('/r/');
-  if (
-    protectedRoute &&
-    ctx.security.authToken &&
-    !(ctx.security.allowRemote && isLoopbackSocket(req.socket.remoteAddress)) &&
-    req.headers['x-orangebox-auth'] !== ctx.security.authToken &&
-    url.searchParams.get('token') !== ctx.security.authToken
-  ) {
-    return sendJson(res, 401, { error: 'orangebox authentication required' });
+  if (protectedRoute) {
+    const localBypass = ctx.security.allowRemote && isLoopbackSocket(req.socket.remoteAddress);
+    const adminAuthenticated =
+      (!ctx.security.authToken && !ctx.mobile.enabled) ||
+      (!ctx.security.authToken && !ctx.security.allowRemote) ||
+      localBypass ||
+      (ctx.security.authToken && (
+        req.headers['x-orangebox-auth'] === ctx.security.authToken ||
+        url.searchParams.get('token') === ctx.security.authToken
+      ));
+    const session = !adminAuthenticated ? ctx.mobile.authenticate(mobileToken(req)) : null;
+
+    if (!adminAuthenticated && !session) {
+      return sendJson(res, 401, { error: 'orangebox authentication required' });
+    }
+    if (session) {
+      req.orangeboxMobileSession = session;
+      if (!mobileSessionCanAccess(req.method, pathname)) {
+        const error = pathname.startsWith('/api/')
+          ? 'mobile session is read-only'
+          : 'mobile sessions cannot proxy provider traffic';
+        return sendJson(res, 403, { error });
+      }
+    }
   }
 
   // 1. Run-scoped proxy: /r/:runId/{anthropic,openai}/*
@@ -177,8 +217,27 @@ async function handleApi(req, res, ctx, pathname, url) {
       runs: store.countRuns(),
       csrf_token: security.csrfToken,
       authenticated: Boolean(security.authToken),
-      platform: process.platform
+      platform: process.platform,
+      mobile_access: ctx.mobile.enabled,
+      mobile_manage: ctx.mobile.enabled && isLoopbackSocket(req.socket.remoteAddress),
+      mobile_session: req.orangeboxMobileSession ?? null
     });
+  }
+
+  if (method === 'GET' && pathname === '/api/mobile/sessions') {
+    if (!isLoopbackSocket(req.socket.remoteAddress)) return sendJson(res, 403, { error: 'local access required' });
+    return sendJson(res, 200, { sessions: ctx.mobile.listSessions() });
+  }
+
+  if (method === 'POST' && pathname === '/api/mobile/pair/rotate') {
+    if (!isLoopbackSocket(req.socket.remoteAddress)) return sendJson(res, 403, { error: 'local access required' });
+    return sendJson(res, 200, { code: ctx.mobile.rotatePairingCode() });
+  }
+
+  if (method === 'DELETE' && seg.length === 4 && seg[1] === 'mobile' && seg[2] === 'sessions') {
+    if (!isLoopbackSocket(req.socket.remoteAddress)) return sendJson(res, 403, { error: 'local access required' });
+    const revoked = ctx.mobile.revoke(seg[3]);
+    return sendJson(res, revoked ? 200 : 404, revoked ? { ok: true } : { error: 'no such mobile session' });
   }
 
   // GET /api/live  (SSE)
@@ -407,11 +466,12 @@ function isFile(p) {
 
 // ================================================================= helpers
 
-export function sendJson(res, status, body) {
+export function sendJson(res, status, body, extraHeaders = {}) {
   const text = safeStringify(body);
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
-    'content-length': Buffer.byteLength(text)
+    'content-length': Buffer.byteLength(text),
+    ...extraHeaders
   });
   res.end(text);
 }
@@ -506,6 +566,28 @@ function isLoopbackHostHeader(value) {
   } catch {
     return false;
   }
+}
+
+function mobileToken(req) {
+  const header = req.headers['x-orangebox-mobile'];
+  if (typeof header === 'string') return header;
+  const authorization = req.headers.authorization;
+  if (typeof authorization === 'string' && authorization.startsWith('Bearer obm_')) return authorization.slice(7);
+  const cookie = String(req.headers.cookie ?? '').split(';').map((part) => part.trim())
+    .find((part) => part.startsWith('orangebox_mobile='));
+  if (cookie) return decodeURIComponent(cookie.slice('orangebox_mobile='.length));
+  return null;
+}
+
+function mobileCookie(token, secure) {
+  return [
+    `orangebox_mobile=${encodeURIComponent(token)}`,
+    'HttpOnly',
+    'SameSite=Strict',
+    'Path=/',
+    `Max-Age=${MOBILE_SESSION_TTL_SECONDS}`,
+    ...(secure ? ['Secure'] : [])
+  ].join('; ');
 }
 
 export { PROVIDERS, newId };

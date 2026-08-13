@@ -1,6 +1,7 @@
 // §05 — command-line interface. Hand-rolled arg parsing; the dependency budget
 // is one package and better-sqlite3 already spent it.
 import { spawn } from 'node:child_process';
+import os from 'node:os';
 import process from 'node:process';
 
 import { createServer, VERSION } from './server.mjs';
@@ -17,7 +18,8 @@ const DEFAULTS = {
   openaiUpstream: 'https://api.openai.com',
   anthropicUpstream: 'https://api.anthropic.com',
   authToken: null,
-  unsafeNoAuth: false
+  unsafeNoAuth: false,
+  mobile: false
 };
 
 export async function main(argv) {
@@ -72,12 +74,14 @@ function parseFlags(args) {
       case '--openai-upstream': out.openaiUpstream = next(); break;
       case '--anthropic-upstream': out.anthropicUpstream = next(); break;
       case '--auth-token': out.authToken = next(); break;
+      case '--mobile': out.mobile = true; break;
       case '--unsafe-no-auth': out.unsafeNoAuth = true; break;
       case '--no-open': out.open = false; break;
       case '--help': case '-h': printHelp(); process.exit(0);
       default: fail(`unknown flag "${arg}"`);
     }
   }
+  if (out.mobile && out.host === DEFAULTS.host) out.host = '0.0.0.0';
   return out;
 }
 
@@ -92,7 +96,8 @@ async function start(opts) {
       dbPath,
       gapSeconds: opts.gap,
       providers: providersFrom(opts),
-      authToken: opts.authToken
+      authToken: opts.authToken,
+      mobileAccess: opts.mobile
     });
   } catch (err) {
     fail(err.message);
@@ -113,7 +118,7 @@ async function start(opts) {
   }
 
   const origin = `http://${displayHost(opts.host)}:${opts.port}`;
-  banner({ origin, store: app.store, host: opts.host, willOpen: opts.open, authToken: opts.authToken });
+  banner({ origin, store: app.store, host: opts.host, port: opts.port, willOpen: opts.open, authToken: opts.authToken, mobile: app.mobile });
 
   if (opts.open) openBrowser(opts.authToken ? `${origin}?token=${encodeURIComponent(opts.authToken)}` : origin);
 
@@ -126,7 +131,7 @@ async function start(opts) {
   return app;
 }
 
-function banner({ origin, store, host, willOpen, authToken }) {
+function banner({ origin, store, host, port, willOpen, authToken, mobile }) {
   const size = store.sizeBytes();
   const runs = store.countRuns();
   console.log('');
@@ -138,9 +143,15 @@ function banner({ origin, store, host, willOpen, authToken }) {
   for (const line of environmentCommands(origin)) console.log(`  ▮   ${line}`);
   console.log(`  ▮ ui             ${origin}${willOpen ? '  (opening browser…)' : ''}`);
   if (authToken) console.log('  ▮ authentication x-orangebox-auth is required');
+  if (mobile?.enabled) {
+    const mobileOrigin = lanOrigin(port);
+    console.log(`  ▮ mobile         ${mobileOrigin}`);
+    console.log(`  ▮ pair link      ${mobileOrigin}/#pair=${mobile.pairingCode}`);
+    console.log('  ▮ mobile access  read-only, same network, resets when orangebox restarts');
+  }
   console.log('');
 
-  if (!isLoopback(host) && !authToken) {
+  if (!isLoopback(host) && !authToken && !mobile?.enabled) {
     console.error(
       `\x1b[31mWARNING: orangebox has no authentication. Binding to ${host} exposes every recorded prompt to your network.\x1b[0m\n`
     );
@@ -179,10 +190,12 @@ async function runWrapped(args) {
       case '--openai-upstream': opts.openaiUpstream = next(); break;
       case '--anthropic-upstream': opts.anthropicUpstream = next(); break;
       case '--auth-token': opts.authToken = next(); break;
+      case '--mobile': opts.mobile = true; break;
       case '--unsafe-no-auth': opts.unsafeNoAuth = true; break;
       default: fail(`unknown flag "${flags[i]}" (command arguments go after --)`);
     }
   }
+  if (opts.mobile && opts.host === DEFAULTS.host) opts.host = '0.0.0.0';
 
   const origin = `http://${displayHost(opts.host)}:${opts.port}`;
   requireRemoteSafety(opts);
@@ -196,7 +209,8 @@ async function runWrapped(args) {
       dbPath: opts.db ?? defaultDbPath(),
       gapSeconds: opts.gap,
       providers: providersFrom(opts),
-      authToken: opts.authToken
+      authToken: opts.authToken,
+      mobileAccess: opts.mobile
     });
     try {
       await owned.listen(opts.port, opts.host);
@@ -437,9 +451,18 @@ function isLoopback(host) {
 }
 
 function requireRemoteSafety(opts) {
-  if (!isLoopback(opts.host) && !opts.authToken && !opts.unsafeNoAuth) {
-    fail('non-loopback --host requires --auth-token <token> or --unsafe-no-auth');
+  if (!isLoopback(opts.host) && !opts.authToken && !opts.mobile && !opts.unsafeNoAuth) {
+    fail('non-loopback --host requires --auth-token <token>, --mobile, or --unsafe-no-auth');
   }
+}
+
+function lanOrigin(port) {
+  for (const addresses of Object.values(os.networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family === 'IPv4' && !address.internal) return `http://${address.address}:${port}`;
+    }
+  }
+  return `http://localhost:${port}`;
 }
 
 function providersFrom(opts) {
@@ -521,6 +544,7 @@ OPTIONS (start)
   --openai-upstream <url>     OpenAI-compatible upstream
   --anthropic-upstream <url>  Anthropic-compatible upstream
   --auth-token <token>        require x-orangebox-auth (required for safe remote use)
+  --mobile                    bind to the LAN with read-only device pairing
   --unsafe-no-auth            allow a non-loopback host without authentication
   --no-open        don't open the browser on start
 

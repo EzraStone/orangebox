@@ -28,10 +28,10 @@ export async function startMockUpstream(handler) {
 }
 
 /** An orangebox instance on an ephemeral port with a throwaway database. */
-export async function startOrangebox({ providers, gapSeconds = 120, authToken = null } = {}) {
+export async function startOrangebox({ providers, gapSeconds = 120, authToken = null, mobileAccess = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orangebox-test-'));
   const dbPath = path.join(dir, 'test.db');
-  const app = createServer({ dbPath, gapSeconds, providers, authToken });
+  const app = createServer({ dbPath, gapSeconds, providers, authToken, mobileAccess });
   const address = await app.listen(0, '127.0.0.1');
 
   return {

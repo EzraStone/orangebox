@@ -136,6 +136,8 @@ const state = {
   runs: [],
   runTotal: 0,
   platform: 'unknown',
+  readOnly: false,
+  mobileAccess: false,
   filters: { search: '', model: '', tool: '', error: '', min_latency: '', min_cost: '', from: '', to: '' },
   runId: null,
   run: null,
@@ -186,6 +188,109 @@ const api = {
     return res.json();
   }
 };
+
+// ================================================= mobile access + notifications
+
+function formatPairingCode(code) {
+  return String(code ?? '').match(/.{1,5}/g)?.join('-') ?? '';
+}
+
+async function manageMobileDevices() {
+  const card = el('section', { class: 'modal-card' }, [
+    el('h2', { text: 'Paired mobile devices' }),
+    el('p', { class: 'note', text: 'Mobile sessions can view recordings but cannot edit, replay, delete, clear, or proxy agent traffic.' })
+  ]);
+  const list = el('div', { class: 'device-list' });
+  const code = el('div', { class: 'pairing-code', hidden: true });
+  const rotate = el('button', { class: 'btn', type: 'button', text: 'Rotate pairing code' });
+  const close = el('button', { class: 'btn primary', type: 'button', text: 'Done' });
+  const actions = el('div', { class: 'modal-actions' }, [rotate, close]);
+  card.append(list, code, actions);
+  const layer = el('div', { class: 'modal-layer' }, [card]);
+
+  const load = async () => {
+    const result = await api.get('/api/mobile/sessions');
+    list.replaceChildren();
+    if (!result.sessions.length) {
+      list.append(el('p', { class: 'note', text: 'No devices are paired in this recorder session.' }));
+      return;
+    }
+    for (const session of result.sessions) {
+      list.append(el('div', { class: 'device-row' }, [
+        el('span', { class: 'device-name', text: session.name }),
+        el('span', { class: 'device-meta', text: `Last seen ${fmt.when(session.last_seen_at)} · expires ${new Date(session.expires_at).toLocaleDateString()}` }),
+        el('button', {
+          class: 'btn danger',
+          type: 'button',
+          text: 'Revoke',
+          on: { click: async () => {
+            await api.send('DELETE', `/api/mobile/sessions/${encodeURIComponent(session.id)}`);
+            await load();
+          } }
+        })
+      ]));
+    }
+  };
+
+  const finish = () => layer.remove();
+  close.addEventListener('click', finish);
+  layer.addEventListener('click', (event) => { if (event.target === layer) finish(); });
+  rotate.addEventListener('click', async () => {
+    const result = await api.send('POST', '/api/mobile/pair/rotate');
+    code.hidden = false;
+    code.textContent = formatPairingCode(result.code);
+    rotate.textContent = 'Pairing code rotated';
+    rotate.disabled = true;
+  });
+  document.body.append(layer);
+  try {
+    await load();
+  } catch (error) {
+    list.replaceChildren(el('p', { class: 'pair-error', text: `Could not load devices: ${error.message}` }));
+  }
+}
+
+$('mobile-manage').addEventListener('click', () => void manageMobileDevices());
+
+const notificationSetting = 'orangebox.completion-notifications';
+
+function notificationsEnabled() {
+  return 'Notification' in window && Notification.permission === 'granted' && localStorage.getItem(notificationSetting) === 'on';
+}
+
+function renderNotificationControl() {
+  const button = $('notifications');
+  button.hidden = !('Notification' in window) || !window.isSecureContext;
+  const enabled = notificationsEnabled();
+  button.classList.toggle('enabled', enabled);
+  button.textContent = enabled ? '✓' : '!';
+  button.title = enabled ? 'Disable completion notifications' : 'Enable completion notifications';
+  button.setAttribute('aria-label', button.title);
+}
+
+$('notifications').addEventListener('click', async () => {
+  if (notificationsEnabled()) {
+    localStorage.removeItem(notificationSetting);
+  } else if (await Notification.requestPermission() === 'granted') {
+    localStorage.setItem(notificationSetting, 'on');
+  }
+  renderNotificationControl();
+});
+
+function notifyCallCompleted(update) {
+  if (!document.hidden || !notificationsEnabled()) return;
+  const run = state.runs.find((candidate) => candidate.id === update?.run_id);
+  const notification = new Notification('orangebox recorded a call', {
+    body: run?.name || 'Open orangebox to inspect the completed call.',
+    icon: '/icon.svg',
+    tag: `orangebox-${update?.run_id ?? 'call'}`
+  });
+  notification.onclick = () => {
+    window.focus();
+    if (update?.run_id) navigate(update.run_id);
+    notification.close();
+  };
+}
 
 // ================================================================= router
 
@@ -354,6 +459,46 @@ function renderRunHeader() {
 
   const run = state.run;
   const duration = run.ended_at ? run.ended_at - run.started_at : lastActivity() - run.started_at;
+  const actions = [
+    !state.readOnly ? el('button', {
+      class: 'btn',
+      type: 'button',
+      text: 'Edit',
+      on: { click: () => editRun(run) }
+    }) : null,
+    el('button', {
+      class: 'btn',
+      type: 'button',
+      text: 'Compare',
+      on: { click: () => compareRun(run) }
+    }),
+    el('button', {
+      class: 'btn',
+      type: 'button',
+      text: 'JSON',
+      on: { click: () => openExport(run.id) }
+    }),
+    el('button', {
+      class: 'btn',
+      type: 'button',
+      text: 'Share',
+      title: 'Preview a sanitized, self-contained HTML report',
+      on: { click: () => openExport(run.id, { format: 'html', sanitize: 'full' }) }
+    }),
+    el('button', {
+      class: 'btn',
+      type: 'button',
+      text: 'OTel',
+      title: 'Download an OpenTelemetry JSON export',
+      on: { click: () => openExport(run.id, { format: 'otel' }) }
+    }),
+    !state.readOnly ? el('button', {
+      class: 'btn danger',
+      type: 'button',
+      text: 'Delete',
+      on: { click: () => deleteRun(run) }
+    }) : null
+  ];
 
   head.append(
     el('div', { class: 'run-head' }, [
@@ -372,46 +517,7 @@ function renderRunHeader() {
       }),
       el('span', { class: 'num', text: fmt.ms(duration) })
     ]),
-    el('div', { class: 'run-actions' }, [
-      el('button', {
-        class: 'btn',
-        type: 'button',
-        text: 'Edit',
-        on: { click: () => editRun(run) }
-      }),
-      el('button', {
-        class: 'btn',
-        type: 'button',
-        text: 'Compare',
-        on: { click: () => compareRun(run) }
-      }),
-      el('button', {
-        class: 'btn',
-        type: 'button',
-        text: 'JSON',
-        on: { click: () => openExport(run.id) }
-      }),
-      el('button', {
-        class: 'btn',
-        type: 'button',
-        text: 'Share',
-        title: 'Preview a sanitized, self-contained HTML report',
-        on: { click: () => openExport(run.id, { format: 'html', sanitize: 'full' }) }
-      }),
-      el('button', {
-        class: 'btn',
-        type: 'button',
-        text: 'OTel',
-        title: 'Download an OpenTelemetry JSON export',
-        on: { click: () => openExport(run.id, { format: 'otel' }) }
-      }),
-      el('button', {
-        class: 'btn danger',
-        type: 'button',
-        text: 'Delete',
-        on: { click: () => deleteRun(run) }
-      })
-    ])
+    el('div', { class: 'run-actions' }, actions)
   );
 }
 
@@ -730,7 +836,7 @@ function renderDetail() {
   head.append(
     el('span', { class: 'pane-title', text: `call ${String(summary.seq).padStart(2, '0')} · ${summary.provider}` }),
     el('div', { class: 'spacer' }),
-    state.call
+    state.call && !state.readOnly
       ? el('button', {
           class: 'btn replay',
           type: 'button',
@@ -1360,6 +1466,7 @@ function connectLive() {
   source.addEventListener('call.completed', (event) => {
     const update = eventData(event);
     if (update?.call_id) state.inFlight.delete(update.call_id);
+    notifyCallCompleted(update);
     refresh();
   });
 
@@ -1594,12 +1701,20 @@ async function boot() {
     const health = await api.get('/api/health');
     csrfToken = health.csrf_token;
     state.platform = health.platform;
+    state.readOnly = health.mobile_session?.scope === 'read';
+    state.mobileAccess = health.mobile_access === true;
+    $('mobile-manage').hidden = health.mobile_manage !== true || state.readOnly;
+    renderNotificationControl();
     state.runId = pathRunId();
     renderPill();
     await loadRuns();
     if (state.runId) await loadRun(state.runId);
     connectLive();
   } catch {
+    if (await offerMobilePairing()) {
+      syncMobileNav();
+      return;
+    }
     setOnline(false);
     $('timeline').replaceChildren(
       el('div', { class: 'empty' }, [
@@ -1610,6 +1725,73 @@ async function boot() {
     );
   }
   syncMobileNav();
+}
+
+async function offerMobilePairing() {
+  let status;
+  try {
+    const response = await fetch('/api/mobile/status');
+    if (!response.ok) return false;
+    status = await response.json();
+  } catch {
+    return false;
+  }
+  if (!status.enabled) return false;
+
+  setOnline(false);
+  const root = $('timeline');
+  const error = el('p', { class: 'pair-error', role: 'alert' });
+  const form = el('form', { class: 'pair-form' }, [
+    el('label', { class: 'modal-field' }, [
+      el('span', { text: 'Pairing code' }),
+      el('input', { name: 'code', type: 'text', required: true, autocomplete: 'one-time-code', autocapitalize: 'characters' })
+    ]),
+    el('button', { class: 'btn primary', type: 'submit', text: 'Pair this device' })
+  ]);
+  root.replaceChildren(el('div', { class: 'empty pair-card' }, [
+    el('span', { class: 'pair-mark', text: '▮' }),
+    el('h2', { text: 'Pair with this orangebox' }),
+    el('p', { text: 'Enter the code shown in the orangebox terminal. Mobile access is read-only and expires when revoked, after 30 days, or when orangebox restarts.' }),
+    form,
+    error,
+    el('p', { class: 'note', text: 'Only pair on a network you trust. Recorded prompts may contain secrets.' })
+  ]));
+
+  const submit = async (code) => {
+    error.textContent = '';
+    const button = form.querySelector('button');
+    button.disabled = true;
+    button.textContent = 'Pairing…';
+    try {
+      const response = await fetch('/api/mobile/pair', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code, name: navigator.platform || 'Mobile device' })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Pairing failed');
+      history.replaceState({}, '', `${location.pathname}${location.search}`);
+      location.reload();
+    } catch (pairError) {
+      error.textContent = pairError.message;
+      button.disabled = false;
+      button.textContent = 'Pair this device';
+    }
+  };
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void submit(new FormData(form).get('code'));
+  });
+
+  const fragmentCode = new URLSearchParams(location.hash.slice(1)).get('pair');
+  if (fragmentCode) {
+    form.elements.code.value = fragmentCode;
+    void submit(fragmentCode);
+  } else {
+    form.elements.code.focus();
+  }
+  return true;
 }
 
 await boot();

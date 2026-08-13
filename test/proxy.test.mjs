@@ -1005,6 +1005,56 @@ test('optional remote auth protects API and proxy routes without leaking upstrea
   }
 });
 
+test('mobile pairing uses an HttpOnly read-only session that can be revoked locally', async () => {
+  const app = await startOrangebox({ mobileAccess: true });
+  try {
+    const status = await getJson(`${app.origin}/api/mobile/status`);
+    assert.equal(status.status, 200);
+    assert.equal(status.body.enabled, true);
+    assert.equal(status.body.paired, false);
+
+    const wrong = await getJson(`${app.origin}/api/mobile/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: 'wrong' })
+    });
+    assert.equal(wrong.status, 401);
+
+    const pairResponse = await fetch(`${app.origin}/api/mobile/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: app.mobile.pairingCode, name: 'Test phone' })
+    });
+    assert.equal(pairResponse.status, 201);
+    const paired = await pairResponse.json();
+    assert.equal(paired.session.scope, 'read');
+    const cookie = pairResponse.headers.get('set-cookie');
+    assert.match(cookie, /^orangebox_mobile=obm_/);
+    assert.match(cookie, /HttpOnly/);
+    assert.match(cookie, /SameSite=Strict/);
+
+    const cookieValue = cookie.split(';')[0];
+    const pairedStatus = await getJson(`${app.origin}/api/mobile/status`, { headers: { cookie: cookieValue } });
+    assert.equal(pairedStatus.body.paired, true);
+
+    const health = (await getJson(`${app.origin}/api/health`)).body;
+    const sessions = await getJson(`${app.origin}/api/mobile/sessions`);
+    assert.equal(sessions.body.sessions.length, 1);
+    assert.equal(sessions.body.sessions[0].name, 'Test phone');
+
+    const revoked = await getJson(`${app.origin}/api/mobile/sessions/${paired.session.id}`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json', 'x-orangebox-csrf': health.csrf_token },
+      body: '{}'
+    });
+    assert.equal(revoked.status, 200);
+    const revokedStatus = await getJson(`${app.origin}/api/mobile/status`, { headers: { cookie: cookieValue } });
+    assert.equal(revokedStatus.body.paired, false);
+  } finally {
+    await app.stop();
+  }
+});
+
 test('unknown routes 404 with the routing hint (§04)', async () => {
   const app = await startOrangebox();
   try {
