@@ -9,3 +9,7 @@
 # frame instead of twelve. That is exactly how a Windows checkout broke the
 # client-abort test while every Linux run stayed green.
 *.sse -text
+
+# Same reasoning for newline-delimited JSON: every line is one frame, so a
+# checkout that rewrote the endings would change how the transcript parses.
+*.ndjson -text
