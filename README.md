@@ -146,6 +146,7 @@ Recording happens **after** your client's response is finished — never in the 
 | `orangebox run [--name "…"] -- CMD` | Run `CMD` with `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` pointed at a run-scoped prefix, so its calls group exactly. Exits with the child's exit code. |
 | `orangebox export <run-id> [-o file]` | Write a self-contained JSON file of the run — commit it to a bug report. |
 | `orangebox assert <run-id> [limits]` | Exit non-zero when cost, latency, errors, call count, or unknown costs exceed a CI threshold. |
+| `orangebox spend [--group <k>]` | What your agents have cost, by model, provider, run, or day — with an explicit count of what it could not price. |
 | `orangebox clear [--yes]` | Delete all recorded data. |
 
 | Flag | Default | Behavior |
@@ -162,6 +163,15 @@ Recording happens **after** your client's response is finished — never in the 
 | `--unsafe-no-auth` | — | Explicitly allow an unauthenticated non-loopback bind. |
 | `--no-open` | — | Don't open the browser. |
 
+Two upstreams are configured by environment rather than by flag, because the
+variables already exist and nobody should have to learn a second name for them:
+
+| Variable | Default | Behavior |
+| --- | --- | --- |
+| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Where `/ollama/…` is proxied. Accepts a bare `host:port`. |
+| `AWS_REGION` (or `AWS_DEFAULT_REGION`) | `us-east-1` | Picks the `bedrock-runtime.<region>.amazonaws.com` endpoint for `/bedrock/…`. |
+
+
 CI example:
 
 ```bash
@@ -177,6 +187,36 @@ Every call belongs to exactly one run, resolved in this order:
 3. **Idle gap** — otherwise, calls within `--gap` seconds of each other land in the same run.
 
 The gap heuristic is deliberately simple. Two unrelated agents running at once will interleave into one implicit run; if that matters, use one of the explicit mechanisms above.
+
+## Spend
+
+`/spend` in the UI, or in a terminal:
+
+```bash
+orangebox spend --group model --days 30
+```
+
+```
+  spend by model (since 2026-07-23)
+
+  claude-opus-5          ##################################      $0.401      5 calls
+  claude-sonnet-5        ####################                    $0.235      4 calls
+  llama3.2                                                           $0      6 calls
+  some-finetune-2026                                                $0+      5 calls  (5 unpriced)
+
+  total $1.09+ across 46 call(s)
+  covers 80% of calls — 9 had no pricing entry, so the real figure is higher.
+```
+
+Group by `model`, `provider`, `run`, or `day`; window with `--days`, `--since`,
+`--until`; emit `--csv` or `--json`.
+
+The `+` and the coverage line are the point. orangebox prices a call by looking
+its model up in `pricing.json`, and a model that isn't there costs *null*, not
+zero. Summing that column naively gives a total that is confidently too low with
+nothing on screen to say so — so the unpriced count travels with the total
+everywhere it goes, and `llama3.2` at a true `$0` stays visibly distinct from a
+model nobody has a rate for.
 
 ## Pricing
 
@@ -200,7 +240,9 @@ Outbound connections go only to the configured provider upstreams and only for t
 
 ## FAQ
 
-**Which providers?** Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses. `--openai-upstream` also supports OpenAI-compatible gateways and local runtimes without adding provider-specific code.
+**Which providers?** Five natively: Anthropic Messages, OpenAI (Chat Completions and Responses), Google Gemini, Ollama, and Amazon Bedrock. `--openai-upstream` also covers OpenAI-compatible gateways and local runtimes without any provider-specific code.
+
+Bedrock has one constraint worth knowing before you try it: SigV4 signs the `Host` header, and orangebox strips `Host` like any reverse proxy, so a SigV4-signed request cannot survive the hop. Use a Bedrock API key (bearer auth) and it behaves like the others. orangebox will not hold your AWS credentials in order to re-sign on your behalf.
 
 **Where's my data?** One SQLite file, `~/.orangebox/orangebox.db` (override with `--db`). Delete it and it's gone.
 
@@ -223,10 +265,11 @@ Outbound connections go only to the configured provider upstreams and only for t
 - [x] **Run diffing** — side-by-side timelines of two whole runs, aligned call by call
 - [x] **OpenAI Responses** — semantic stream events, tools, usage, and partial responses
 - [x] **Configurable upstreams** — Azure OpenAI, OpenRouter, Ollama, vLLM, and compatible gateways
+- [x] **Native providers** — Anthropic, OpenAI, Gemini, Ollama, and Bedrock, each with its own wire format (SSE, NDJSON, and AWS event-stream)
 - [x] **OpenTelemetry export** — GenAI semantic attributes for teams that already have tracing
 - [x] **Search, filters, rename, and tags** — navigate a large local history
 - [x] **Sanitized HTML sharing** — portable reports with configurable redaction
-- [ ] **Cost dashboard** — spend over time, by model, by run name
+- [x] **Cost dashboard** — spend by model, provider, run, or day, in the UI and the CLI, with unpriced calls counted rather than hidden
 - [x] **Assertions** — fail CI when a run exceeds a cost, latency, error, or loop-count threshold
 - [x] **Mobile preview** — responsive installable shell plus read-only LAN pairing, live monitoring, and session revocation
 - [ ] **Encrypted mobile onboarding** — local HTTPS and QR pairing without weakening the local-first security model
