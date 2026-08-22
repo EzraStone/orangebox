@@ -22,7 +22,7 @@ change is wrong.
 | `src/cli.mjs` | Argument parsing, `start` / `run` / `export` / `clear`. |
 | `src/server.mjs` | HTTP server, routing table, the internal JSON API, static UI. |
 | `src/proxy.mjs` | Forwarding, teeing, timing, run attribution, record assembly. |
-| `src/parse/*.mjs` | Per-provider request/response mapping and stream reassembly. |
+| `src/parse/*.mjs` | Per-provider request/response mapping, stream reassembly, and first-token detection. Adding a provider means one file here plus a route prefix — see the note below. |
 | `src/store.mjs` | Schema, transactions, queries, redaction, truncation. |
 | `src/live.mjs` | SSE hub. |
 | `src/pricing.*` | Rate table and longest-prefix lookup. |
@@ -48,6 +48,29 @@ stays in step.
 
 The full build specification is [`orangebox-spec.html`](orangebox-spec.html).
 Section references in code comments (`§06.3`, `§14.2`) point into it.
+
+## Adding a provider
+
+One file in `src/parse/`, exporting six functions, plus a prefix in the §04
+routing table and an entry in `PARSERS`. `ollama.mjs` is the shortest example
+and the least like the others — it speaks newline-delimited JSON rather than
+SSE, which is the point: nothing outside the parser should know that.
+
+| Export | Answers |
+| --- | --- |
+| `parseRequest(json)` | model, and is this a stream? |
+| `parseResponse(json)` | model, stop reason, token counts |
+| `reassembleStream(text)` | fold a captured transcript into the non-streamed shape |
+| `firstTokenSeen(buffered)` | has content started? (drives TTFT) |
+| `extractToolUses(response)` | tool calls the model made |
+| `extractToolResults(request)` | results the client sent back |
+
+`firstTokenSeen` is easy to forget and fails quietly — the TTFT column simply
+stays empty for your provider and nothing complains. Write the end-to-end test,
+not only the parser unit tests; that is what caught it for Ollama.
+
+Every function must degrade rather than throw. An unrecognised shape returns
+nulls or an empty array; a record with missing fields beats no record.
 
 ## Rules that are not negotiable
 
