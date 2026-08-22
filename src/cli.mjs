@@ -533,7 +533,7 @@ function printSpendCsv(data) {
  * Quote anything a spreadsheet would misread. Run names are user text and can
  * hold commas, quotes and newlines.
  */
-function csvCell(value) {
+export function csvCell(value) {
   const text = String(value ?? '');
   const CR = String.fromCharCode(13);
   const LF = String.fromCharCode(10);
@@ -548,7 +548,7 @@ function describeWindow({ since, until }) {
   return since ? ` (since ${d(since)})` : ` (until ${d(until)})`;
 }
 
-function truncate(text, width) {
+export function truncate(text, width) {
   return text.length > width ? text.slice(0, width - 1) + '…' : text;
 }
 
