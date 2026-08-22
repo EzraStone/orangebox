@@ -1534,7 +1534,20 @@ document.addEventListener('keydown', (e) => {
   const tag = document.activeElement?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
-  if (e.key === 'Escape') return void closeDetail();
+  if (e.key === 'Escape') {
+    // Escape backs out of whatever is on top: the spend view, then the detail
+    // pane. Two different exits on one key, in the order they were opened.
+    if (state.view === 'spend') return void closeSpend();
+    return void closeDetail();
+  }
+
+  if (e.key === '$') {
+    e.preventDefault();
+    return void (state.view === 'spend' ? closeSpend() : openSpend());
+  }
+
+  // The rest of these steer the timeline, which is not what is on screen.
+  if (state.view === 'spend') return;
 
   const index = state.calls.findIndex((c) => c.id === state.callId);
 
