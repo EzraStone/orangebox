@@ -8,6 +8,9 @@ import { createServer, VERSION } from './server.mjs';
 import { defaultDbPath } from './store.mjs';
 import { evaluateRunAssertions } from './assertions.mjs';
 
+/** Past this the database is worth mentioning at startup — it is all prompts. */
+const LARGE_DB_BYTES = 500 * 1024 * 1024;
+
 const DEFAULTS = {
   port: 4100,
   host: '127.0.0.1',
@@ -151,7 +154,23 @@ function banner({ origin, store, host, port, willOpen, authToken, mobile }) {
   }
   console.log('');
 
+<<<<<<< HEAD
   if (!isLoopback(host) && !authToken && !mobile?.enabled) {
+=======
+  // The database grows forever unless --retain says otherwise, and it is full
+  // of prompts. Nobody checks a file they were never told about, so say
+  // something once it is big enough to be worth knowing about.
+  if (size > LARGE_DB_BYTES) {
+    console.error(
+      `[33mNOTE: this database is ${formatBytes(size)} and holds every prompt you have recorded.[0m
+` +
+        `      Trim it with  --retain <days>  on start, or  orangebox clear  to empty it.
+`
+    );
+  }
+
+  if (!isLoopback(host)) {
+>>>>>>> 15e8a56 (feat(cli): say something when the database gets large)
     console.error(
       `\x1b[31mWARNING: orangebox has no authentication. Binding to ${host} exposes every recorded prompt to your network.\x1b[0m\n`
     );
