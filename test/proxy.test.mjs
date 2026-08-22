@@ -1190,6 +1190,47 @@ test('mobile pairing uses an HttpOnly read-only session that can be revoked loca
   }
 });
 
+test('GET /api/spend answers with an honest total (§19.5)', async () => {
+  await withRig(
+    (req, res) => jsonResponse(res, 200, ANTHROPIC_MESSAGE),
+    async ({ app }) => {
+      // One priced call through the proxy, one deliberately unpriced.
+      await fetch(`${app.origin}/r/spend-run/anthropic/v1/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(anthropicRequest)
+      });
+      assert.ok(await settle(app, () => app.store.callSummaries('spend-run').length === 1));
+
+      const { status, body } = await getJson(`${app.origin}/api/spend`);
+      assert.equal(status, 200);
+      assert.equal(body.group_by, 'model');
+      assert.equal(body.total_calls, 1);
+      assert.ok(body.total_cost_usd > 0);
+      assert.equal(body.unpriced_calls, 0);
+      assert.equal(body.priced_share, 1);
+      assert.equal(body.groups[0].key, 'claude-haiku-4-5-20251001');
+
+      // Every grouping answers.
+      for (const group of ['model', 'provider', 'run', 'day']) {
+        const res = await getJson(`${app.origin}/api/spend?group=${group}`);
+        assert.equal(res.status, 200, group);
+        assert.equal(res.body.group_by, group);
+      }
+
+      // A window that excludes everything is empty, not an error.
+      const future = await getJson(`${app.origin}/api/spend?since=${Date.now() + 86400000}`);
+      assert.equal(future.body.total_calls, 0);
+      assert.deepEqual(future.body.groups, []);
+
+      // Unknown groupings are refused with the list of what works.
+      const bad = await getJson(`${app.origin}/api/spend?group=DROP+TABLE+runs`);
+      assert.equal(bad.status, 400);
+      assert.deepEqual(bad.body.allowed, ['model', 'provider', 'run', 'day']);
+    }
+  );
+});
+
 test('unknown routes 404 with the routing hint (§04)', async () => {
   const app = await startOrangebox();
   try {
