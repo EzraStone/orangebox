@@ -1,6 +1,6 @@
 {
   "name": "orangebox-ai",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Flight data recorder for the AI agent you're building — a zero-config local proxy that records every LLM API call your own agent code makes into SQLite, and renders each run as a visual timeline you can diff and export.",
   "type": "module",
   "license": "MIT",
