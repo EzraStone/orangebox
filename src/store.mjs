@@ -106,6 +106,18 @@ const MIGRATIONS = new Map([
   ]
 ]);
 
+/**
+ * Groupings the spend view offers. A fixed map rather than an interpolated
+ * column name — this string ends up inside SQL, so it must never be able to
+ * come from a query parameter unchecked.
+ */
+const SPEND_GROUPS = {
+  model: "COALESCE(c.model, '(no model recorded)')",
+  provider: 'c.provider',
+  run: "COALESCE(r.name, c.run_id)",
+  day: "date(c.started_at / 1000, 'unixepoch', 'localtime')"
+};
+
 const CALL_SUMMARY_COLUMNS = `
   id, run_id, seq, provider, endpoint, model, status, error_type, streamed,
   started_at, first_token_at, ended_at, latency_ms, ttft_ms,
@@ -246,6 +258,31 @@ export class Store {
       clearCalls: db.prepare('DELETE FROM calls'),
       clearTools: db.prepare('DELETE FROM tool_events'),
       oldRuns: db.prepare('SELECT id FROM runs WHERE started_at < ?')
+    };
+
+    // Built per grouping and memoised: the column is chosen from SPEND_GROUPS,
+    // never from user input.
+    const spendCache = new Map();
+    this.q.spendByGroup = (column) => {
+      if (!spendCache.has(column)) {
+        spendCache.set(
+          column,
+          db.prepare(`
+            SELECT ${column} AS key,
+                   COUNT(*)                        AS calls,
+                   SUM(COALESCE(c.input_tokens, 0))  AS input_tokens,
+                   SUM(COALESCE(c.output_tokens, 0)) AS output_tokens,
+                   SUM(COALESCE(c.cost_usd, 0))      AS cost_usd,
+                   SUM(CASE WHEN c.cost_usd IS NULL THEN 1 ELSE 0 END) AS unpriced_calls,
+                   SUM(CASE WHEN c.error_type IS NOT NULL THEN 1 ELSE 0 END) AS error_calls
+              FROM calls c
+              JOIN runs r ON r.id = c.run_id
+             WHERE c.started_at BETWEEN @since AND @until
+             GROUP BY key
+             ORDER BY cost_usd DESC, calls DESC`)
+        );
+      }
+      return spendCache.get(column);
     };
 
     // One transaction per call: call row + tool events + run aggregate bump (§09).
@@ -445,6 +482,55 @@ export class Store {
   }
 
   // ------------------------------------------------------------ lifecycle
+
+  /**
+   * §19.5 — spend, grouped. One pass over calls rather than per-group queries,
+   * because the honest version has to count what it could NOT price as well as
+   * what it could, and that is the same scan.
+   *
+   * `unpriced` is the point of this method. A dashboard that quietly drops the
+   * calls it has no rate for shows a total that is confidently too low, which
+   * is worse than showing nothing — you would never know to distrust it.
+   */
+  spend({ groupBy = 'model', since = null, until = null } = {}) {
+    const column = SPEND_GROUPS[groupBy];
+    if (!column) throw new Error(`unknown grouping "${groupBy}"`);
+
+    const rows = this.q.spendByGroup(column).all({
+      since: since ?? 0,
+      until: until ?? Number.MAX_SAFE_INTEGER
+    });
+
+    let totalCost = 0;
+    let totalCalls = 0;
+    let unpricedCalls = 0;
+    const groups = rows.map((row) => {
+      totalCost += row.cost_usd ?? 0;
+      totalCalls += row.calls;
+      unpricedCalls += row.unpriced_calls;
+      return {
+        key: row.key ?? '(unknown)',
+        calls: row.calls,
+        input_tokens: row.input_tokens ?? 0,
+        output_tokens: row.output_tokens ?? 0,
+        cost_usd: row.cost_usd ?? 0,
+        unpriced_calls: row.unpriced_calls,
+        error_calls: row.error_calls
+      };
+    });
+
+    return {
+      group_by: groupBy,
+      since,
+      until,
+      total_calls: totalCalls,
+      total_cost_usd: Math.round(totalCost * 1e8) / 1e8,
+      // How much of the total is missing because we had no rate for it.
+      unpriced_calls: unpricedCalls,
+      priced_share: totalCalls === 0 ? 1 : (totalCalls - unpricedCalls) / totalCalls,
+      groups
+    };
+  }
 
   clearAll() {
     this.db.transaction(() => {
