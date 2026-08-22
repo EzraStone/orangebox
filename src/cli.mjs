@@ -162,10 +162,8 @@ function banner({ origin, store, host, port, willOpen, authToken, mobile }) {
   // something once it is big enough to be worth knowing about.
   if (size > LARGE_DB_BYTES) {
     console.error(
-      `[33mNOTE: this database is ${formatBytes(size)} and holds every prompt you have recorded.[0m
-` +
-        `      Trim it with  --retain <days>  on start, or  orangebox clear  to empty it.
-`
+      `\x1b[33mNOTE: this database is ${formatBytes(size)} and holds every prompt you have recorded.\x1b[0m\n` +
+      `      Trim it with  --retain <days>  on start, or  orangebox clear  to empty it.\n`
     );
   }
 
