@@ -369,3 +369,49 @@ test('ids sort chronologically and auto run names read as timestamps', async () 
   assert.ok(a < b, `${a} should sort before ${b}`);
   assert.match(autoRunName(new Date('2026-07-27T14:03:00').getTime()), /^run 2026-07-27 \d{2}:03$/);
 });
+
+test('spend by day comes back newest-first, not cheapest-last (§19.5)', () => {
+  // Every other grouping ranks by cost, because "what is costing me the most"
+  // is the question. Dates are different: a list of days in cost order cannot
+  // be read as a trend at all, which is the only reason to group by day.
+  const store = memStore();
+  const run = store.createRun({ source: 'gap' });
+  const day = 86400_000;
+  const now = Date.now();
+
+  // Deliberately cheapest in the middle, so cost ordering and date ordering
+  // disagree and the test can tell which one it got.
+  for (const [offset, cost] of [[-4 * day, 0.10], [-3 * day, 0.90], [-2 * day, 0.02], [-1 * day, 0.40]]) {
+    store.insertCall({
+      id: newId(),
+      run_id: run.id,
+      seq: store.nextSeq(run.id),
+      provider: 'anthropic',
+      endpoint: '/v1/messages',
+      model: 'claude-opus-5',
+      started_at: now + offset,
+      request_json: '{}',
+      cost_usd: cost
+    });
+  }
+
+  const keys = store.spend({ groupBy: 'day' }).groups.map((g) => g.key);
+  assert.equal(keys.length, 4);
+  assert.deepEqual(keys, [...keys].sort().reverse(), 'days descend chronologically');
+
+  // And the other groupings still rank by spend.
+  const byModel = store.spend({ groupBy: 'model' });
+  assert.equal(byModel.groups[0].key, 'claude-opus-5');
+
+  store.close();
+});
+
+test('spend orderings are a fixed table, not caller input (§12.1)', () => {
+  // The ordering is interpolated into SQL exactly like the column is, so the
+  // same rule applies: an unknown grouping never reaches the query builder.
+  const store = memStore();
+  for (const bad of ['day; DROP TABLE runs', '_default', 'key DESC', 'constructor']) {
+    assert.throws(() => store.spend({ groupBy: bad }), /unknown grouping/, `rejected: ${bad}`);
+  }
+  store.close();
+});

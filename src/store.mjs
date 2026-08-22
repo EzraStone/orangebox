@@ -111,6 +111,18 @@ const MIGRATIONS = new Map([
  * column name — this string ends up inside SQL, so it must never be able to
  * come from a query parameter unchecked.
  */
+// Ordering, per grouping. Interpolated into SQL like the column above, so it
+// is a fixed table and never anything a caller supplies.
+//
+// Everything ranks by spend, because "what is costing me the most" is the
+// question people open this to answer. Days are the exception: a list of dates
+// in cost order is unreadable as a trend. Newest first, matching the runs list,
+// so folding the chart tail drops the oldest days and not the cheapest ones.
+const SPEND_ORDER = {
+  day: 'key DESC',
+  _default: 'cost_usd DESC, calls DESC'
+};
+
 const SPEND_GROUPS = {
   model: "COALESCE(c.model, '(no model recorded)')",
   provider: 'c.provider',
@@ -263,10 +275,11 @@ export class Store {
     // Built per grouping and memoised: the column is chosen from SPEND_GROUPS,
     // never from user input.
     const spendCache = new Map();
-    this.q.spendByGroup = (column) => {
-      if (!spendCache.has(column)) {
+    this.q.spendByGroup = (column, orderBy) => {
+      const cacheKey = column + '|' + orderBy;
+      if (!spendCache.has(cacheKey)) {
         spendCache.set(
-          column,
+          cacheKey,
           db.prepare(`
             SELECT ${column} AS key,
                    COUNT(*)                        AS calls,
@@ -279,10 +292,10 @@ export class Store {
               JOIN runs r ON r.id = c.run_id
              WHERE c.started_at BETWEEN @since AND @until
              GROUP BY key
-             ORDER BY cost_usd DESC, calls DESC`)
+             ORDER BY ${orderBy}`)
         );
       }
-      return spendCache.get(column);
+      return spendCache.get(cacheKey);
     };
 
     // One transaction per call: call row + tool events + run aggregate bump (§09).
@@ -493,10 +506,14 @@ export class Store {
    * is worse than showing nothing — you would never know to distrust it.
    */
   spend({ groupBy = 'model', since = null, until = null } = {}) {
+    // Object.hasOwn, not a truthiness check: SPEND_GROUPS['constructor'] walks
+    // the prototype chain and hands back Object, which is truthy enough to pass
+    // a !column guard and then stringifies a whole function into the SQL.
+    if (!Object.hasOwn(SPEND_GROUPS, groupBy)) throw new Error(`unknown grouping "${groupBy}"`);
     const column = SPEND_GROUPS[groupBy];
-    if (!column) throw new Error(`unknown grouping "${groupBy}"`);
+    const orderBy = Object.hasOwn(SPEND_ORDER, groupBy) ? SPEND_ORDER[groupBy] : SPEND_ORDER._default;
 
-    const rows = this.q.spendByGroup(column).all({
+    const rows = this.q.spendByGroup(column, orderBy).all({
       since: since ?? 0,
       until: until ?? Number.MAX_SAFE_INTEGER
     });
