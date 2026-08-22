@@ -9,6 +9,9 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHIPPED = path.join(HERE, 'pricing.json');
 
+/** Providers that run on your own hardware, where per-token cost is zero. */
+const LOCAL_PROVIDERS = new Set(['ollama']);
+
 export function userPricingPath() {
   return path.join(os.homedir(), '.orangebox', 'pricing.json');
 }
@@ -46,7 +49,13 @@ export class Pricing {
    * when every token field is null — an unknown count is not the same as zero,
    * and a confidently-wrong $0.00 is worse than an em-dash (§08).
    */
-  costFor({ model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens }) {
+  costFor({ provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens }) {
+    // Local inference has no per-token bill. Reporting an em-dash here would
+    // say "orangebox does not know", which is the wrong answer — it does know,
+    // and the answer is nothing. Electricity is real but it is not per-token
+    // and orangebox has no business guessing at it.
+    if (LOCAL_PROVIDERS.has(provider)) return 0;
+
     const rate = this.rateFor(model);
     if (!rate) return null;
 

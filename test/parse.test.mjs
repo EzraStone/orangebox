@@ -463,6 +463,18 @@ test('a malformed user pricing file is ignored rather than fatal', async () => {
   }
 });
 
+test('local providers cost nothing, which is not the same as unknown (§08, §19.3)', () => {
+  const pricing = loadPricing({ userFile: '/nonexistent/pricing.json' });
+
+  // Zero, not null: orangebox does know the answer for local inference, and an
+  // em-dash would wrongly claim it does not.
+  assert.equal(pricing.costFor({ provider: 'ollama', model: 'llama3.2', input_tokens: 1e6, output_tokens: 1e6 }), 0);
+  assert.equal(pricing.costFor({ provider: 'ollama', model: 'anything-at-all' }), 0);
+
+  // A hosted provider with the same unknown model still reports unknown.
+  assert.equal(pricing.costFor({ provider: 'openai', model: 'anything-at-all', input_tokens: 100 }), null);
+});
+
 test('cost is null for unpriced models and for calls with no token counts (§08)', () => {
   const pricing = loadPricing({ userFile: '/nonexistent/pricing.json' });
 
