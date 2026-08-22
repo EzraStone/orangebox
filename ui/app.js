@@ -1700,11 +1700,15 @@ async function boot() {
     state.mobileAccess = health.mobile_access === true;
     $('mobile-manage').hidden = health.mobile_manage !== true || state.readOnly;
     renderNotificationControl();
+    // Read the route before anything else: loadRuns() lands on the newest run
+    // when no run is named, and that replaceState overwrites /spend before we
+    // would otherwise get around to looking at it.
+    const bootSpend = pathIsSpend();
     state.runId = pathRunId();
     renderPill();
     await loadRuns();
     if (state.runId) await loadRun(state.runId);
-    if (pathIsSpend()) await openSpend({ replace: true });
+    if (bootSpend) await openSpend({ replace: true });
     connectLive();
   } catch {
     if (await offerMobilePairing()) {
