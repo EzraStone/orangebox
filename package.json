@@ -26,7 +26,7 @@
     "docs:serve": "node scripts/serve-docs.mjs",
     "prepublishOnly": "npm test",
     "smoke:install": "node scripts/smoke-install.mjs",
-    "test": "node --test test/parse.test.mjs test/store.test.mjs test/proxy.test.mjs test/diff.test.mjs test/export.test.mjs test/mobile.test.mjs"
+    "test": "node --test test/parse.test.mjs test/store.test.mjs test/proxy.test.mjs test/diff.test.mjs test/spend.test.mjs test/export.test.mjs test/mobile.test.mjs"
   },
   "keywords": [
     "llm",
