@@ -154,9 +154,6 @@ function banner({ origin, store, host, port, willOpen, authToken, mobile }) {
   }
   console.log('');
 
-<<<<<<< HEAD
-  if (!isLoopback(host) && !authToken && !mobile?.enabled) {
-=======
   // The database grows forever unless --retain says otherwise, and it is full
   // of prompts. Nobody checks a file they were never told about, so say
   // something once it is big enough to be worth knowing about.
@@ -167,8 +164,7 @@ function banner({ origin, store, host, port, willOpen, authToken, mobile }) {
     );
   }
 
-  if (!isLoopback(host)) {
->>>>>>> 15e8a56 (feat(cli): say something when the database gets large)
+  if (!isLoopback(host) && !authToken && !mobile?.enabled) {
     console.error(
       `\x1b[31mWARNING: orangebox has no authentication. Binding to ${host} exposes every recorded prompt to your network.\x1b[0m\n`
     );
