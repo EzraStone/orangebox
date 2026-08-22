@@ -30,7 +30,14 @@ const PROVIDERS = {
   // default target is the loopback interface, and orangebox still only connects
   // in direct response to a request somebody proxied through it.
   ollama: normalizeOllamaHost(process.env.OLLAMA_HOST) ?? 'http://127.0.0.1:11434',
-  gemini: 'https://generativelanguage.googleapis.com'
+  gemini: 'https://generativelanguage.googleapis.com',
+  // Region-specific, so it reads AWS_REGION the way every AWS tool does.
+  //
+  // §19.3 caveat: SigV4 signs the Host header and orangebox strips Host like
+  // any reverse proxy, so a SigV4-signed request cannot survive the hop. Use a
+  // Bedrock API key (bearer auth) and it works like the others. orangebox will
+  // not hold your AWS credentials in order to re-sign on your behalf.
+  bedrock: `https://bedrock-runtime.${process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1'}.amazonaws.com`
 };
 
 /** OLLAMA_HOST is commonly set bare, as `host:port`, with no scheme. */
@@ -181,7 +188,7 @@ async function handle(req, res, ctx) {
   }
 
   // 1. Run-scoped proxy: /r/:runId/{anthropic,openai}/*
-  const scoped = pathname.match(/^\/r\/([^/]+)\/(anthropic|openai|ollama|gemini)(\/.*)?$/);
+  const scoped = pathname.match(/^\/r\/([^/]+)\/(anthropic|openai|ollama|gemini|bedrock)(\/.*)?$/);
   if (scoped) {
     return ctx.proxy.handle(req, res, {
       provider: scoped[2],
@@ -192,7 +199,7 @@ async function handle(req, res, ctx) {
   }
 
   // 2. Bare proxy: /{anthropic,openai}/*
-  const bare = pathname.match(/^\/(anthropic|openai|ollama|gemini)(\/.*)?$/);
+  const bare = pathname.match(/^\/(anthropic|openai|ollama|gemini|bedrock)(\/.*)?$/);
   if (bare) {
     return ctx.proxy.handle(req, res, {
       provider: bare[1],

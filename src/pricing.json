@@ -6,77 +6,78 @@
     "openai_cache": "OpenAI cache writes are billed at the normal input rate, so there is no cache_write key. cache_read is listed for completeness; §7.3 does not extract cached-token counts in v1, so it currently goes unused.",
     "sonnet_5_intro": "claude-sonnet-5 has promotional pricing of 2.00 in / 10.00 out through 2026-08-31. The standard rates are listed below so this file stays correct after that date; costs for Sonnet 5 calls made before then are over-estimated by ~33%.",
     "gemini_tiers": "Gemini charges more for prompts over 200k tokens, and 3.6/3.7 Flash carry promotional rates through 2026-12-31. orangebox stores one flat rate per model, so the figures below are the base tier: long-context Gemini calls are under-estimated. Every cost in the UI is labelled \"est.\" for exactly this class of reason.",
-    "local_providers": "Ollama and other local runtimes report a cost of 0 rather than an em-dash — there is no per-token bill for a model on your own hardware. That is decided by provider in pricing.mjs, not by a table entry."
+    "local_providers": "Ollama and other local runtimes report a cost of 0 rather than an em-dash — there is no per-token bill for a model on your own hardware. That is decided by provider in pricing.mjs, not by a table entry.",
+    "bedrock": "Bedrock bills the same per-token rates as the model owner charges first-party for on-demand throughput, so the anthropic.* and meta.* entries mirror the ones above. Two things this table cannot express: rates differ by region, and Provisioned Throughput is billed by the hour rather than by the token — a provisioned deployment is not priced by anything here. Cross-region inference prefixes (us./eu./apac./global.) are stripped before matching, so one entry covers every region of a model. Anything unmatched shows up in the dashboard as an unpriced call rather than as a zero."
   },
   "claude-fable-5": {
-    "in": 10.0,
-    "out": 50.0,
-    "cache_read": 1.0,
+    "in": 10,
+    "out": 50,
+    "cache_read": 1,
     "cache_write": 12.5
   },
   "claude-mythos-5": {
-    "in": 10.0,
-    "out": 50.0,
-    "cache_read": 1.0,
+    "in": 10,
+    "out": 50,
+    "cache_read": 1,
     "cache_write": 12.5
   },
   "claude-opus-5": {
-    "in": 5.0,
-    "out": 25.0,
+    "in": 5,
+    "out": 25,
     "cache_read": 0.5,
     "cache_write": 6.25
   },
   "claude-opus-4-8": {
-    "in": 5.0,
-    "out": 25.0,
+    "in": 5,
+    "out": 25,
     "cache_read": 0.5,
     "cache_write": 6.25
   },
   "claude-opus-4-7": {
-    "in": 5.0,
-    "out": 25.0,
+    "in": 5,
+    "out": 25,
     "cache_read": 0.5,
     "cache_write": 6.25
   },
   "claude-opus-4-6": {
-    "in": 5.0,
-    "out": 25.0,
+    "in": 5,
+    "out": 25,
     "cache_read": 0.5,
     "cache_write": 6.25
   },
   "claude-opus-4-5": {
-    "in": 5.0,
-    "out": 25.0,
+    "in": 5,
+    "out": 25,
     "cache_read": 0.5,
     "cache_write": 6.25
   },
   "claude-sonnet-5": {
-    "in": 3.0,
-    "out": 15.0,
+    "in": 3,
+    "out": 15,
     "cache_read": 0.3,
     "cache_write": 3.75
   },
   "claude-sonnet-4-6": {
-    "in": 3.0,
-    "out": 15.0,
+    "in": 3,
+    "out": 15,
     "cache_read": 0.3,
     "cache_write": 3.75
   },
   "claude-sonnet-4-5": {
-    "in": 3.0,
-    "out": 15.0,
+    "in": 3,
+    "out": 15,
     "cache_read": 0.3,
     "cache_write": 3.75
   },
   "claude-sonnet-4": {
-    "in": 3.0,
-    "out": 15.0,
+    "in": 3,
+    "out": 15,
     "cache_read": 0.3,
     "cache_write": 3.75
   },
   "claude-haiku-4-5": {
-    "in": 1.0,
-    "out": 5.0,
+    "in": 1,
+    "out": 5,
     "cache_read": 0.1,
     "cache_write": 1.25
   },
@@ -96,17 +97,17 @@
   },
   "gemini-3.5-flash": {
     "in": 1.5,
-    "out": 9.0,
+    "out": 9,
     "cache_read": 0.15
   },
   "gemini-3.1-pro": {
-    "in": 2.0,
-    "out": 12.0,
+    "in": 2,
+    "out": 12,
     "cache_read": 0.2
   },
   "gemini-2.5-pro": {
     "in": 1.25,
-    "out": 10.0
+    "out": 10
   },
   "gemini-2.5-flash-lite": {
     "in": 0.1,
@@ -117,32 +118,32 @@
     "out": 2.5
   },
   "gpt-5.6-sol": {
-    "in": 5.0,
-    "out": 30.0,
+    "in": 5,
+    "out": 30,
     "cache_read": 0.5
   },
   "gpt-5.6-terra": {
     "in": 2.5,
-    "out": 15.0,
+    "out": 15,
     "cache_read": 0.25
   },
   "gpt-5.6-luna": {
-    "in": 1.0,
-    "out": 6.0,
+    "in": 1,
+    "out": 6,
     "cache_read": 0.1
   },
   "gpt-5.5-pro": {
-    "in": 30.0,
-    "out": 180.0
+    "in": 30,
+    "out": 180
   },
   "gpt-5.5": {
-    "in": 5.0,
-    "out": 30.0,
+    "in": 5,
+    "out": 30,
     "cache_read": 0.5
   },
   "gpt-5.4-pro": {
-    "in": 30.0,
-    "out": 180.0
+    "in": 30,
+    "out": 180
   },
   "gpt-5.4-mini": {
     "in": 0.75,
@@ -156,30 +157,30 @@
   },
   "gpt-5.4": {
     "in": 2.5,
-    "out": 15.0,
+    "out": 15,
     "cache_read": 0.25
   },
   "gpt-5.2-pro": {
-    "in": 21.0,
-    "out": 168.0
+    "in": 21,
+    "out": 168
   },
   "gpt-5.2": {
     "in": 1.75,
-    "out": 14.0,
+    "out": 14,
     "cache_read": 0.175
   },
   "gpt-5.1": {
     "in": 1.25,
-    "out": 10.0,
+    "out": 10,
     "cache_read": 0.125
   },
   "gpt-5-pro": {
-    "in": 15.0,
-    "out": 120.0
+    "in": 15,
+    "out": 120
   },
   "gpt-5-mini": {
     "in": 0.25,
-    "out": 2.0,
+    "out": 2,
     "cache_read": 0.025
   },
   "gpt-5-nano": {
@@ -189,7 +190,7 @@
   },
   "gpt-5": {
     "in": 1.25,
-    "out": 10.0,
+    "out": 10,
     "cache_read": 0.125
   },
   "gpt-4.1-mini": {
@@ -203,8 +204,8 @@
     "cache_read": 0.025
   },
   "gpt-4.1": {
-    "in": 2.0,
-    "out": 8.0,
+    "in": 2,
+    "out": 8,
     "cache_read": 0.5
   },
   "gpt-4o-mini": {
@@ -214,7 +215,7 @@
   },
   "gpt-4o": {
     "in": 2.5,
-    "out": 10.0,
+    "out": 10,
     "cache_read": 1.25
   },
   "gpt-3.5-turbo": {
@@ -227,21 +228,73 @@
     "cache_read": 0.275
   },
   "o3-pro": {
-    "in": 20.0,
-    "out": 80.0
+    "in": 20,
+    "out": 80
   },
   "o3": {
-    "in": 2.0,
-    "out": 8.0,
+    "in": 2,
+    "out": 8,
     "cache_read": 0.5
   },
   "o1-pro": {
-    "in": 150.0,
-    "out": 600.0
+    "in": 150,
+    "out": 600
   },
   "o1": {
-    "in": 15.0,
-    "out": 60.0,
+    "in": 15,
+    "out": 60,
     "cache_read": 7.5
+  },
+  "anthropic.claude-sonnet-4-5": {
+    "in": 3,
+    "out": 15,
+    "cache_read": 0.3,
+    "cache_write": 3.75
+  },
+  "anthropic.claude-sonnet-4": {
+    "in": 3,
+    "out": 15,
+    "cache_read": 0.3,
+    "cache_write": 3.75
+  },
+  "anthropic.claude-opus-4-5": {
+    "in": 5,
+    "out": 25,
+    "cache_read": 0.5,
+    "cache_write": 6.25
+  },
+  "anthropic.claude-opus-4-1": {
+    "in": 15,
+    "out": 75,
+    "cache_read": 1.5,
+    "cache_write": 18.75
+  },
+  "anthropic.claude-haiku-4-5": {
+    "in": 1,
+    "out": 5,
+    "cache_read": 0.1,
+    "cache_write": 1.25
+  },
+  "anthropic.claude-3-7-sonnet": {
+    "in": 3,
+    "out": 15,
+    "cache_read": 0.3,
+    "cache_write": 3.75
+  },
+  "anthropic.claude-3-5-sonnet": {
+    "in": 3,
+    "out": 15,
+    "cache_read": 0.3,
+    "cache_write": 3.75
+  },
+  "anthropic.claude-3-5-haiku": {
+    "in": 0.8,
+    "out": 4,
+    "cache_read": 0.08,
+    "cache_write": 1
+  },
+  "anthropic.claude-3-haiku": {
+    "in": 0.25,
+    "out": 1.25
   }
 }

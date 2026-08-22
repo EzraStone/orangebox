@@ -19,9 +19,10 @@ import * as anthropic from './parse/anthropic.mjs';
 import * as openai from './parse/openai.mjs';
 import * as ollama from './parse/ollama.mjs';
 import * as gemini from './parse/gemini.mjs';
+import * as bedrock from './parse/bedrock.mjs';
 import { parseSseFrames, parseFrameJson } from './parse/sse.mjs';
 
-const PARSERS = { anthropic, openai, ollama, gemini };
+const PARSERS = { anthropic, openai, ollama, gemini, bedrock };
 
 /** Bodies are JSON; over this we forward anyway and store a stub (§06.1.2, §14). */
 const MAX_REQUEST_BODY = 10 * 1024 * 1024;
@@ -502,11 +503,15 @@ async function writeRecord(ctx, input) {
   let { responseJson, responseText } = input;
   let errorType = input.error_type ?? null;
   if (input.responseChunks) {
-    responseText = Buffer.concat(input.responseChunks).toString('utf8');
+    const rawResponse = Buffer.concat(input.responseChunks);
+    responseText = rawResponse.toString('utf8');
     input.responseChunks.length = 0; // release the capture buffers promptly
     const folded = foldStream(
       parser,
-      responseText,
+      // Bedrock frames are binary: toString('utf8') replaces every invalid
+      // byte sequence with U+FFFD, and no amount of re-encoding gets those
+      // bytes back. Binary parsers get the buffer itself.
+      parser.binary ? rawResponse : responseText,
       input.streamOutcome,
       input.upstreamOk,
       input.upstreamStatus
@@ -530,7 +535,7 @@ async function writeRecord(ctx, input) {
     }
   }
 
-  const extracted = responseJson ? parser.parseResponse(responseJson) : null;
+  const extracted = responseJson ? parser.parseResponse(responseJson, { endpoint: input.endpoint }) : null;
 
   // Tool payloads are extracted (and cloned) before the blobs are stripped in
   // place below, so the two never fight over the same sub-objects.

@@ -20,6 +20,13 @@ import { splitFrames, frameJson } from './eventstream.mjs';
 
 export const provider = 'bedrock';
 
+/**
+ * Tells the proxy to hand reassembleStream the captured Buffer rather than a
+ * utf8 string. Frames are binary; toString('utf8') swaps every invalid byte
+ * sequence for U+FFFD and there is no way back from that.
+ */
+export const binary = true;
+
 const MODEL_IN_PATH = /\/model\/([^/]+)\/(converse-stream|converse|invoke-with-response-stream|invoke)/;
 
 /** Pull the model id and the streaming choice out of the request path. */

@@ -35,11 +35,21 @@ export class Pricing {
     this.meta = meta;
   }
 
-  /** Longest key that is a prefix of the model string wins. */
+  /**
+   * Longest key that is a prefix of the model string wins.
+   *
+   * Bedrock ids are the model id behind an inference profile, so the same model
+   * arrives as `us.anthropic.claude-sonnet-4-5-...`, `eu.anthropic....` and
+   * `apac.anthropic....`. Stripping that routing prefix before matching keeps
+   * one table entry per model instead of one per region. The recorded model
+   * string keeps the prefix — §7.1 stores what the wire said.
+   */
   rateFor(model) {
     if (typeof model !== 'string' || model === '') return null;
-    for (const [key, rate] of this.entries) {
-      if (model.startsWith(key)) return rate;
+    for (const candidate of [model, model.replace(/^(us|eu|apac|global)\./, '')]) {
+      for (const [key, rate] of this.entries) {
+        if (candidate.startsWith(key)) return rate;
+      }
     }
     return null;
   }

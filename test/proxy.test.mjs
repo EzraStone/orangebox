@@ -11,6 +11,7 @@ import {
   jsonResponse,
   sseResponse,
   ndjsonResponse,
+  eventStreamResponse,
   sleep,
   getJson,
   settle,
@@ -18,6 +19,7 @@ import {
   OPENAI_COMPLETION,
   removeTempDir
 } from './helpers.mjs';
+import { encodeFrame } from '../src/parse/eventstream.mjs';
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const fixture = (name) => fs.readFileSync(path.join(FIXTURES, name), 'utf8');
@@ -1240,5 +1242,64 @@ test('unknown routes 404 with the routing hint (§04)', async () => {
     assert.match(body.hint, /\/anthropic or \/openai/);
   } finally {
     await app.stop();
+  }
+});
+
+test('a streamed Bedrock call is relayed byte-for-byte and reassembled (§19.3)', async () => {
+  // The one provider whose stream is not text. Every byte that reaches the
+  // client has to be identical, and the recorder has to make sense of it
+  // without ever having turned it into a string.
+  const frame = (type, body) =>
+    encodeFrame(
+      { ':event-type': type, ':content-type': 'application/json', ':message-type': 'event' },
+      Buffer.from(JSON.stringify(body), 'utf8')
+    );
+
+  const frames = [
+    frame('messageStart', { role: 'assistant' }),
+    frame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'Paris is ' } }),
+    frame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'sunny.' } }),
+    frame('contentBlockStop', { contentBlockIndex: 0 }),
+    frame('messageStop', { stopReason: 'end_turn' }),
+    frame('metadata', { usage: { inputTokens: 220, outputTokens: 9 }, metrics: { latencyMs: 410 } })
+  ];
+  const whole = Buffer.concat(frames);
+
+  const upstream = await startMockUpstream((req, res) => eventStreamResponse(res, frames));
+  const app = await startOrangebox({
+    providers: { anthropic: upstream.origin, openai: upstream.origin, bedrock: upstream.origin }
+  });
+
+  const model = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
+
+  try {
+    const res = await fetch(
+      `${app.origin}/bedrock/model/${encodeURIComponent(model)}/converse-stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', content: [{ text: 'weather in Paris?' }] }] })
+      }
+    );
+
+    assert.equal(res.status, 200);
+    const relayed = Buffer.from(await res.arrayBuffer());
+    assert.deepEqual(relayed, whole, 'binary frames relayed byte for byte');
+
+    assert.ok(await settle(app, () => app.store.countRuns() === 1));
+    const runId = app.store.listRuns().runs[0].id;
+    const call = app.store.callSummaries(runId)[0];
+
+    assert.equal(call.provider, 'bedrock');
+    assert.equal(call.streamed, 1);
+    assert.equal(call.model, model, 'the model is read out of the url');
+    assert.equal(call.stop_reason, 'end_turn');
+    assert.equal(call.input_tokens, 220);
+    assert.equal(call.output_tokens, 9);
+    assert.ok(call.ttft_ms !== null, 'time to first token works on binary frames too');
+  } finally {
+    await app.close();
+    await upstream.close();
+    removeTempDir(app.dbPath);
   }
 });

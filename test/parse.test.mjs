@@ -581,3 +581,48 @@ test('cost is null for unpriced models and for calls with no token counts (§08)
   // A partial count still produces an estimate; the missing field counts as 0.
   assert.equal(pricing.costFor({ model: 'claude-opus-5', input_tokens: 1e6 }), 5);
 });
+
+test('Bedrock cross-region prefixes resolve to one table entry (§19.3)', () => {
+  // The same model reaches Bedrock as us./eu./apac./global. depending on which
+  // inference profile routed it. Without stripping that, the table would need
+  // four entries per model and would quietly drift out of agreement with itself.
+  const pricing = loadPricing({ userFile: '/nonexistent/pricing.json' });
+
+  const base = pricing.rateFor('anthropic.claude-sonnet-4-5-20250929-v1:0');
+  assert.ok(base, 'the unprefixed id is priced');
+
+  for (const region of ['us', 'eu', 'apac', 'global']) {
+    assert.deepEqual(
+      pricing.rateFor(`${region}.anthropic.claude-sonnet-4-5-20250929-v1:0`),
+      base,
+      `${region}. prefix resolves to the same rate`
+    );
+  }
+});
+
+test('an unknown Bedrock model is unpriced, not free (§08)', () => {
+  // The whole point of the unpriced accounting: a model missing from the table
+  // has to come back null so the dashboard can say the total is incomplete.
+  // Returning 0 would fold it silently into a total that looks authoritative.
+  const pricing = loadPricing({ userFile: '/nonexistent/pricing.json' });
+  assert.equal(pricing.rateFor('us.amazon.nova-pro-v1:0'), null);
+  assert.equal(
+    pricing.costFor({
+      provider: 'bedrock',
+      model: 'us.amazon.nova-pro-v1:0',
+      input_tokens: 1000,
+      output_tokens: 500
+    }),
+    null
+  );
+});
+
+test('stripping a region prefix never invents a match', () => {
+  // "us." is only stripped as a routing prefix. A model that genuinely starts
+  // with something else must not be coerced into a match.
+  const pricing = loadPricing({ userFile: '/nonexistent/pricing.json' });
+  assert.equal(pricing.rateFor('united.anthropic.claude-sonnet-4-5'), null);
+  assert.equal(pricing.rateFor('us.'), null);
+  assert.equal(pricing.rateFor(''), null);
+  assert.equal(pricing.rateFor(null), null);
+});

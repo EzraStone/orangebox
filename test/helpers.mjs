@@ -151,3 +151,21 @@ export const OPENAI_COMPLETION = {
   ],
   usage: { prompt_tokens: 20, completion_tokens: 3, total_tokens: 23 }
 };
+
+/**
+ * Write AWS event-stream frames, the way Bedrock's ConverseStream does.
+ * Frames are written as raw buffers — the point of the exercise is that these
+ * bytes are not text and must not be handled as text anywhere along the way.
+ */
+export async function eventStreamResponse(res, frames, { delayMs = 2 } = {}) {
+  res.writeHead(200, {
+    'content-type': 'application/vnd.amazon.eventstream',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive'
+  });
+  for (const frame of frames) {
+    res.write(frame);
+    if (delayMs) await sleep(delayMs);
+  }
+  res.end();
+}
