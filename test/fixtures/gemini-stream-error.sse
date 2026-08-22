@@ -1,0 +1,4 @@
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Halfway through this sen"}]},"index":0}],"modelVersion":"gemini-2.5-pro"}
+
+data: {"error":{"code":503,"message":"The model is overloaded. Please try again later.","status":"UNAVAILABLE"}}
+

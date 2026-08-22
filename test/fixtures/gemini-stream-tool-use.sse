@@ -1,0 +1,8 @@
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Let me check"}]},"index":0}],"modelVersion":"gemini-2.5-pro"}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":" the weather."}]},"index":0}],"modelVersion":"gemini-2.5-pro"}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"get_weather","args":{"city":"Paris"}}}]},"index":0}],"modelVersion":"gemini-2.5-pro"}
+
+data: {"candidates":[{"content":{"role":"model","parts":[]},"finishReason":"STOP","index":0}],"modelVersion":"gemini-2.5-pro","usageMetadata":{"promptTokenCount":143,"candidatesTokenCount":57,"cachedContentTokenCount":2048,"totalTokenCount":200}}
+
