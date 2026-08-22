@@ -9,6 +9,8 @@
 // travels with the total everywhere it goes, and the chart marks the bars it
 // affects.
 
+import { el, fmt } from './dom.js';
+
 export const GROUPS = [
   ['model', 'Model'],
   ['provider', 'Provider'],
@@ -108,4 +110,198 @@ export function coverageNote(data) {
 export function shortKey(key, max = 26) {
   const s = String(key ?? '');
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+// =========================================================== rendering
+
+export const state = {
+  group: 'model',
+  days: '',
+  data: null,
+  loading: false,
+  error: null
+};
+
+/** Fetch the current grouping. Never throws — the view renders the failure. */
+export async function loadSpend(get) {
+  state.loading = true;
+  state.error = null;
+  try {
+    const params = new URLSearchParams({ group: state.group });
+    if (state.days) params.set('since', String(Date.now() - Number(state.days) * 86_400_000));
+    state.data = await get(`/api/spend?${params}`);
+  } catch (err) {
+    state.data = null;
+    state.error = String(err?.message ?? err);
+  } finally {
+    state.loading = false;
+  }
+}
+
+function segmented(options, current, apply, onChange, label) {
+  const wrap = el('div', { class: 'segmented', role: 'group', 'aria-label': label });
+  for (const [value, text] of options) {
+    wrap.append(
+      el('button', {
+        class: 'seg',
+        type: 'button',
+        'aria-pressed': String(current === value),
+        text,
+        on: {
+          click: () => {
+            if (current === value) return;
+            apply(value);
+            onChange();
+          }
+        }
+      })
+    );
+  }
+  return wrap;
+}
+
+function chart(groups) {
+  const bars = barGeometry(groups);
+  const height = chartHeight(bars.length);
+  const total = groups.reduce((sum, g) => sum + (Number(g.cost_usd) || 0), 0);
+
+  const svg = el('svg', {
+    class: 'spend-chart',
+    viewBox: `0 0 640 ${height}`,
+    preserveAspectRatio: 'xMinYMin meet',
+    role: 'img',
+    'aria-label': `Spend by ${state.group}: ${bars.length} rows totalling ${fmt.usd(total)}`
+  });
+
+  for (const bar of bars) {
+    const g = bar.group;
+    svg.append(
+      el('text', {
+        class: g.rollup ? 'spend-bar-label rollup' : 'spend-bar-label',
+        x: bar.x - 10,
+        y: bar.y + 17,
+        'text-anchor': 'end',
+        text: shortKey(g.key)
+      }),
+      el('rect', {
+        class: bar.partial ? 'spend-bar partial' : 'spend-bar',
+        x: bar.x,
+        y: bar.y + 5,
+        width: bar.width,
+        height: bar.height,
+        rx: 2
+      }),
+      el('text', {
+        class: 'spend-bar-value',
+        x: bar.x + bar.width + 8,
+        y: bar.y + 17,
+        text: `${fmt.usd(g.cost_usd)}${bar.partial ? '+' : ''}`
+      })
+    );
+  }
+
+  return svg;
+}
+
+function table(groups) {
+  const heading = GROUPS.find(([k]) => k === state.group)?.[1] ?? 'Group';
+
+  const head = el('tr', {}, [
+    el('th', { scope: 'col', text: heading }),
+    el('th', { scope: 'col', class: 'num', text: 'Calls' }),
+    el('th', { scope: 'col', class: 'num', text: 'In' }),
+    el('th', { scope: 'col', class: 'num', text: 'Out' }),
+    el('th', { scope: 'col', class: 'num', text: 'Est. cost' })
+  ]);
+
+  const rows = groups.map((g) => {
+    const flags = [];
+    if (g.unpriced_calls > 0) {
+      flags.push(
+        el('span', {
+          class: 'spend-flag',
+          title: `${g.unpriced_calls} of ${g.calls} calls have no pricing entry, so this row is an under-estimate`,
+          text: ` ${g.unpriced_calls} unpriced`
+        })
+      );
+    }
+    if (g.error_calls > 0) {
+      flags.push(
+        el('span', {
+          class: 'spend-err',
+          title: `${g.error_calls} of ${g.calls} calls failed`,
+          text: ` ${g.error_calls} errored`
+        })
+      );
+    }
+
+    return el('tr', { class: g.rollup ? 'rollup' : null }, [
+      el('td', {}, [el('span', { class: 'spend-key', text: String(g.key) }), ...flags]),
+      el('td', { class: 'num', text: String(g.calls) }),
+      el('td', { class: 'num', text: fmt.tokens(g.input_tokens) }),
+      el('td', { class: 'num', text: fmt.tokens(g.output_tokens) }),
+      el('td', { class: 'num', text: `${fmt.usd(g.cost_usd)}${g.unpriced_calls > 0 ? '+' : ''}` })
+    ]);
+  });
+
+  return el('table', { class: 'spend-table' }, [
+    el('thead', {}, [head]),
+    el('tbody', {}, rows)
+  ]);
+}
+
+function note(text) {
+  return el('p', { class: 'spend-note', text });
+}
+
+/**
+ * Draw the whole view into `host`. `onChange` re-runs the load and calls back
+ * in here; the view owns no scheduling of its own.
+ */
+export function renderSpend(host, onChange) {
+  const body = el('div', { class: 'spend' });
+
+  body.append(
+    el('div', { class: 'spend-controls' }, [
+      el('span', { class: 'spend-ctl-label', text: 'group by' }),
+      segmented(GROUPS, state.group, (v) => (state.group = v), onChange, 'Group spend by'),
+      el('span', { class: 'spend-ctl-gap' }),
+      el('span', { class: 'spend-ctl-label', text: 'window' }),
+      segmented(WINDOWS, state.days, (v) => (state.days = v), onChange, 'Time window')
+    ])
+  );
+
+  const data = state.data;
+
+  if (state.error) {
+    body.append(note(`Could not load spend: ${state.error}`));
+  } else if (state.loading && !data) {
+    body.append(note('Loading…'));
+  } else if (!data || !data.total_calls) {
+    body.append(
+      note('No calls recorded in this window. Widen the range, or point an agent at orangebox and run it.')
+    );
+  } else {
+    body.append(
+      el('div', { class: 'spend-total' }, [
+        el('span', {
+          class: data.unpriced_calls > 0 ? 'spend-total-value partial' : 'spend-total-value',
+          text: `${fmt.usd(data.total_cost_usd)}${data.unpriced_calls > 0 ? '+' : ''}`
+        }),
+        el('span', {
+          class: 'spend-total-sub',
+          text: `estimated across ${data.total_calls} call${data.total_calls === 1 ? '' : 's'}`
+        })
+      ])
+    );
+
+    // The honest bit, in the same breath as the number it qualifies.
+    const warning = coverageNote(data);
+    if (warning) body.append(el('div', { class: 'spend-banner', role: 'status', text: warning }));
+
+    const groups = topGroups(data.groups ?? []);
+    body.append(chart(groups), table(groups));
+  }
+
+  host.replaceChildren(body);
 }
