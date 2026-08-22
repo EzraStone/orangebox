@@ -29,7 +29,8 @@ const PROVIDERS = {
   // Worth noting against §12.1: this does not widen the outbound promise. The
   // default target is the loopback interface, and orangebox still only connects
   // in direct response to a request somebody proxied through it.
-  ollama: normalizeOllamaHost(process.env.OLLAMA_HOST) ?? 'http://127.0.0.1:11434'
+  ollama: normalizeOllamaHost(process.env.OLLAMA_HOST) ?? 'http://127.0.0.1:11434',
+  gemini: 'https://generativelanguage.googleapis.com'
 };
 
 /** OLLAMA_HOST is commonly set bare, as `host:port`, with no scheme. */
@@ -180,7 +181,7 @@ async function handle(req, res, ctx) {
   }
 
   // 1. Run-scoped proxy: /r/:runId/{anthropic,openai}/*
-  const scoped = pathname.match(/^\/r\/([^/]+)\/(anthropic|openai|ollama)(\/.*)?$/);
+  const scoped = pathname.match(/^\/r\/([^/]+)\/(anthropic|openai|ollama|gemini)(\/.*)?$/);
   if (scoped) {
     return ctx.proxy.handle(req, res, {
       provider: scoped[2],
@@ -191,7 +192,7 @@ async function handle(req, res, ctx) {
   }
 
   // 2. Bare proxy: /{anthropic,openai}/*
-  const bare = pathname.match(/^\/(anthropic|openai|ollama)(\/.*)?$/);
+  const bare = pathname.match(/^\/(anthropic|openai|ollama|gemini)(\/.*)?$/);
   if (bare) {
     return ctx.proxy.handle(req, res, {
       provider: bare[1],
