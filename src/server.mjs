@@ -42,11 +42,18 @@ const MIME = {
  * Build (but do not start) the orangebox server.
  * Returns { server, store, live, listen(), close() }.
  */
-export function createServer({ dbPath, gapSeconds = 120, providers = PROVIDERS, authToken = null, mobileAccess = false } = {}) {
+export function createServer({
+  dbPath,
+  gapSeconds = 120,
+  providers = PROVIDERS,
+  authToken = null,
+  mobileAccess = false,
+  maxPendingCapture
+} = {}) {
   const store = openStore(dbPath);
   const live = createLiveHub();
   const pricing = loadPricing();
-  const proxy = createProxy({ store, live, pricing, gapSeconds, providers });
+  const proxy = createProxy({ store, live, pricing, gapSeconds, providers, maxPendingCapture });
   const mobile = createMobileAccess({ enabled: mobileAccess });
   const security = {
     csrfToken: crypto.randomBytes(24).toString('base64url'),

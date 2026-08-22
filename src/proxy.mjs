@@ -97,8 +97,19 @@ function createRecordQueue() {
  */
 const MAX_PENDING_CAPTURE = 64 * 1024 * 1024;
 
-export function createProxy({ store, live, pricing, gapSeconds, providers }) {
-  const ctx = { store, live, pricing, gapSeconds, providers, recorder: createRecordQueue() };
+export function createProxy({
+  store,
+  live,
+  pricing,
+  gapSeconds,
+  providers,
+  maxPendingCapture = MAX_PENDING_CAPTURE
+}) {
+  const ctx = {
+    store, live, pricing, gapSeconds, providers,
+    maxPendingCapture,
+    recorder: createRecordQueue()
+  };
   return {
     async handle(req, res, route) {
       try {
@@ -525,7 +536,7 @@ async function writeRecord(ctx, input) {
           ...(responseJson?._orangebox ?? {}),
           reassembled_from_stream: true,
           capture_dropped: true,
-          reason: `recorder was holding more than ${MAX_PENDING_CAPTURE} bytes; the response was relayed in full but not stored`
+          reason: `recorder was holding more than ${ctx.maxPendingCapture} bytes; the response was relayed in full but not stored`
         }
       };
     }

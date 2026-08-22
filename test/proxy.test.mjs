@@ -656,6 +656,44 @@ test('a client that walks away mid-stream is recorded as client_aborted (§17.1 
   }
 });
 
+test('capture degrades instead of growing without bound (§13)', async () => {
+  const transcript = fixture('anthropic-stream-tool-use.sse');
+
+  const upstream = await startMockUpstream((req, res) => sseResponse(res, frames(transcript)));
+  // A cap of one byte: everything after the first chunk is over budget.
+  const app = await startOrangebox({
+    providers: { anthropic: upstream.origin, openai: upstream.origin },
+    maxPendingCapture: 1
+  });
+
+  try {
+    const res = await fetch(`${app.origin}/anthropic/v1/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...anthropicRequest, stream: true })
+    });
+
+    // The client is never punished for the recorder being busy: it still gets
+    // the whole stream, byte for byte.
+    assert.equal(await res.text(), transcript, 'relay is unaffected by the cap');
+
+    assert.ok(await settle(app, () => app.store.countRuns() === 1));
+    const runId = app.store.listRuns().runs[0].id;
+    const call = app.store.callSummaries(runId)[0];
+
+    // The call is still recorded — losing the body must not lose the record.
+    assert.equal(call.streamed, 1);
+    assert.equal(call.status, 200);
+
+    const stored = JSON.parse(app.store.fullCalls(runId)[0].response_json);
+    assert.equal(stored._orangebox.capture_dropped, true);
+    assert.match(stored._orangebox.reason, /relayed in full but not stored/);
+  } finally {
+    await app.stop();
+    await upstream.close();
+  }
+});
+
 test('the live feed announces run, start, first token, and completion (§10.1)', async () => {
   await withRig(
     (req, res) => sseResponse(res, frames(fixture('anthropic-stream-tool-use.sse'))),
