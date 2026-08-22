@@ -31,9 +31,12 @@ change is wrong.
 | `docs/` | Source of the website. The live copy is deployed from the EzraStone/orangebox-Website repo via Vercel. |
 
 `docs/spec.html` is a **copy** of the canonical `orangebox-spec.html` at the
-repo root, because Pages can only serve what is inside `docs/`. Edit the root
-file, then run `npm run docs:sync` so the published copy matches. Preview the
-site locally with `npm run docs:serve`.
+repo root — the site is deployed from its own repo, which needs the spec
+alongside the page rather than one directory up. Edit the root file, then run
+`npm run docs:sync`. CI runs `npm run docs:check` and fails if you forget, so
+the published spec cannot quietly describe a different product from the code.
+
+Preview the site with `npm run docs:serve`.
 
 The SVGs in `docs/img/` are hand-drawn to match the real UI and are shared by the
 README and the website; if the UI's look changes, they need redrawing. `demo.svg`
