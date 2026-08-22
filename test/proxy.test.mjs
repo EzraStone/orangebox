@@ -778,6 +778,58 @@ test('a streamed Ollama call is relayed and reassembled from NDJSON (§19.3)', a
   }
 });
 
+test('a streamed Gemini call records the model read from the URL (§19.3)', async () => {
+  const transcript = fixture('gemini-stream-tool-use.sse');
+
+  const upstream = await startMockUpstream((req, res) => sseResponse(res, frames(transcript)));
+  const app = await startOrangebox({
+    providers: {
+      anthropic: upstream.origin,
+      openai: upstream.origin,
+      ollama: upstream.origin,
+      gemini: upstream.origin
+    }
+  });
+
+  try {
+    // Note what is NOT in the body: no model, no stream flag. Both are in the path.
+    const res = await fetch(
+      `${app.origin}/gemini/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'weather?' }] }] })
+      }
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), transcript);
+
+    assert.ok(await settle(app, () => app.store.countRuns() === 1));
+    const runId = app.store.listRuns().runs[0].id;
+    const call = app.store.callSummaries(runId)[0];
+
+    assert.equal(call.provider, 'gemini');
+    assert.equal(call.streamed, 1, 'streaming inferred from the method name');
+    assert.equal(call.model, 'gemini-2.5-pro', 'model read from the path');
+    assert.equal(call.stop_reason, 'STOP');
+    assert.equal(call.input_tokens, 143);
+    assert.equal(call.output_tokens, 57);
+    assert.equal(call.cache_read_tokens, 2048);
+    assert.ok(call.ttft_ms !== null);
+
+    // 143/1e6*1.25 + 57/1e6*10 — the base-tier rate from pricing.json.
+    assert.ok(Math.abs(call.cost_usd - 0.00074875) < 1e-9, `cost was ${call.cost_usd}`);
+
+    const tools = app.store.toolEvents(runId);
+    assert.equal(tools.length, 1);
+    assert.equal(tools[0].tool_name, 'get_weather');
+  } finally {
+    await app.stop();
+    await upstream.close();
+  }
+});
+
 // ==================================================== api surface (§10)
 
 test('export carries everything needed to understand a run (§10.6, §17.1 check 9)', async () => {
