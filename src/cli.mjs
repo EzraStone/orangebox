@@ -39,6 +39,8 @@ export async function main(argv) {
       return runWrapped(rest);
     case 'export':
       return exportRun(rest);
+    case 'spend':
+      return spendReport(rest);
     case 'assert':
       return assertRun(rest);
     case 'clear':
@@ -400,6 +402,163 @@ async function assertRun(args) {
   }
 }
 
+
+// ---------------------------------------------------------------- spend
+
+/**
+ * §19.5 in a terminal. The same numbers the web view shows, for people on a
+ * box with no browser — which is most CI, and plenty of servers.
+ */
+async function spendReport(args) {
+  let dbPath = null;
+  let groupBy = 'model';
+  let since = null;
+  let until = null;
+  let format = 'table';
+
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--group': case '-g': groupBy = next(); break;
+      case '--since': since = epochArg(next(), '--since'); break;
+      case '--until': until = epochArg(next(), '--until'); break;
+      case '--days': {
+        const n = int(next(), '--days');
+        since = Date.now() - n * 86_400_000;
+        break;
+      }
+      case '--json': format = 'json'; break;
+      case '--csv': format = 'csv'; break;
+      default:
+        fail(`unknown flag "${args[i]}"`);
+    }
+  }
+
+  const { openStore } = await import('./store.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+  try {
+    let data;
+    try {
+      data = store.spend({ groupBy, since, until });
+    } catch (err) {
+      fail(`${err.message} — try one of: model, provider, run, day`);
+    }
+
+    if (format === 'json') return void console.log(JSON.stringify(data, null, 2));
+    if (format === 'csv') return void printSpendCsv(data);
+    printSpendTable(data);
+  } finally {
+    store.close();
+  }
+}
+
+/** Epoch ms, or anything Date can parse ('2026-07-01'). */
+function epochArg(value, flag) {
+  if (/^d+$/.test(value)) return Number(value);
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) fail(`${flag} needs a date or epoch ms, got "${value}"`);
+  return parsed;
+}
+// Colour only when a human is watching. Piping `orangebox spend` into a file
+// or a CI log should produce text, not escape sequences.
+const useColour = () => process.stdout.isTTY === true && !process.env.NO_COLOR;
+const warn = (text) => (useColour() ? String.fromCharCode(27) + '[33m' + text + String.fromCharCode(27) + '[0m' : text);
+
+const BAR_WIDTH = 34;
+
+function printSpendTable(data) {
+  if (data.total_calls === 0) {
+    console.log('No calls recorded in that window.');
+    return;
+  }
+
+  const groups = data.groups;
+  const keyWidth = Math.min(Math.max(...groups.map((g) => g.key.length), 5), 34);
+  const max = Math.max(...groups.map((g) => g.cost_usd), 0);
+
+  console.log();
+  console.log(`  spend by ${data.group_by}${describeWindow(data)}`);
+  console.log();
+
+  for (const g of groups) {
+    const filled = max > 0 ? Math.round((g.cost_usd / max) * BAR_WIDTH) : 0;
+    // A group that cost something always shows at least one block, so a
+    // cheap-but-real row never renders as an empty line.
+    const bar = '#'.repeat(g.cost_usd > 0 ? Math.max(filled, 1) : 0).padEnd(BAR_WIDTH);
+    const key = truncate(g.key, keyWidth).padEnd(keyWidth);
+    const cost = (usd(g.cost_usd) + (g.unpriced_calls > 0 ? '+' : '')).padStart(10);
+    const calls = String(g.calls).padStart(5) + ' calls';
+    const flag = g.unpriced_calls > 0 ? warn(`  (${g.unpriced_calls} unpriced)`) : '';
+    console.log(`  ${key}  ${bar}  ${cost}  ${calls}${flag}`);
+  }
+
+  console.log();
+  const plus = data.unpriced_calls > 0 ? '+' : '';
+  console.log(`  total ${usd(data.total_cost_usd)}${plus} across ${data.total_calls} call(s)`);
+
+  // Same rule as the web view: never print the total without printing how
+  // complete it is. A number that is quietly too low is worse than no number.
+  if (data.unpriced_calls > 0) {
+    const pct = Math.round(data.priced_share * 100);
+    console.log(
+      warn(`  covers ${pct}% of calls — ${data.unpriced_calls} had no pricing entry, so the real figure is higher.`)
+    );
+    console.log(warn(`  add rates to ~/.orangebox/pricing.json to close the gap.`));
+  }
+  console.log();
+}
+
+/** Machine-readable, for a spreadsheet or a chart someone else draws. */
+function printSpendCsv(data) {
+  console.log('key,calls,input_tokens,output_tokens,cost_usd,unpriced_calls,error_calls');
+  for (const g of data.groups) {
+    console.log([
+      csvCell(g.key),
+      g.calls,
+      g.input_tokens,
+      g.output_tokens,
+      g.cost_usd,
+      g.unpriced_calls,
+      g.error_calls
+    ].join(','));
+  }
+}
+
+/**
+ * Quote anything a spreadsheet would misread. Run names are user text and can
+ * hold commas, quotes and newlines.
+ */
+function csvCell(value) {
+  const text = String(value ?? '');
+  const CR = String.fromCharCode(13);
+  const LF = String.fromCharCode(10);
+  const risky = text.includes(',') || text.includes('"') || text.includes(CR) || text.includes(LF);
+  return risky ? '"' + text.split('"').join('""') + '"' : text;
+}
+
+function describeWindow({ since, until }) {
+  if (!since && !until) return ' (all time)';
+  const d = (ms) => new Date(ms).toISOString().slice(0, 10);
+  if (since && until) return ` (${d(since)} to ${d(until)})`;
+  return since ? ` (since ${d(since)})` : ` (until ${d(until)})`;
+}
+
+function truncate(text, width) {
+  return text.length > width ? text.slice(0, width - 1) + '…' : text;
+}
+
+function usd(v) {
+  if (v === null || v === undefined) return '—';
+  if (v === 0) return '$0';
+  if (v < 0.01) return `$${v.toFixed(4)}`;
+  return `$${v.toFixed(v < 1 ? 3 : 2)}`;
+}
+
 // ---------------------------------------------------------------- clear
 
 async function clear(args) {
@@ -545,6 +704,7 @@ USAGE
   orangebox run [--name "..."] -- CMD  run CMD with its calls grouped into one run
   orangebox export <run-id> [-o file]  write a run to a self-contained JSON file
   orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
+  orangebox spend [--group <k>]        what your agents have cost so far
   orangebox clear [--yes]              delete all recorded data
   orangebox --version | --help
 
@@ -560,6 +720,13 @@ OPTIONS (start)
   --mobile                    bind to the LAN with read-only device pairing
   --unsafe-no-auth            allow a non-loopback host without authentication
   --no-open        don't open the browser on start
+
+SPEND OPTIONS
+  --group <k>, -g <k>       model (default), provider, run or day
+  --days <n>                only the last n days
+  --since <d> --until <d>   epoch ms, or a date like 2026-07-01
+  --csv                     machine-readable rows
+  --json                    the full response, totals included
 
 ASSERT LIMITS
   --max-cost <usd>          maximum total estimated cost
