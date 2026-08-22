@@ -136,7 +136,10 @@ async function proxyCall(ctx, req, res, route) {
   const request = await readBody(req, MAX_REQUEST_BODY);
   const { body: requestBody, captured: capturedRequestBody, overCap } = request;
   const requestJson = tryParseJson(capturedRequestBody);
-  const requestInfo = parser.parseRequest(requestJson);
+  // Some providers put the model and the streaming choice in the URL rather
+  // than the body — Gemini names both in the path — so the parser gets the
+  // request line too, not just the parsed body.
+  const requestInfo = parser.parseRequest(requestJson, { endpoint: upstreamPath, search: search ?? '' });
 
   // ---- 2. resolve the run before dispatch, so call.started can name it (§06.4)
   const headerRunId = firstHeader(req.headers[RUN_HEADER]);
