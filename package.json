@@ -21,7 +21,8 @@
   ],
   "scripts": {
     "start": "node bin/orangebox.mjs",
-    "docs:sync": "node -e \"require('fs').copyFileSync('orangebox-spec.html','docs/spec.html')\"",
+    "docs:sync": "node scripts/sync-docs.mjs",
+    "docs:check": "node scripts/sync-docs.mjs --check",
     "docs:serve": "node scripts/serve-docs.mjs",
     "prepublishOnly": "npm test",
     "smoke:install": "node scripts/smoke-install.mjs",
