@@ -810,3 +810,66 @@ footer.trust {
 @media (display-mode: standalone) and (max-width: 900px) {
   .pane-head { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
 }
+
+/* ---------------------------------------------------- §19.5 spend view */
+
+.spend { padding: 16px 18px 28px; max-width: 860px; }
+
+.spend-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.spend-ctl-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.spend-ctl-gap { flex: 0 0 12px; }
+
+.spend-total { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.spend-total-value { font-size: 30px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+/* A "+" on the headline figure means the true number is larger. Amber, so the
+   caveat is visible from across the room rather than hiding in a footnote. */
+.spend-total-value.partial { color: var(--amber); }
+.spend-total-sub { font-size: 12px; color: var(--muted); }
+
+.spend-banner { max-width: 62ch; line-height: 1.45; }
+
+.spend-chart { width: 100%; height: auto; display: block; margin: 6px 0 18px; overflow: visible; }
+.spend-bar { fill: var(--orange); }
+/* Hatched: this bar is shorter than the truth, so it should not read as a
+   clean measurement. */
+.spend-bar.partial { fill: var(--orange-dim); stroke: var(--amber); stroke-width: 1; stroke-dasharray: 3 2; }
+.spend-bar-label { fill: var(--muted); font: 11px var(--sans); }
+.spend-bar-label.rollup { fill: #6d737b; font-style: italic; }
+.spend-bar-value { fill: var(--text); font: 11px var(--mono); }
+
+.spend-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.spend-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.spend-table td { padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.spend-table .num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.spend-table tbody tr:hover { background: var(--panel-hi); }
+.spend-table tr.rollup td { color: var(--muted); font-style: italic; }
+.spend-key { word-break: break-all; }
+.spend-flag { color: var(--amber); font-size: 11px; white-space: nowrap; }
+.spend-flag::before { content: "\25B2 "; }
+.spend-err { color: var(--err); font-size: 11px; white-space: nowrap; }
+.spend-err::before { content: "\25B2 "; }
+.spend-note { font-size: 12px; color: var(--muted); max-width: 58ch; line-height: 1.5; }
+
+@media (max-width: 700px) {
+  .spend { padding: 12px 14px 24px; }
+  .spend-total-value { font-size: 24px; }
+  /* Token columns are the first thing to go: the cost and the call count are
+     what anyone opens this on a phone to find out. */
+  .spend-table th:nth-child(3), .spend-table td:nth-child(3),
+  .spend-table th:nth-child(4), .spend-table td:nth-child(4) { display: none; }
+}

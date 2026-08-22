@@ -297,7 +297,7 @@ export function renderSpend(host, onChange) {
 
     // The honest bit, in the same breath as the number it qualifies.
     const warning = coverageNote(data);
-    if (warning) body.append(el('div', { class: 'spend-banner', role: 'status', text: warning }));
+    if (warning) body.append(el('div', { class: 'banner spend-banner', role: 'status', text: warning }));
 
     const groups = topGroups(data.groups ?? []);
     body.append(chart(groups), table(groups));
