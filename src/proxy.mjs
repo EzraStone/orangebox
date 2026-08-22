@@ -17,9 +17,10 @@ import {
 } from './store.mjs';
 import * as anthropic from './parse/anthropic.mjs';
 import * as openai from './parse/openai.mjs';
+import * as ollama from './parse/ollama.mjs';
 import { parseSseFrames, parseFrameJson } from './parse/sse.mjs';
 
-const PARSERS = { anthropic, openai };
+const PARSERS = { anthropic, openai, ollama };
 
 /** Bodies are JSON; over this we forward anyway and store a stub (§06.1.2, §14). */
 const MAX_REQUEST_BODY = 10 * 1024 * 1024;

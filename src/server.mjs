@@ -22,8 +22,27 @@ export const VERSION = PKG.version;
 
 const PROVIDERS = {
   anthropic: 'https://api.anthropic.com',
-  openai: 'https://api.openai.com'
+  openai: 'https://api.openai.com',
+  // Local by default. Honours OLLAMA_HOST, which is the variable Ollama's own
+  // tooling already uses, so a non-default install needs nothing new learned.
+  //
+  // Worth noting against §12.1: this does not widen the outbound promise. The
+  // default target is the loopback interface, and orangebox still only connects
+  // in direct response to a request somebody proxied through it.
+  ollama: normalizeOllamaHost(process.env.OLLAMA_HOST) ?? 'http://127.0.0.1:11434'
 };
+
+/** OLLAMA_HOST is commonly set bare, as `host:port`, with no scheme. */
+function normalizeOllamaHost(value) {
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const raw = value.trim();
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+  try {
+    return new URL(withScheme).origin;
+  } catch {
+    return null;
+  }
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -161,7 +180,7 @@ async function handle(req, res, ctx) {
   }
 
   // 1. Run-scoped proxy: /r/:runId/{anthropic,openai}/*
-  const scoped = pathname.match(/^\/r\/([^/]+)\/(anthropic|openai)(\/.*)?$/);
+  const scoped = pathname.match(/^\/r\/([^/]+)\/(anthropic|openai|ollama)(\/.*)?$/);
   if (scoped) {
     return ctx.proxy.handle(req, res, {
       provider: scoped[2],
@@ -172,7 +191,7 @@ async function handle(req, res, ctx) {
   }
 
   // 2. Bare proxy: /{anthropic,openai}/*
-  const bare = pathname.match(/^\/(anthropic|openai)(\/.*)?$/);
+  const bare = pathname.match(/^\/(anthropic|openai|ollama)(\/.*)?$/);
   if (bare) {
     return ctx.proxy.handle(req, res, {
       provider: bare[1],
