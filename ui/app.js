@@ -2,29 +2,8 @@
 // third-party anything. Every piece of recorded content is inserted with
 // textContent; a prompt containing markup renders inert (§12.3).
 import { diffLines, collapseUnchanged, diffStats } from '/diff.js';
+import { el, $, fmt } from '/dom.js';
 
-// ============================================================ dom helpers
-
-/** Build an element. Children are strings (auto-escaped as text) or nodes. */
-function el(tag, props = {}, children = []) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(props)) {
-    if (value === null || value === undefined || value === false) continue;
-    if (key === 'class') node.className = value;
-    else if (key === 'text') node.textContent = value;
-    else if (key === 'on') for (const [ev, fn] of Object.entries(value)) node.addEventListener(ev, fn);
-    else if (key === 'dataset') Object.assign(node.dataset, value);
-    else if (value === true) node.setAttribute(key, '');
-    else node.setAttribute(key, String(value));
-  }
-  for (const child of [].concat(children)) {
-    if (child === null || child === undefined || child === false) continue;
-    node.append(typeof child === 'string' || typeof child === 'number' ? String(child) : child);
-  }
-  return node;
-}
-
-const $ = (id) => document.getElementById(id);
 const authToken = new URLSearchParams(location.search).get('token');
 let csrfToken = null;
 
@@ -85,50 +64,6 @@ function showNotice(title, message) {
 
 // ============================================================= formatting
 
-const fmt = {
-  ms(v) {
-    if (v === null || v === undefined) return '—';
-    if (v < 1000) return `${Math.round(v)} ms`;
-    if (v < 60_000) return `${(v / 1000).toFixed(1)} s`;
-    const m = Math.floor(v / 60_000);
-    return `${m}m ${Math.round((v % 60_000) / 1000)}s`;
-  },
-  tokens(v) {
-    if (v === null || v === undefined) return '—';
-    if (v < 1000) return String(v);
-    return `${(v / 1000).toFixed(v < 10_000 ? 1 : 0)}k`;
-  },
-  usd(v) {
-    if (v === null || v === undefined) return '—';
-    if (v === 0) return '$0';
-    if (v < 0.01) return `$${v.toFixed(4)}`;
-    return `$${v.toFixed(v < 1 ? 3 : 2)}`;
-  },
-  when(ts) {
-    if (!ts) return '';
-    const delta = Date.now() - ts;
-    if (delta < 60_000) return 'just now';
-    if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`;
-    const d = new Date(ts);
-    const p = (n) => String(n).padStart(2, '0');
-    if (delta < 86_400_000) return `${p(d.getHours())}:${p(d.getMinutes())}`;
-    if (delta < 172_800_000) return 'yesterday';
-    return `${d.getMonth() + 1}/${d.getDate()}`;
-  },
-  clock(ts) {
-    if (!ts) return '—';
-    const d = new Date(ts);
-    const p = (n) => String(n).padStart(2, '0');
-    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`;
-  },
-  json(value) {
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch {
-      return String(value);
-    }
-  }
-};
 
 // ================================================================== state
 
