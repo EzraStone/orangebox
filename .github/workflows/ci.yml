@@ -10,6 +10,19 @@ permissions:
   checks: write
 
 jobs:
+  # Cheap, single-platform checks that do not need the matrix.
+  docs:
+    name: docs in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # docs/spec.html is a copy of the canonical spec; drift would silently
+      # publish a different document from the one in the repo.
+      - run: npm run docs:check
+
   test:
     name: node ${{ matrix.node }} · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
