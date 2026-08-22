@@ -334,7 +334,7 @@ async function relayStream(ctx, opts) {
   const chunks = [];
   let capturedBytes = 0;
   let responseCaptureTruncated = false;
-  const detector = makeFirstTokenDetector(base.provider);
+  const detector = makeFirstTokenDetector(parser);
   let firstTokenAt = null;
   let streamError = null;
   let captureDropped = false;
@@ -450,7 +450,7 @@ function foldStream(parser, responseText, { clientAborted, streamError }, upstre
  * one, then every later chunk costs a single boolean check. Gives up after
  * ~64 KB so a pathological stream cannot turn this into per-chunk parsing.
  */
-function makeFirstTokenDetector(provider) {
+function makeFirstTokenDetector(parser) {
   const SCAN_LIMIT = 64 * 1024;
   const decoder = new TextDecoder('utf-8', { fatal: false });
   let pending = '';
@@ -461,29 +461,12 @@ function makeFirstTokenDetector(provider) {
       if (done) return false;
       pending += decoder.decode(chunk, { stream: true });
 
-      for (const frame of parseSseFrames(pending)) {
-        if (frame.data === '[DONE]') continue;
-        const payload = parseFrameJson(frame.data);
-
-        if (provider === 'anthropic') {
-          if ((payload?.type ?? frame.event) === 'content_block_delta') {
-            done = true;
-            return true;
-          }
-        } else {
-          if (
-            payload?.type === 'response.output_text.delta' ||
-            payload?.type === 'response.function_call_arguments.delta'
-          ) {
-            done = true;
-            return true;
-          }
-          const delta = payload?.choices?.[0]?.delta;
-          if (delta && typeof delta === 'object' && Object.keys(delta).length > 0) {
-            done = true;
-            return true;
-          }
-        }
+      // The parser owns the wire format, so it owns this question too. The
+      // proxy switching on provider name is how NDJSON silently reported no
+      // time-to-first-token at all: the detector only understood SSE.
+      if (parser.firstTokenSeen?.(pending)) {
+        done = true;
+        return true;
       }
 
       if (pending.length > SCAN_LIMIT) {

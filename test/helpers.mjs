@@ -93,6 +93,20 @@ export async function sseResponse(res, frames, { delayMs = 2 } = {}) {
   res.end();
 }
 
+/** Write an NDJSON transcript one line at a time, the way Ollama streams. */
+export async function ndjsonResponse(res, lines, { delayMs = 2 } = {}) {
+  res.writeHead(200, {
+    'content-type': 'application/x-ndjson',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive'
+  });
+  for (const line of lines) {
+    res.write(line + String.fromCharCode(10));
+    if (delayMs) await sleep(delayMs);
+  }
+  res.end();
+}
+
 export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

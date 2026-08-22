@@ -94,6 +94,28 @@ export function reassembleStream(text) {
   return { response, error };
 }
 
+/**
+ * §06.3 — first content on the wire. NDJSON has no framing to look through:
+ * the first line carrying a non-empty message.content is the first token.
+ */
+export function firstTokenSeen(buffered) {
+  for (const line of buffered.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed === '') continue;
+    let chunk;
+    try {
+      chunk = JSON.parse(trimmed);
+    } catch {
+      continue; // the last line is usually still arriving
+    }
+    const message = isObject(chunk) && isObject(chunk.message) ? chunk.message : null;
+    if (!message) continue;
+    if (typeof message.content === 'string' && message.content !== '') return true;
+    if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) return true;
+  }
+  return false;
+}
+
 /** §7.4 — tool calls the model asked for. `arguments` is already an object here. */
 export function extractToolUses(response) {
   if (!isObject(response)) return [];

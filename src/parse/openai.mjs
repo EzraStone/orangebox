@@ -201,6 +201,23 @@ function reassembleResponsesStream(frames) {
   };
 }
 
+/** §06.3 — first content on the wire, for both Chat Completions and Responses. */
+export function firstTokenSeen(buffered) {
+  for (const frame of parseSseFrames(buffered)) {
+    if (frame.data === '[DONE]') continue;
+    const payload = parseFrameJson(frame.data);
+    if (
+      payload?.type === 'response.output_text.delta' ||
+      payload?.type === 'response.function_call_arguments.delta'
+    ) {
+      return true;
+    }
+    const delta = payload?.choices?.[0]?.delta;
+    if (delta && typeof delta === 'object' && Object.keys(delta).length > 0) return true;
+  }
+  return false;
+}
+
 /** §7.4 — tool_calls the model asked for. `arguments` is a JSON string; keep the raw on parse failure. */
 export function extractToolUses(response) {
   if (isObject(response) && Array.isArray(response.output)) {

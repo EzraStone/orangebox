@@ -10,6 +10,7 @@ import {
   startOrangebox,
   jsonResponse,
   sseResponse,
+  ndjsonResponse,
   sleep,
   getJson,
   settle,
@@ -731,6 +732,50 @@ test('the live feed announces run, start, first token, and completion (§10.1)',
       }
     }
   );
+});
+
+test('a streamed Ollama call is relayed and reassembled from NDJSON (§19.3)', async () => {
+  const transcript = fixture('ollama-stream-tool-use.ndjson');
+  const lines = transcript.split(String.fromCharCode(10)).filter(Boolean);
+
+  const upstream = await startMockUpstream((req, res) => ndjsonResponse(res, lines));
+  const app = await startOrangebox({
+    providers: { anthropic: upstream.origin, openai: upstream.origin, ollama: upstream.origin }
+  });
+
+  try {
+    const res = await fetch(`${app.origin}/ollama/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      // No `stream` field at all — Ollama treats that as streaming, and so must we.
+      body: JSON.stringify({ model: 'llama3.2', messages: [{ role: 'user', content: 'weather?' }] })
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), transcript, 'relayed byte for byte');
+
+    assert.ok(await settle(app, () => app.store.countRuns() === 1));
+    const runId = app.store.listRuns().runs[0].id;
+    const call = app.store.callSummaries(runId)[0];
+
+    assert.equal(call.provider, 'ollama');
+    assert.equal(call.endpoint, '/api/chat');
+    assert.equal(call.streamed, 1, 'a request with no stream field is still a stream here');
+    assert.equal(call.model, 'llama3.2');
+    assert.equal(call.stop_reason, 'stop');
+    assert.equal(call.input_tokens, 143);
+    assert.equal(call.output_tokens, 57);
+    assert.equal(call.cost_usd, 0, 'local inference is free, not unknown');
+    assert.ok(call.ttft_ms !== null, 'time to first token is measured on NDJSON too');
+
+    const tools = app.store.toolEvents(runId);
+    assert.equal(tools.length, 1);
+    assert.equal(tools[0].tool_name, 'get_weather');
+    assert.deepEqual(JSON.parse(tools[0].content_json), { city: 'Paris' });
+  } finally {
+    await app.stop();
+    await upstream.close();
+  }
 });
 
 // ==================================================== api surface (§10)

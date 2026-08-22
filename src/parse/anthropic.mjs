@@ -131,6 +131,19 @@ export function reassembleStream(sseText) {
   return { response: sawAnything ? message : null, error };
 }
 
+/**
+ * §06.3 — has the model started emitting content? Lives here rather than in the
+ * proxy because it is a question about this provider's wire format, and the
+ * proxy has no business knowing what a content_block_delta is.
+ */
+export function firstTokenSeen(buffered) {
+  for (const frame of parseSseFrames(buffered)) {
+    const payload = parseFrameJson(frame.data);
+    if ((payload?.type ?? frame.event) === 'content_block_delta') return true;
+  }
+  return false;
+}
+
 /** §7.4 — tool_use blocks emitted by the model. */
 export function extractToolUses(response) {
   if (!isObject(response) || !Array.isArray(response.content)) return [];
