@@ -3,6 +3,7 @@
 // textContent; a prompt containing markup renders inert (§12.3).
 import { diffLines, collapseUnchanged, diffStats } from '/diff.js';
 import { el, $, fmt } from '/dom.js';
+import { renderSpend, loadSpend } from '/spend.js';
 
 const authToken = new URLSearchParams(location.search).get('token');
 let csrfToken = null;
@@ -74,6 +75,7 @@ const state = {
   readOnly: false,
   mobileAccess: false,
   filters: { search: '', model: '', tool: '', error: '', min_latency: '', min_cost: '', from: '', to: '' },
+  view: 'runs', // 'runs' | 'spend'
   runId: null,
   run: null,
   calls: [],
@@ -243,7 +245,46 @@ function navigate(runId, { replace = false } = {}) {
   return loaded;
 }
 
-window.addEventListener('popstate', () => selectRun(pathRunId(), { fromNav: true }));
+const SPEND_PATH = '/spend';
+
+const pathIsSpend = () => location.pathname === SPEND_PATH;
+
+/**
+ * Spend is a route, not a modal. It survives a reload, the back button does
+ * the obvious thing, and "here is where the month went" is a link you can
+ * paste at someone.
+ */
+async function openSpend({ replace = false } = {}) {
+  state.view = 'spend';
+  if (!pathIsSpend()) history[replace ? 'replaceState' : 'pushState']({}, '', SPEND_PATH);
+  closeDetail();
+  renderRuns();
+  renderTimeline();
+  syncMobileNav();
+  await refreshSpend();
+}
+
+async function refreshSpend() {
+  await loadSpend((path) => api.get(path));
+  if (state.view === 'spend') renderTimeline();
+}
+
+function closeSpend() {
+  state.view = 'runs';
+  // Not navigate(): the run has not changed, so selectRun would early-return
+  // and leave the spend view on screen.
+  history.pushState({}, '', state.runId ? `/run/${encodeURIComponent(state.runId)}` : '/');
+  renderRuns();
+  renderTimeline();
+  syncMobileNav();
+}
+
+window.addEventListener('popstate', () => {
+  if (pathIsSpend()) return void openSpend({ replace: true });
+  state.view = 'runs';
+  selectRun(pathRunId(), { fromNav: true });
+  renderTimeline();
+});
 
 // ============================================================== data load
 
@@ -387,6 +428,16 @@ function renderRuns() {
 
 // ======================================================== timeline render
 
+function renderSpendHeader() {
+  $('run-header').replaceChildren(
+    el('span', { class: 'run-head', text: 'Spend' }),
+    el('span', { class: 'spacer' }),
+    el('div', { class: 'run-actions' }, [
+      el('button', { class: 'btn', type: 'button', text: 'Back to runs', on: { click: closeSpend } })
+    ])
+  );
+}
+
 function renderRunHeader() {
   const head = $('run-header');
   head.replaceChildren();
@@ -529,6 +580,10 @@ async function deleteRun(run) {
 }
 
 function renderTimeline() {
+  if (state.view === 'spend') {
+    renderSpendHeader();
+    return void renderSpend($('timeline'), () => void refreshSpend());
+  }
   renderRunHeader();
   const root = $('timeline');
   root.replaceChildren();
@@ -1568,6 +1623,11 @@ function dateBoundary(value, endOfDay) {
   return String(date.getTime());
 }
 
+$('spend-open').addEventListener('click', () => {
+  if (state.view === 'spend') closeSpend();
+  else void openSpend();
+});
+
 for (const id of ['run-search', 'run-model', 'run-tool', 'run-latency', 'run-cost']) {
   $(id).addEventListener('input', scheduleRunFilter);
 }
@@ -1644,6 +1704,7 @@ async function boot() {
     renderPill();
     await loadRuns();
     if (state.runId) await loadRun(state.runId);
+    if (pathIsSpend()) await openSpend({ replace: true });
     connectLive();
   } catch {
     if (await offerMobilePairing()) {

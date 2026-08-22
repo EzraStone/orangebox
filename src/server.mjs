@@ -483,7 +483,13 @@ export function buildExport(store, runId) {
 // ============================================================== static UI
 
 async function serveStatic(req, res, pathname) {
-  const isAppRoute = pathname === '/' || pathname === '/run' || pathname.startsWith('/run/');
+  // Client-side routes. Each one has to serve the shell, because a reload or
+  // a pasted link arrives here as a plain GET with no history to fall back on.
+  const isAppRoute =
+    pathname === '/' ||
+    pathname === '/run' ||
+    pathname === '/spend' ||
+    pathname.startsWith('/run/');
 
   let file = null;
   if (!isAppRoute) {
