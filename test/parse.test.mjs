@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import * as anthropic from '../src/parse/anthropic.mjs';
 import * as openai from '../src/parse/openai.mjs';
+import * as ollama from '../src/parse/ollama.mjs';
 import { parseSseFrames } from '../src/parse/sse.mjs';
 import { loadPricing } from '../src/pricing.mjs';
 import { removeTempDir } from './helpers.mjs';
@@ -329,6 +330,82 @@ test('openai responses: interrupted semantic streams retain partial text', () =>
   const { response } = openai.reassembleStream(transcript);
   assert.equal(response.status, 'in_progress');
   assert.equal(response.output[0].content[0].text, 'partial');
+});
+
+
+// ================================================================= ollama
+
+test('ollama: stream defaults to on, which is the opposite of the hosted APIs', () => {
+  // Getting this backwards would mark every real stream as non-streamed and
+  // silently discard TTFT for the whole provider.
+  assert.equal(ollama.parseRequest({ model: 'llama3.2' }).stream, true);
+  assert.equal(ollama.parseRequest({ model: 'llama3.2', stream: false }).stream, false);
+  assert.equal(ollama.parseRequest({ model: 'llama3.2', stream: true }).stream, true);
+  assert.equal(ollama.parseRequest(null).stream, false, 'junk stays conservative');
+});
+
+test('ollama: an NDJSON transcript folds into the non-streamed shape (§19.3)', () => {
+  const { response, error } = ollama.reassembleStream(fixture('ollama-stream-tool-use.ndjson'));
+  assert.equal(error, null);
+  assert.equal(response.model, 'llama3.2');
+  assert.equal(response.message.content, 'Let me check the weather.');
+  assert.equal(response.done_reason, 'stop');
+
+  const parsed = ollama.parseResponse(response);
+  assert.equal(parsed.input_tokens, 143);
+  assert.equal(parsed.output_tokens, 57);
+  assert.equal(parsed.stop_reason, 'stop');
+  assert.equal(parsed.cache_read_tokens, null, 'local inference has no prompt cache');
+});
+
+test('ollama: tool arguments are already objects, not JSON strings (§7.4)', () => {
+  const { response } = ollama.reassembleStream(fixture('ollama-stream-tool-use.ndjson'));
+  const uses = ollama.extractToolUses(response);
+  assert.equal(uses.length, 1);
+  assert.equal(uses[0].tool_name, 'get_weather');
+  assert.deepEqual(uses[0].content, { city: 'Paris' });
+  // No id is issued, so pairing falls back to name and position.
+  assert.equal(uses[0].tool_use_id, 'get_weather#0');
+});
+
+test('ollama: a stream that dies keeps what arrived and surfaces the error', () => {
+  const { response, error } = ollama.reassembleStream(fixture('ollama-stream-error.ndjson'));
+  assert.equal(error.message, 'model runner has unexpectedly stopped');
+  assert.equal(response.message.content, 'Halfway through this sen');
+  assert.equal(response.done_reason, undefined);
+});
+
+test('ollama: partial trailing lines and junk degrade quietly (§07)', () => {
+  // An aborted stream leaves half a line behind; it must not take the record
+  // down with it.
+  // Built by joining, so no escape sequence can be mangled on its way into
+  // this file — which is exactly how it broke the first time.
+  const partial = [
+    '{"model":"llama3.2","message":{"role":"assistant","content":"hi"},"done":false}',
+    '{"model":"llama3.2","message":{"role":"assis'
+  ].join(String.fromCharCode(10));
+  const { response } = ollama.reassembleStream(partial);
+  assert.equal(response.message.content, 'hi');
+
+  assert.deepEqual(ollama.reassembleStream(''), { response: null, error: null });
+  for (const junk of [null, undefined, 42, [], { nope: true }]) {
+    assert.equal(ollama.parseResponse(junk).model, null);
+    assert.deepEqual(ollama.extractToolUses(junk), []);
+    assert.deepEqual(ollama.extractToolResults(junk), []);
+  }
+});
+
+test('ollama: role:tool messages become tool_result events (§7.4)', () => {
+  const results = ollama.extractToolResults({
+    messages: [
+      { role: 'user', content: 'weather?' },
+      { role: 'assistant', content: '', tool_calls: [{ function: { name: 'get_weather' } }] },
+      { role: 'tool', tool_name: 'get_weather', content: '18C and clear' }
+    ]
+  });
+  assert.equal(results.length, 1);
+  assert.equal(results[0].tool_name, 'get_weather');
+  assert.equal(results[0].content, '18C and clear');
 });
 
 // ================================================================ pricing
