@@ -248,7 +248,7 @@ export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"</pre>
 
   <dl class="faq">
     <dt>Which providers?</dt>
-    <dd>Anthropic Messages and OpenAI Chat Completions today. Gemini, Bedrock, and local runtimes are on the roadmap — the parser interface is the extension point.</dd>
+    <dd>Five, natively: Anthropic Messages, OpenAI (Chat Completions and Responses), Google Gemini, Ollama, and Amazon Bedrock — three different wire formats between them (SSE, NDJSON, and AWS event-stream). <code>--openai-upstream</code> also covers OpenAI-compatible gateways without any provider-specific code. Bedrock needs a Bedrock API key rather than SigV4: signing covers the <code>Host</code> header, and a reverse proxy necessarily changes it.</dd>
 
     <dt>Where is my data?</dt>
     <dd>One SQLite file at <code>~/.orangebox/orangebox.db</code>, or wherever <code>--db</code> points. Delete it and it is gone. <code>orangebox clear</code> does the same thing with a confirmation prompt.</dd>
@@ -257,7 +257,7 @@ export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"</pre>
     <dd>Under a millisecond p50 on a non-streamed call, and effectively nothing per chunk on a streamed one. See the table above.</dd>
 
     <dt>Does it work with my framework?</dt>
-    <dd>If it speaks HTTP to one of the two supported APIs, yes. That is the point of doing this at the proxy layer rather than as an SDK wrapper you have to remember to install.</dd>
+    <dd>If it speaks HTTP to one of the supported APIs, yes. That is the point of doing this at the proxy layer rather than as an SDK wrapper you have to remember to install.</dd>
 
     <dt>What if orangebox itself breaks?</dt>
     <dd>Recording failures are logged and swallowed; your request still goes through. A recorder that takes down the thing it records is worse than no recorder.</dd>
