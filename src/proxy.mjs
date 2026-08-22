@@ -63,12 +63,19 @@ const INTERNAL_HEADERS = new Set([RUN_HEADER, 'x-orangebox-auth', 'x-orangebox-c
  */
 function createRecordQueue() {
   let tail = Promise.resolve();
+  let pendingBytes = 0;
   return {
-    push(job) {
+    /** Bytes held by jobs that are queued or running — the queue's memory cost. */
+    get pendingBytes() {
+      return pendingBytes;
+    },
+    push(job, bytes = 0) {
+      pendingBytes += bytes;
       const run = tail.then(async () => {
         try {
           await job();
         } finally {
+          pendingBytes -= bytes;
           await new Promise((resolve) => setImmediate(resolve));
         }
       });
@@ -77,6 +84,18 @@ function createRecordQueue() {
     }
   };
 }
+
+/**
+ * Ceiling on captured-but-not-yet-written payloads. The queue is serial, so a
+ * burst of large streams finishing together would otherwise pile their buffers
+ * up with nothing to stop them — §13 budgets RSS at fifty 1 MB streams, and
+ * nothing prevented five hundred.
+ *
+ * Past this, capture degrades and relaying does not: the client still gets
+ * every byte, and the record says plainly that the body was dropped. A recorder
+ * that runs a machine out of memory is worse than one that admits a gap.
+ */
+const MAX_PENDING_CAPTURE = 64 * 1024 * 1024;
 
 export function createProxy({ store, live, pricing, gapSeconds, providers }) {
   const ctx = { store, live, pricing, gapSeconds, providers, recorder: createRecordQueue() };
@@ -306,6 +325,7 @@ async function relayStream(ctx, opts) {
   const detector = makeFirstTokenDetector(base.provider);
   let firstTokenAt = null;
   let streamError = null;
+  let captureDropped = false;
 
   const reader = upstream.body?.getReader();
   if (reader) {
@@ -318,9 +338,23 @@ async function relayStream(ctx, opts) {
         // 50 MB of pointless memcpy across fifty 1 MB streams — and undici
         // never hands the same Uint8Array back twice. Buffer.concat takes
         // them directly at the end.
-        const appended = appendCaptured(chunks, capturedBytes, value, MAX_RESPONSE_CAPTURE);
-        capturedBytes = appended.bytes;
-        responseCaptureTruncated ||= appended.truncated;
+        //
+        // Two different ceilings apply. MAX_RESPONSE_CAPTURE stops one enormous
+        // response from filling memory by itself; the aggregate check stops
+        // many merely-large ones from doing it together, which a per-response
+        // limit cannot see. Hitting the aggregate one abandons this capture
+        // entirely rather than keeping a prefix — under that much pressure the
+        // useful thing is to stop allocating, not to store half a transcript.
+        if (!captureDropped && ctx.recorder.pendingBytes + capturedBytes > ctx.maxPendingCapture) {
+          captureDropped = true;
+          chunks.length = 0;
+          capturedBytes = 0;
+        }
+        if (!captureDropped) {
+          const appended = appendCaptured(chunks, capturedBytes, value, MAX_RESPONSE_CAPTURE);
+          capturedBytes = appended.bytes;
+          responseCaptureTruncated ||= appended.truncated;
+        }
 
         if (firstTokenAt === null && detector.sees(value)) {
           firstTokenAt = Date.now();
@@ -360,6 +394,8 @@ async function relayStream(ctx, opts) {
     requestBody,
     requestJson,
     overCap,
+    captureDropped,
+    captureBytes: capturedBytes,
     responseChunks: chunks,
     responseCaptureTruncated,
     upstreamOk: upstream.ok,
@@ -451,7 +487,8 @@ function makeFirstTokenDetector(provider) {
 
 /** Queue the record; the caller awaits its turn but the client already has its bytes. */
 function persist(ctx, input) {
-  return ctx.recorder.push(() => writeRecord(ctx, input));
+  const held = (input.captureBytes ?? 0) + (input.requestBody?.byteLength ?? 0);
+  return ctx.recorder.push(() => writeRecord(ctx, input), held);
 }
 
 /**
@@ -477,6 +514,21 @@ async function writeRecord(ctx, input) {
     );
     responseJson = folded.responseJson;
     errorType = folded.errorType;
+
+    // Capture was abandoned mid-stream to stay inside the memory ceiling. Say
+    // so on the record rather than leaving a silently short transcript that
+    // looks like a truncated response from the provider.
+    if (input.captureDropped) {
+      responseJson = {
+        ...(responseJson ?? {}),
+        _orangebox: {
+          ...(responseJson?._orangebox ?? {}),
+          reassembled_from_stream: true,
+          capture_dropped: true,
+          reason: `recorder was holding more than ${MAX_PENDING_CAPTURE} bytes; the response was relayed in full but not stored`
+        }
+      };
+    }
   }
 
   const extracted = responseJson ? parser.parseResponse(responseJson) : null;
