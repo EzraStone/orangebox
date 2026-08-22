@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import * as anthropic from '../src/parse/anthropic.mjs';
 import * as openai from '../src/parse/openai.mjs';
 import * as ollama from '../src/parse/ollama.mjs';
+import * as gemini from '../src/parse/gemini.mjs';
 import { parseSseFrames } from '../src/parse/sse.mjs';
 import { loadPricing } from '../src/pricing.mjs';
 import { removeTempDir } from './helpers.mjs';
@@ -406,6 +407,87 @@ test('ollama: role:tool messages become tool_result events (§7.4)', () => {
   assert.equal(results.length, 1);
   assert.equal(results[0].tool_name, 'get_weather');
   assert.equal(results[0].content, '18C and clear');
+});
+
+
+// ================================================================= gemini
+
+test('gemini: model and streaming come from the URL, not the body (§19.3)', () => {
+  const stream = gemini.parseRequest({}, { endpoint: '/v1beta/models/gemini-2.5-pro:streamGenerateContent' });
+  assert.deepEqual(stream, { model: 'gemini-2.5-pro', stream: true });
+
+  const unary = gemini.parseRequest({}, { endpoint: '/v1beta/models/gemini-2.5-flash:generateContent' });
+  assert.deepEqual(unary, { model: 'gemini-2.5-flash', stream: false });
+
+  // Nothing to read and nothing to crash on.
+  assert.deepEqual(gemini.parseRequest(null), { model: null, stream: false });
+  assert.deepEqual(gemini.parseRequest({}, { endpoint: '/v1beta/nonsense' }), { model: null, stream: false });
+});
+
+test('gemini: text accumulates while functionCall parts arrive whole', () => {
+  const { response, error } = gemini.reassembleStream(fixture('gemini-stream-tool-use.sse'));
+  assert.equal(error, null);
+
+  const parts = response.candidates[0].content.parts;
+  assert.deepEqual(parts[0], { text: 'Let me check the weather.' });
+  assert.deepEqual(parts[1].functionCall, { name: 'get_weather', args: { city: 'Paris' } });
+  assert.equal(response.candidates[0].finishReason, 'STOP');
+});
+
+test('gemini: usageMetadata maps onto the normalized token fields (§7.1)', () => {
+  const { response } = gemini.reassembleStream(fixture('gemini-stream-tool-use.sse'));
+  const parsed = gemini.parseResponse(response);
+  assert.equal(parsed.model, 'gemini-2.5-pro');
+  assert.equal(parsed.stop_reason, 'STOP', 'stored verbatim, not translated');
+  assert.equal(parsed.input_tokens, 143);
+  assert.equal(parsed.output_tokens, 57);
+  assert.equal(parsed.cache_read_tokens, 2048);
+  assert.equal(parsed.cache_write_tokens, null, 'gemini bills cache creation separately');
+});
+
+test('gemini: functionCall and functionResponse become tool events (§7.4)', () => {
+  const { response } = gemini.reassembleStream(fixture('gemini-stream-tool-use.sse'));
+  const uses = gemini.extractToolUses(response);
+  assert.equal(uses.length, 1);
+  assert.deepEqual(uses[0].content, { city: 'Paris' });
+  assert.equal(uses[0].tool_use_id, 'get_weather#0');
+
+  const results = gemini.extractToolResults({
+    contents: [
+      { role: 'user', parts: [{ text: 'weather?' }] },
+      {
+        role: 'user',
+        parts: [{ functionResponse: { name: 'get_weather', response: { temp_c: 18 } } }]
+      }
+    ]
+  });
+  assert.equal(results.length, 1);
+  assert.equal(results[0].tool_name, 'get_weather');
+  assert.deepEqual(results[0].content, { temp_c: 18 });
+});
+
+test('gemini: a stream that dies keeps its text and surfaces the error (§14.1)', () => {
+  const { response, error } = gemini.reassembleStream(fixture('gemini-stream-error.sse'));
+  assert.equal(error.status, 'UNAVAILABLE');
+  assert.deepEqual(response.candidates[0].content.parts, [{ text: 'Halfway through this sen' }]);
+  assert.equal(response.candidates[0].finishReason, null);
+});
+
+test('gemini: first token is the first frame carrying any part (§06.3)', () => {
+  assert.equal(gemini.firstTokenSeen(fixture('gemini-stream-tool-use.sse')), true);
+  assert.equal(gemini.firstTokenSeen(''), false);
+  // A frame with an empty parts array is not content yet.
+  const empty = 'data: {"candidates":[{"content":{"role":"model","parts":[]}}]}' + String.fromCharCode(10, 10);
+  assert.equal(gemini.firstTokenSeen(empty), false);
+});
+
+test('gemini: unknown shapes degrade to nulls (§07)', () => {
+  for (const junk of [null, undefined, 42, 'nope', [], { unexpected: true }]) {
+    assert.equal(gemini.parseResponse(junk).model, null);
+    assert.deepEqual(gemini.extractToolUses(junk), []);
+    assert.deepEqual(gemini.extractToolResults(junk), []);
+  }
+  assert.deepEqual(gemini.reassembleStream(''), { response: null, error: null });
 });
 
 // ================================================================ pricing
