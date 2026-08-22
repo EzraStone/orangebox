@@ -404,6 +404,20 @@ async function handleApi(req, res, ctx, pathname, url) {
     return sendJson(res, 200, comparison);
   }
 
+  // GET /api/spend?group=model|provider|run|day&since=&until=  (§19.5)
+  if (method === 'GET' && pathname === '/api/spend') {
+    const group = url.searchParams.get('group') ?? 'model';
+    if (!SPEND_GROUPINGS.has(group)) {
+      return sendJson(res, 400, {
+        error: `unknown group "${group}"`,
+        allowed: [...SPEND_GROUPINGS]
+      });
+    }
+    const since = epochParam(url.searchParams.get('since'));
+    const until = epochParam(url.searchParams.get('until'));
+    return sendJson(res, 200, store.spend({ groupBy: group, since, until }));
+  }
+
   // GET /api/export/:runId
   if (method === 'GET' && seg.length === 3 && seg[1] === 'export') {
     let payload = buildExport(store, seg[2]);
@@ -435,6 +449,21 @@ async function handleApi(req, res, ctx, pathname, url) {
   }
 
   return sendJson(res, 404, { error: 'unknown api route' });
+}
+
+/** Groupings the spend endpoint will accept; the store owns the SQL behind them. */
+const SPEND_GROUPINGS = new Set(['model', 'provider', 'run', 'day']);
+
+/**
+ * `since`/`until` accept epoch milliseconds or anything Date can parse, so
+ * `?since=2026-07-01` works as readily as a timestamp. Junk becomes null,
+ * which means "no bound" rather than "everything since 1970".
+ */
+function epochParam(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 /** §10.6 — a run, whole, with nothing left behind in the database. */
