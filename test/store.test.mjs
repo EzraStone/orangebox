@@ -199,6 +199,90 @@ test('resolveRun honours path, header, then the idle gap (§06.4)', () => {
   store.close();
 });
 
+test('spend groups four ways and counts what it could not price (§19.5)', () => {
+  const store = memStore();
+  const run = store.createRun({ source: 'explicit', name: 'nightly triage' });
+  const at = Date.now();
+
+  const add = (model, cost, provider = 'anthropic') =>
+    store.insertCall({
+      id: newId(),
+      run_id: run.id,
+      seq: store.nextSeq(run.id),
+      provider,
+      endpoint: '/v1/messages',
+      model,
+      started_at: at,
+      request_json: '{}',
+      input_tokens: 100,
+      output_tokens: 20,
+      cost_usd: cost
+    });
+
+  add('claude-opus-5', 0.01);
+  add('claude-opus-5', 0.02);
+  add('gemini-2.5-pro', 0.005, 'gemini');
+  add('a-model-with-no-rate', null, 'openai');
+
+  const byModel = store.spend({ groupBy: 'model' });
+  assert.equal(byModel.total_calls, 4);
+  assert.ok(Math.abs(byModel.total_cost_usd - 0.035) < 1e-9);
+
+  // The point of the whole method: the total is incomplete and says so.
+  assert.equal(byModel.unpriced_calls, 1);
+  assert.equal(byModel.priced_share, 0.75);
+
+  const opus = byModel.groups.find((g) => g.key === 'claude-opus-5');
+  assert.equal(opus.calls, 2);
+  assert.equal(opus.input_tokens, 200);
+  assert.ok(Math.abs(opus.cost_usd - 0.03) < 1e-9);
+
+  // Groups are ordered by spend, so the biggest line item is first.
+  assert.equal(byModel.groups[0].key, 'claude-opus-5');
+
+  assert.deepEqual(
+    store.spend({ groupBy: 'provider' }).groups.map((g) => g.key).sort(),
+    ['anthropic', 'gemini', 'openai']
+  );
+  assert.equal(store.spend({ groupBy: 'run' }).groups[0].key, 'nightly triage');
+  assert.match(store.spend({ groupBy: 'day' }).groups[0].key, /^\d{4}-\d{2}-\d{2}$/);
+
+  store.close();
+});
+
+test('spend windows by time and refuses an unknown grouping (§19.5)', () => {
+  const store = memStore();
+  const run = store.createRun({ source: 'gap' });
+  const day = 86400_000;
+  const now = Date.now();
+
+  for (const [offset, cost] of [[-3 * day, 0.5], [0, 0.25]]) {
+    store.insertCall({
+      id: newId(),
+      run_id: run.id,
+      seq: store.nextSeq(run.id),
+      provider: 'anthropic',
+      endpoint: '/v1/messages',
+      model: 'claude-opus-5',
+      started_at: now + offset,
+      request_json: '{}',
+      cost_usd: cost
+    });
+  }
+
+  assert.equal(store.spend({}).total_calls, 2);
+  assert.equal(store.spend({ since: now - day }).total_calls, 1);
+  assert.equal(store.spend({ until: now - day }).total_calls, 1);
+  assert.equal(store.spend({ since: now + day }).total_calls, 0);
+
+  // An empty window reports a full priced share rather than dividing by zero.
+  assert.equal(store.spend({ since: now + day }).priced_share, 1);
+
+  // The grouping is spliced into SQL, so it must never be taken on trust.
+  assert.throws(() => store.spend({ groupBy: 'c.model; DROP TABLE runs' }), /unknown grouping/);
+  store.close();
+});
+
 test('retention deletes only runs older than the cutoff', () => {
   const store = memStore();
   const old = store.createRun({ source: 'gap', started_at: Date.now() - 10 * 86400_000 });
