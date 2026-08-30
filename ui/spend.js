@@ -136,6 +136,42 @@ export function coverageNote(data) {
   return parts.join(' ');
 }
 
+/**
+ * What clicking a row should filter the runs list down to.
+ *
+ * A dashboard that tells you where the money went and then cannot show you the
+ * calls is half a tool — you learn that opus cost the most and the trail stops.
+ * Returned as plain filter data so the caller owns navigation and this stays
+ * testable.
+ *
+ * The rollup row is deliberately not drillable: "+4 more" is several keys at
+ * once and there is no single filter that means it.
+ */
+export function drilldownFor(groupBy, group) {
+  if (!group || group.rollup) return null;
+  const key = String(group.key ?? '');
+  if (key === '') return null;
+
+  switch (groupBy) {
+    case 'model':
+      return { model: key };
+    case 'provider':
+      return { provider: key };
+    case 'run':
+      // The group key is the run's name, or its id when it has no name. Search
+      // matches both, so one filter covers either case.
+      return { search: key };
+    case 'day': {
+      // A local calendar day, as the grouping computed it. The runs filter
+      // takes dates, so the day is both ends of the range.
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return null;
+      return { from: key, to: key };
+    }
+    default:
+      return null;
+  }
+}
+
 /** Truncate a long key for the chart gutter without breaking the layout. */
 export function shortKey(key, max = 26) {
   const s = String(key ?? '');
@@ -233,7 +269,7 @@ function chart(groups) {
   return svg;
 }
 
-function table(groups) {
+function table(groups, onDrill) {
   const heading = GROUPS.find(([k]) => k === state.group)?.[1] ?? 'Group';
 
   const head = el('tr', {}, [
@@ -284,7 +320,28 @@ function table(groups) {
       );
     }
 
-    return el('tr', { class: g.rollup ? 'rollup' : null }, [
+    const drill = onDrill ? drilldownFor(state.group, g) : null;
+
+    return el('tr', {
+      class: [g.rollup ? 'rollup' : null, drill ? 'drillable' : null].filter(Boolean).join(' ') || null,
+      // A row that navigates is a control, so it has to be reachable and
+      // announced as one — a click handler on a bare <tr> is invisible to
+      // anyone not using a mouse.
+      tabindex: drill ? '0' : null,
+      role: drill ? 'button' : null,
+      title: drill ? `Show runs using ${g.key}` : null,
+      on: drill
+        ? {
+            click: () => onDrill(drill),
+            keydown: (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onDrill(drill);
+              }
+            }
+          }
+        : null
+    }, [
       el('td', {}, [el('span', { class: 'spend-key', text: String(g.key) }), ...flags]),
       el('td', { class: 'num', text: String(g.calls) }),
       el('td', { class: 'num', text: fmt.tokens(g.input_tokens) }),
@@ -307,7 +364,7 @@ function note(text) {
  * Draw the whole view into `host`. `onChange` re-runs the load and calls back
  * in here; the view owns no scheduling of its own.
  */
-export function renderSpend(host, onChange) {
+export function renderSpend(host, onChange, onDrill) {
   const body = el('div', { class: 'spend' });
 
   body.append(
@@ -349,7 +406,7 @@ export function renderSpend(host, onChange) {
     if (warning) body.append(el('div', { class: 'banner spend-banner', role: 'status', text: warning }));
 
     const groups = topGroups(data.groups ?? []);
-    body.append(chart(groups), table(groups));
+    body.append(chart(groups), table(groups, onDrill));
   }
 
   host.replaceChildren(body);

@@ -74,7 +74,7 @@ const state = {
   platform: 'unknown',
   readOnly: false,
   mobileAccess: false,
-  filters: { search: '', model: '', tool: '', error: '', min_latency: '', min_cost: '', from: '', to: '' },
+  filters: { search: '', model: '', provider: '', tool: '', error: '', min_latency: '', min_cost: '', from: '', to: '' },
   view: 'runs', // 'runs' | 'spend'
   runId: null,
   run: null,
@@ -582,7 +582,7 @@ async function deleteRun(run) {
 function renderTimeline() {
   if (state.view === 'spend') {
     renderSpendHeader();
-    return void renderSpend($('timeline'), () => void refreshSpend());
+    return void renderSpend($('timeline'), () => void refreshSpend(), applySpendDrilldown);
   }
   renderRunHeader();
   const root = $('timeline');
@@ -1613,20 +1613,54 @@ function syncMobileNav() {
   $('mobile-live').lastElementChild.textContent = state.online ? 'Live' : 'Offline';
 }
 
+const FILTER_INPUTS = [
+  'run-search', 'run-model', 'run-provider', 'run-tool',
+  'run-latency', 'run-cost', 'run-from', 'run-to'
+];
+
+/**
+ * Land on the calls behind a spend row.
+ *
+ * Existing filters are cleared first: a drill-down that silently intersects
+ * with whatever was already typed in the box would show a subset of the row
+ * you clicked and still look like the answer.
+ */
+function applySpendDrilldown(filters) {
+  for (const id of FILTER_INPUTS) $(id).value = '';
+  $('run-errors').value = '';
+
+  for (const [key, value] of Object.entries(filters)) {
+    const input = $(`run-${key}`);
+    if (input) input.value = value;
+  }
+
+  state.view = 'runs';
+  state.filters = readRunFilters();
+  history.pushState({}, '', '/');
+  renderTimeline();
+  syncMobileNav();
+  loadRuns().catch(() => {});
+}
+
+function readRunFilters() {
+  return {
+    search: $('run-search').value.trim(),
+    model: $('run-model').value.trim(),
+    provider: $('run-provider').value.trim(),
+    tool: $('run-tool').value.trim(),
+    error: $('run-errors').value,
+    min_latency: $('run-latency').value,
+    min_cost: $('run-cost').value,
+    from: dateBoundary($('run-from').value, false),
+    to: dateBoundary($('run-to').value, true)
+  };
+}
+
 let filterTimer = null;
 function scheduleRunFilter() {
   clearTimeout(filterTimer);
   filterTimer = setTimeout(() => {
-    state.filters = {
-      search: $('run-search').value.trim(),
-      model: $('run-model').value.trim(),
-      tool: $('run-tool').value.trim(),
-      error: $('run-errors').value,
-      min_latency: $('run-latency').value,
-      min_cost: $('run-cost').value,
-      from: dateBoundary($('run-from').value, false),
-      to: dateBoundary($('run-to').value, true)
-    };
+    state.filters = readRunFilters();
     loadRuns().catch(() => {});
   }, 180);
 }
@@ -1641,7 +1675,7 @@ $('spend-open').addEventListener('click', () => {
   else void openSpend();
 });
 
-for (const id of ['run-search', 'run-model', 'run-tool', 'run-latency', 'run-cost']) {
+for (const id of FILTER_INPUTS.filter((id) => !id.endsWith('-from') && !id.endsWith('-to'))) {
   $(id).addEventListener('input', scheduleRunFilter);
 }
 for (const id of ['run-errors', 'run-from', 'run-to']) $(id).addEventListener('change', scheduleRunFilter);

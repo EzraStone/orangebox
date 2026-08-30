@@ -877,3 +877,12 @@ footer.trust {
 /* "no usage recorded" is a weaker claim than "no rate for this model": the
    number is unknowable rather than missing, and there is nothing to go fix. */
 .spend-flag.muted { color: var(--muted); }
+
+/* A spend row that leads somewhere. The cursor and the hover tint are the only
+   hint it is a control, so the focus ring has to be real for anyone arriving
+   by keyboard. */
+.spend-table tr.drillable { cursor: pointer; }
+.spend-table tr.drillable:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: -2px;
+}

@@ -288,6 +288,7 @@ async function handleApi(req, res, ctx, pathname, url) {
       offset,
       search: url.searchParams.get('search')?.trim() ?? '',
       model: url.searchParams.get('model')?.trim() ?? '',
+      provider: url.searchParams.get('provider')?.trim() ?? '',
       tool: url.searchParams.get('tool')?.trim() ?? '',
       error: url.searchParams.get('error') ?? '',
       minLatency: optionalNumber(url.searchParams.get('min_latency')),

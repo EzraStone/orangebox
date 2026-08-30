@@ -343,6 +343,7 @@ export class Store {
     offset = 0,
     search = '',
     model = '',
+    provider = '',
     tool = '',
     error = '',
     minLatency = null,
@@ -359,6 +360,13 @@ export class Store {
     if (model) {
       where.push('EXISTS (SELECT 1 FROM calls c WHERE c.run_id = r.id AND c.model LIKE @model)');
       params.model = `%${model}%`;
+    }
+    // Exact match, unlike model: provider names are a closed set of short
+    // words and a LIKE would make 'openai' also select nothing useful while
+    // risking surprise overlaps as the set grows.
+    if (provider) {
+      where.push('EXISTS (SELECT 1 FROM calls c WHERE c.run_id = r.id AND c.provider = @provider)');
+      params.provider = provider;
     }
     if (tool) {
       where.push('EXISTS (SELECT 1 FROM tool_events t WHERE t.run_id = r.id AND t.tool_name LIKE @tool)');

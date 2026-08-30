@@ -527,3 +527,36 @@ test('splitUnknownCost treats a partial token report as rateable', async () => {
   assert.deepEqual(splitUnknownCost([]), { unrated: 0, noUsage: 0 });
   assert.deepEqual(splitUnknownCost(), { unrated: 0, noUsage: 0 });
 });
+
+test('runs can be filtered by provider', () => {
+  const store = memStore();
+  const mixed = store.createRun({ name: 'mixed', source: 'gap' });
+  const geminiOnly = store.createRun({ name: 'gemini only', source: 'gap' });
+
+  const add = (runId, provider, model) =>
+    store.insertCall({
+      id: newId(),
+      run_id: runId,
+      seq: store.nextSeq(runId),
+      provider,
+      endpoint: '/v1/messages',
+      model,
+      started_at: Date.now(),
+      request_json: '{}',
+      cost_usd: 0.01
+    });
+
+  add(mixed.id, 'anthropic', 'claude-opus-5');
+  add(mixed.id, 'gemini', 'gemini-3.1-pro');
+  add(geminiOnly.id, 'gemini', 'gemini-3.1-pro');
+
+  assert.equal(store.listRuns({ provider: 'anthropic' }).runs.length, 1);
+  assert.equal(store.listRuns({ provider: 'gemini' }).runs.length, 2);
+  assert.equal(store.listRuns({ provider: 'openai' }).runs.length, 0);
+  assert.equal(store.listRuns({}).runs.length, 2, 'no filter still returns everything');
+
+  // Exact, not LIKE: a partial name must not quietly match.
+  assert.equal(store.listRuns({ provider: 'anth' }).runs.length, 0);
+
+  store.close();
+});

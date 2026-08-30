@@ -8,6 +8,7 @@ import {
   chartHeight,
   coverageNote,
   shortKey,
+  drilldownFor,
   CHART_ROWS
 } from '../ui/spend.js';
 
@@ -207,4 +208,26 @@ test('the rollup carries both shortfall reasons, not just the total', () => {
   assert.equal(rollup.unpriced_calls, 7);
   assert.equal(rollup.unrated_calls, 3);
   assert.equal(rollup.no_usage_calls, 4);
+});
+
+test('a spend row maps to the filter that finds its calls (§19.5)', () => {
+  assert.deepEqual(drilldownFor('model', group('claude-opus-5', 1)), { model: 'claude-opus-5' });
+  assert.deepEqual(drilldownFor('provider', group('gemini', 1)), { provider: 'gemini' });
+  // A run groups by name, falling back to its id; search matches either.
+  assert.deepEqual(drilldownFor('run', group('checkout bot', 1)), { search: 'checkout bot' });
+  assert.deepEqual(drilldownFor('day', group('2026-08-22', 1)), { from: '2026-08-22', to: '2026-08-22' });
+});
+
+test('the rollup row is not drillable', () => {
+  // "+4 more" is several keys at once and no single filter means it. Offering
+  // a click that lands on the wrong subset is worse than offering none.
+  assert.equal(drilldownFor('model', { key: '4 more', rollup: true }), null);
+});
+
+test('drilldown refuses input it cannot honestly turn into a filter', () => {
+  assert.equal(drilldownFor('model', null), null);
+  assert.equal(drilldownFor('model', group('', 1)), null);
+  assert.equal(drilldownFor('nonsense', group('x', 1)), null);
+  // A day key that is not a date would produce a range filter meaning nothing.
+  assert.equal(drilldownFor('day', group('sometime', 1)), null);
 });
