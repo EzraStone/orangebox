@@ -873,3 +873,7 @@ footer.trust {
   .spend-table th:nth-child(3), .spend-table td:nth-child(3),
   .spend-table th:nth-child(4), .spend-table td:nth-child(4) { display: none; }
 }
+
+/* "no usage recorded" is a weaker claim than "no rate for this model": the
+   number is unknowable rather than missing, and there is nothing to go fix. */
+.spend-flag.muted { color: var(--muted); }

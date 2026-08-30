@@ -50,6 +50,8 @@ export function topGroups(groups, limit = CHART_ROWS) {
       output_tokens: sum('output_tokens'),
       cost_usd: sum('cost_usd'),
       unpriced_calls: sum('unpriced_calls'),
+      unrated_calls: sum('unrated_calls'),
+      no_usage_calls: sum('no_usage_calls'),
       error_calls: sum('error_calls'),
       rollup: true
     }
@@ -89,21 +91,49 @@ export function chartHeight(rows, rowHeight = 26) {
 }
 
 /**
- * The sentence that goes next to the total when the total is incomplete, or
- * null when it is not. Returned as data rather than markup so a test can read
- * it, and so it is impossible to render the total without having asked.
+ * The sentence beside the total when the total is incomplete, or null when it
+ * is not. Returned as data rather than markup so a test can read it, and so it
+ * is impossible to render the total without having asked.
+ *
+ * It names the causes separately because the remedies are opposite: a missing
+ * rate is fixed by editing pricing.json, and a call that never reported tokens
+ * is not fixed by anything you can type into that file.
  */
 export function coverageNote(data) {
   if (!data || !data.total_calls) return null;
+
   const missing = Number(data.unpriced_calls) || 0;
   if (missing === 0) return null;
 
+  // Older payloads carry only the combined count. Attributing all of it to a
+  // missing rate is the bug this split exists to fix, so with nothing better to
+  // go on, say the neutral thing.
+  const hasBreakdown =
+    data.unrated_calls !== undefined && data.no_usage_calls !== undefined;
+  const unrated = hasBreakdown ? Number(data.unrated_calls) || 0 : 0;
+  const noUsage = hasBreakdown ? Number(data.no_usage_calls) || 0 : 0;
+
   const pct = Math.round((Number(data.priced_share) || 0) * 100);
-  return (
-    `This total covers ${pct}% of recorded calls. ` +
-    `${missing} of ${data.total_calls} had no pricing entry for their model, so the real figure is higher. ` +
-    `Add rates to ~/.orangebox/pricing.json to close the gap.`
-  );
+  const parts = [
+    `This total covers ${pct}% of recorded calls — ${missing} of ${data.total_calls} contributed nothing to it, so the real figure is higher.`
+  ];
+
+  if (!hasBreakdown) {
+    parts.push(`${missing} had no cost recorded.`);
+  } else {
+    if (unrated > 0) {
+      parts.push(
+        `${unrated} had no pricing entry for their model; add rates to ~/.orangebox/pricing.json to close that part.`
+      );
+    }
+    if (noUsage > 0) {
+      parts.push(
+        `${noUsage} never reported token counts — errored, aborted, or streamed without usage — so their cost is unknowable, not missing.`
+      );
+    }
+  }
+
+  return parts.join(' ');
 }
 
 /** Truncate a long key for the chart gutter without breaking the layout. */
@@ -216,11 +246,30 @@ function table(groups) {
 
   const rows = groups.map((g) => {
     const flags = [];
-    if (g.unpriced_calls > 0) {
+    if (g.unrated_calls > 0) {
       flags.push(
         el('span', {
           class: 'spend-flag',
-          title: `${g.unpriced_calls} of ${g.calls} calls have no pricing entry, so this row is an under-estimate`,
+          title: `${g.unrated_calls} of ${g.calls} calls have no pricing entry for this model, so this row is an under-estimate. Adding a rate to pricing.json fixes it.`,
+          text: ` ${g.unrated_calls} unrated`
+        })
+      );
+    }
+    if (g.no_usage_calls > 0) {
+      flags.push(
+        el('span', {
+          class: 'spend-flag muted',
+          title: `${g.no_usage_calls} of ${g.calls} calls reported no token counts — errored, aborted, or streamed without usage. Their cost cannot be known, and no pricing entry would change that.`,
+          text: ` ${g.no_usage_calls} no usage`
+        })
+      );
+    }
+    // Older payloads only carry the combined count; say the neutral thing.
+    if (g.unrated_calls === undefined && g.unpriced_calls > 0) {
+      flags.push(
+        el('span', {
+          class: 'spend-flag',
+          title: `${g.unpriced_calls} of ${g.calls} calls have no cost recorded, so this row is an under-estimate`,
           text: ` ${g.unpriced_calls} unpriced`
         })
       );

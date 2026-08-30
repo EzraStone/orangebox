@@ -493,7 +493,15 @@ function printSpendTable(data) {
     const key = truncate(g.key, keyWidth).padEnd(keyWidth);
     const cost = (usd(g.cost_usd) + (g.unpriced_calls > 0 ? '+' : '')).padStart(10);
     const calls = String(g.calls).padStart(5) + ' calls';
-    const flag = g.unpriced_calls > 0 ? warn(`  (${g.unpriced_calls} unpriced)`) : '';
+
+    const notes = [];
+    if (g.unrated_calls > 0) notes.push(`${g.unrated_calls} unrated`);
+    if (g.no_usage_calls > 0) notes.push(`${g.no_usage_calls} no usage`);
+    if (g.unrated_calls === undefined && g.unpriced_calls > 0) {
+      notes.push(`${g.unpriced_calls} unpriced`);
+    }
+    const flag = notes.length ? warn(`  (${notes.join(', ')})`) : '';
+
     console.log(`  ${key}  ${bar}  ${cost}  ${calls}${flag}`);
   }
 
@@ -502,20 +510,30 @@ function printSpendTable(data) {
   console.log(`  total ${usd(data.total_cost_usd)}${plus} across ${data.total_calls} call(s)`);
 
   // Same rule as the web view: never print the total without printing how
-  // complete it is. A number that is quietly too low is worse than no number.
+  // complete it is. A number that is quietly too low is worse than no number —
+  // and saying *why* it is short matters, because the two reasons have
+  // opposite remedies.
   if (data.unpriced_calls > 0) {
     const pct = Math.round(data.priced_share * 100);
     console.log(
-      warn(`  covers ${pct}% of calls — ${data.unpriced_calls} had no pricing entry, so the real figure is higher.`)
+      warn(`  covers ${pct}% of calls — ${data.unpriced_calls} of ${data.total_calls} added nothing, so the real figure is higher.`)
     );
-    console.log(warn(`  add rates to ~/.orangebox/pricing.json to close the gap.`));
+    if (data.unrated_calls > 0) {
+      console.log(warn(`  ${data.unrated_calls} have no rate for their model — add them to ~/.orangebox/pricing.json.`));
+    }
+    if (data.no_usage_calls > 0) {
+      console.log(warn(`  ${data.no_usage_calls} reported no token counts (errored, aborted, or streamed without usage); their cost is unknowable.`));
+    }
+    if (data.unrated_calls === undefined) {
+      console.log(warn(`  add rates to ~/.orangebox/pricing.json to close the gap.`));
+    }
   }
   console.log();
 }
 
 /** Machine-readable, for a spreadsheet or a chart someone else draws. */
 function printSpendCsv(data) {
-  console.log('key,calls,input_tokens,output_tokens,cost_usd,unpriced_calls,error_calls');
+  console.log('key,calls,input_tokens,output_tokens,cost_usd,unpriced_calls,unrated_calls,no_usage_calls,error_calls');
   for (const g of data.groups) {
     console.log([
       csvCell(g.key),
@@ -524,6 +542,8 @@ function printSpendCsv(data) {
       g.output_tokens,
       g.cost_usd,
       g.unpriced_calls,
+      g.unrated_calls,
+      g.no_usage_calls,
       g.error_calls
     ].join(','));
   }

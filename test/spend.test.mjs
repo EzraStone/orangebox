@@ -111,12 +111,56 @@ test('an incomplete total says so, with the numbers (§19.5)', () => {
   // This is the whole point of the view. The figure on screen is too low and
   // the text next to it has to say by roughly how much, or the user reads a
   // wrong number as a right one.
-  const note = coverageNote({ total_calls: 100, unpriced_calls: 30, priced_share: 0.7 });
+  const note = coverageNote({
+    total_calls: 100,
+    unpriced_calls: 30,
+    unrated_calls: 30,
+    no_usage_calls: 0,
+    priced_share: 0.7
+  });
   assert.ok(note, 'a warning is produced');
   assert.match(note, /70%/);
   assert.match(note, /30 of 100/);
   assert.match(note, /higher/, 'says which direction the error runs in');
   assert.match(note, /pricing\.json/, 'says how to fix it');
+});
+
+test('calls that never reported tokens are not blamed on pricing.json', () => {
+  // The bug this split fixes. An errored or aborted call has no cost because
+  // it has no token counts, and sending someone to edit a rates file for that
+  // is advice that cannot possibly work.
+  const note = coverageNote({
+    total_calls: 10,
+    unpriced_calls: 2,
+    unrated_calls: 0,
+    no_usage_calls: 2,
+    priced_share: 0.8
+  });
+  assert.doesNotMatch(note, /pricing\.json/, 'no rate file advice when no rate is missing');
+  assert.match(note, /never reported token counts/);
+  assert.match(note, /unknowable/);
+});
+
+test('both causes at once are reported separately', () => {
+  const note = coverageNote({
+    total_calls: 20,
+    unpriced_calls: 7,
+    unrated_calls: 5,
+    no_usage_calls: 2,
+    priced_share: 0.65
+  });
+  assert.match(note, /7 of 20/, 'the combined shortfall leads');
+  assert.match(note, /5 had no pricing entry/);
+  assert.match(note, /2 never reported token counts/);
+  assert.match(note, /pricing\.json/);
+});
+
+test('a payload without the breakdown stays neutral about the cause', () => {
+  // Older responses carry only the combined count. Guessing "missing rate"
+  // there is precisely the wrong answer this change removed.
+  const note = coverageNote({ total_calls: 100, unpriced_calls: 30, priced_share: 0.7 });
+  assert.match(note, /30 of 100/);
+  assert.doesNotMatch(note, /pricing\.json/, 'does not invent a cause it was not told');
 });
 
 test('no calls means no warning to give', () => {
@@ -126,7 +170,13 @@ test('no calls means no warning to give', () => {
 });
 
 test('a total with nothing priced at all is still reported honestly', () => {
-  const note = coverageNote({ total_calls: 12, unpriced_calls: 12, priced_share: 0 });
+  const note = coverageNote({
+    total_calls: 12,
+    unpriced_calls: 12,
+    unrated_calls: 12,
+    no_usage_calls: 0,
+    priced_share: 0
+  });
   assert.match(note, /0%/);
   assert.match(note, /12 of 12/);
 });
@@ -142,4 +192,19 @@ test('long group keys are ellipsised rather than overflowing the gutter', () => 
 test('the row limit is a number the chart and the folder agree on', () => {
   assert.equal(typeof CHART_ROWS, 'number');
   assert.equal(topGroups(Array.from({ length: CHART_ROWS + 5 }, (_, i) => group(`m${i}`, 1))).length, CHART_ROWS);
+});
+
+test('the rollup carries both shortfall reasons, not just the total', () => {
+  // The tail is where obscure models and failed calls both collect. Folding
+  // them together must not lose which kind they were, or the one bar hiding
+  // the most uncertainty becomes the least explained.
+  const groups = [
+    ...Array.from({ length: 11 }, (_, i) => group(`known${i}`, 5)),
+    group('mystery', 0, { unpriced_calls: 3, unrated_calls: 3, no_usage_calls: 0, calls: 3 }),
+    group('flaky', 0, { unpriced_calls: 4, unrated_calls: 0, no_usage_calls: 4, calls: 4 })
+  ];
+  const rollup = topGroups(groups, 12).at(-1);
+  assert.equal(rollup.unpriced_calls, 7);
+  assert.equal(rollup.unrated_calls, 3);
+  assert.equal(rollup.no_usage_calls, 4);
 });
