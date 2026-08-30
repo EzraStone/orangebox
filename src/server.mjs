@@ -13,6 +13,7 @@ import { loadPricing } from './pricing.mjs';
 import { createProxy } from './proxy.mjs';
 import { compareRuns, sanitizeExport, buildHtmlReport, buildOtelExport } from './export.mjs';
 import { createMobileAccess, mobileSessionCanAccess, MOBILE_SESSION_TTL_SECONDS } from './mobile.mjs';
+import { resolveCredential, missingCredentialMessage, credentialRequired } from './credentials.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UI_DIR = path.join(HERE, '..', 'ui');
@@ -89,7 +90,7 @@ export function createServer({
   };
 
   const server = http.createServer((req, res) => {
-    handle(req, res, { store, live, proxy, security, mobile }).catch((err) => {
+    handle(req, res, { store, live, proxy, security, mobile, providers }).catch((err) => {
       // Nothing below should throw, but a 500 beats a hung socket.
       if (!res.headersSent) sendJson(res, 500, { error: String(err?.message ?? err) });
       else res.end();
@@ -228,7 +229,7 @@ async function handle(req, res, ctx) {
 // ================================================================= §10 API
 
 async function handleApi(req, res, ctx, pathname, url) {
-  const { store, live, security } = ctx;
+  const { store, live, security, providers } = ctx;
   const method = req.method;
   const seg = pathname.split('/').filter(Boolean); // ['api', ...]
 
@@ -374,6 +375,21 @@ async function handleApi(req, res, ctx, pathname, url) {
     const replayRequest = body.request === undefined ? stored : body.request;
     if (body.model !== undefined) replayRequest.model = String(body.model);
 
+    // Resolve the credential before creating anything. A replay that cannot
+    // authenticate is going to fail, and failing here leaves no orphan empty
+    // run behind for the user to wonder about.
+    const credential = resolveCredential(original.provider);
+    if (!credential.ok && credentialRequired(original.provider, providers[original.provider], PROVIDERS)) {
+      return sendJson(res, 400, {
+        error: 'missing replay credential',
+        detail: missingCredentialMessage(credential),
+        provider: original.provider,
+        // Variable names only. The values are the thing orangebox refuses to
+        // hold, and this response goes to a browser.
+        checked_env: credential.checked
+      });
+    }
+
     const sourceRun = store.getRun(original.run_id);
     const run = store.createRun({
       name: String(body.name || `replay of ${sourceRun?.name || original.run_id}`).slice(0, 200),
@@ -381,7 +397,11 @@ async function handleApi(req, res, ctx, pathname, url) {
     });
     live.publish('run.created', { run });
 
-    const headers = replayHeaders(original.provider, security.authToken);
+    const headers = {
+      'content-type': 'application/json',
+      ...(security.authToken ? { 'x-orangebox-auth': security.authToken } : {}),
+      ...credential.headers
+    };
     const replayUrl = `http://${req.headers.host}/r/${encodeURIComponent(run.id)}/${original.provider}${original.endpoint}`;
     let upstreamResponse;
     try {
@@ -584,21 +604,6 @@ function parseJson(value) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function replayHeaders(provider, authToken) {
-  const headers = {
-    'content-type': 'application/json',
-    ...(authToken ? { 'x-orangebox-auth': authToken } : {})
-  };
-  if (provider === 'openai' && process.env.OPENAI_API_KEY) {
-    headers.authorization = `Bearer ${process.env.OPENAI_API_KEY}`;
-  }
-  if (provider === 'anthropic') {
-    if (process.env.ANTHROPIC_API_KEY) headers['x-api-key'] = process.env.ANTHROPIC_API_KEY;
-    headers['anthropic-version'] = process.env.ANTHROPIC_VERSION || '2023-06-01';
-  }
-  return headers;
 }
 
 async function waitForCall(store, runId, timeoutMs = 5000) {
