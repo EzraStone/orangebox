@@ -193,30 +193,46 @@ The gap heuristic is deliberately simple. Two unrelated agents running at once w
 `/spend` in the UI, or in a terminal:
 
 ```bash
-orangebox spend --group model --days 30
+orangebox spend --group model
 ```
 
 ```
-  spend by model (since 2026-07-23)
+  spend by model (all time)
 
-  claude-opus-5          ##################################      $0.401      5 calls
-  claude-sonnet-5        ####################                    $0.235      4 calls
-  llama3.2                                                           $0      6 calls
-  some-finetune-2026                                                $0+      5 calls  (5 unpriced)
+  claude-opus-5                       ##################################     $0.367+     10 calls  (2 no usage)
+  claude-sonnet-5                     ######################                  $0.238      4 calls
+  gemini-3.1-pro                      ####################                    $0.218      6 calls
+  gpt-5.4                             ###################                     $0.207      6 calls
+  us.anthropic.claude-sonnet-4-5-20…  #################                       $0.178      5 calls
+  claude-haiku-4-5                    ###                                     $0.029      5 calls
+  gpt-5-mini                          #                                       $0.016      6 calls
+  llama3.2                                                                        $0      4 calls
+  some-finetune-2026                                                             $0+      3 calls  (3 unrated)
+  us.amazon.nova-pro-v1:0                                                        $0+      3 calls  (3 unrated)
 
-  total $1.09+ across 46 call(s)
-  covers 80% of calls — 9 had no pricing entry, so the real figure is higher.
+  total $1.25+ across 52 call(s)
+  covers 85% of calls — 8 of 52 added nothing, so the real figure is higher.
+  6 have no rate for their model — add them to ~/.orangebox/pricing.json.
+  2 reported no token counts (errored, aborted, or streamed without usage); their cost is unknowable.
 ```
 
 Group by `model`, `provider`, `run`, or `day`; window with `--days`, `--since`,
 `--until`; emit `--csv` or `--json`.
 
-The `+` and the coverage line are the point. orangebox prices a call by looking
-its model up in `pricing.json`, and a model that isn't there costs *null*, not
+In the UI, clicking a row filters the runs list down to the calls behind it, so
+"opus cost the most" leads somewhere instead of stopping there.
+
+The `+` and the coverage lines are the point. orangebox prices a call by looking
+its model up in `pricing.json`, and a model that is not there costs *null*, not
 zero. Summing that column naively gives a total that is confidently too low with
-nothing on screen to say so — so the unpriced count travels with the total
-everywhere it goes, and `llama3.2` at a true `$0` stays visibly distinct from a
-model nobody has a rate for.
+nothing on screen to say so.
+
+The shortfall is reported by cause, because the remedies are opposite. An
+**unrated** call has tokens but no rate — adding one to `pricing.json` fixes it.
+A **no usage** call never reported token counts at all (it errored, the client
+hung up, or it streamed without `include_usage`), so its cost is unknowable and
+no edit to that file will help. Meanwhile `llama3.2` at a true `$0` stays
+visibly distinct from both.
 
 ## Pricing
 

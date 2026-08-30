@@ -2,6 +2,19 @@
 
 All notable changes to orangebox are documented here. Versions follow semantic versioning.
 
+## Unreleased
+
+### Added
+
+- Spend rows drill down: clicking one filters the runs list to the calls behind it (model, provider, run, or day).
+- Runs can be filtered by provider, in the UI and via `GET /api/runs?provider=`.
+- `spend` reports `unrated_calls` and `no_usage_calls` alongside `unpriced_calls`, in the API, the UI, and `--csv`.
+
+### Fixed
+
+- The spend view blamed every incomplete total on a missing pricing entry and told you to edit `pricing.json`. Calls that errored, were aborted, or streamed without usage have no cost for an unrelated reason, and no edit to that file would have helped. Both causes are now counted and described separately.
+- `orangebox assert --require-known-cost` reported only a count; it now names how many calls lack a rate versus how many never reported token counts.
+
 ## [1.2.0] - 2026-08-22
 
 ### Added
