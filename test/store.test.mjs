@@ -485,3 +485,45 @@ test('a partly-reported call counts as unrated, not as missing usage', () => {
   assert.equal(spend.no_usage_calls, 0);
   store.close();
 });
+
+test('the CI gate names why a cost is unknown (§19.6)', async () => {
+  // A CI log is the one place you cannot ask a follow-up question, so
+  // "3 calls have unknown cost" has to say which fix would work.
+  const { evaluateRunAssertions, splitUnknownCost } = await import('../src/assertions.mjs');
+
+  const calls = [
+    { cost_usd: 0.02, input_tokens: 10, output_tokens: 5 },
+    { cost_usd: null, input_tokens: 900, output_tokens: 40 }, // no rate
+    { cost_usd: null, input_tokens: null, output_tokens: null }, // errored
+    { cost_usd: null, input_tokens: null, output_tokens: null } // aborted
+  ];
+
+  assert.deepEqual(splitUnknownCost(calls), { unrated: 1, noUsage: 2 });
+
+  const run = { cost_usd: 0.02, error_count: 0, call_count: 4, unknown_cost_count: 3 };
+  const result = evaluateRunAssertions(run, calls, { requireKnownCost: true });
+
+  assert.equal(result.ok, false);
+  const [message] = result.failures;
+  assert.match(message, /3 calls have unknown cost/);
+  assert.match(message, /1 with no pricing entry/);
+  assert.match(message, /2 reporting no token counts/);
+});
+
+test('a run with every cost known still passes the gate', async () => {
+  const { evaluateRunAssertions } = await import('../src/assertions.mjs');
+  const calls = [{ cost_usd: 0.01, input_tokens: 5, output_tokens: 5 }];
+  const run = { cost_usd: 0.01, error_count: 0, call_count: 1, unknown_cost_count: 0 };
+  assert.equal(evaluateRunAssertions(run, calls, { requireKnownCost: true }).ok, true);
+});
+
+test('splitUnknownCost treats a partial token report as rateable', async () => {
+  const { splitUnknownCost } = await import('../src/assertions.mjs');
+  // Only a cache-read count, but that is still usage worth pricing.
+  assert.deepEqual(
+    splitUnknownCost([{ cost_usd: null, cache_read_tokens: 4000 }]),
+    { unrated: 1, noUsage: 0 }
+  );
+  assert.deepEqual(splitUnknownCost([]), { unrated: 0, noUsage: 0 });
+  assert.deepEqual(splitUnknownCost(), { unrated: 0, noUsage: 0 });
+});

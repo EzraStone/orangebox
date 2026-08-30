@@ -14,7 +14,40 @@ export function evaluateRunAssertions(run, calls, limits = {}) {
     failures.push(`${run.call_count} calls exceeds ${limits.maxCalls}`);
   }
   if (limits.requireKnownCost && run.unknown_cost_count > 0) {
-    failures.push(`${run.unknown_cost_count} calls have unknown cost`);
+    // "unknown cost" covers two situations with opposite remedies, and a CI
+    // log is exactly where you cannot ask a follow-up question. Say which.
+    const { unrated, noUsage } = splitUnknownCost(calls);
+    const why = [];
+    if (unrated > 0) why.push(`${unrated} with no pricing entry for their model`);
+    if (noUsage > 0) why.push(`${noUsage} reporting no token counts`);
+    failures.push(
+      why.length
+        ? `${run.unknown_cost_count} calls have unknown cost (${why.join('; ')})`
+        : `${run.unknown_cost_count} calls have unknown cost`
+    );
   }
   return { ok: failures.length === 0, failures, maxLatency };
+}
+
+/**
+ * Why a call's cost is null: no rate for the model, or no usage to price.
+ * Derived from the calls rather than stored, so it needs no schema change and
+ * cannot drift out of step with the rows it describes.
+ */
+export function splitUnknownCost(calls = []) {
+  let unrated = 0;
+  let noUsage = 0;
+
+  for (const call of calls) {
+    if (call.cost_usd !== null && call.cost_usd !== undefined) continue;
+    const reported =
+      call.input_tokens != null ||
+      call.output_tokens != null ||
+      call.cache_read_tokens != null ||
+      call.cache_write_tokens != null;
+    if (reported) unrated += 1;
+    else noUsage += 1;
+  }
+
+  return { unrated, noUsage };
 }
