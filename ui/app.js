@@ -103,12 +103,32 @@ function resetDiff() {
   };
 }
 
+/**
+ * Turn a failed response into an Error that carries what the server actually
+ * said. Throwing "400 /api/calls/x/replay" discards a body whose whole purpose
+ * was to explain the failure — the replay endpoint, for one, answers a missing
+ * key by naming the environment variables to set.
+ */
+async function httpError(res, path) {
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    // Not JSON, or empty. The status and path are all there is.
+  }
+  const detail = body?.detail ?? body?.error;
+  const error = new Error(detail ? String(detail) : `${res.status} ${path}`);
+  error.status = res.status;
+  error.body = body;
+  return error;
+}
+
 const api = {
   async get(path) {
     const res = await fetch(path, {
       headers: authToken ? { 'x-orangebox-auth': authToken } : undefined
     });
-    if (!res.ok) throw new Error(`${res.status} ${path}`);
+    if (!res.ok) throw await httpError(res, path);
     return res.json();
   },
   async send(method, path, body) {
@@ -121,7 +141,7 @@ const api = {
       },
       body: JSON.stringify(body ?? {})
     });
-    if (!res.ok) throw new Error(`${res.status} ${path}`);
+    if (!res.ok) throw await httpError(res, path);
     return res.json();
   }
 };
@@ -905,7 +925,12 @@ async function replayCall(call) {
     );
     renderTimeline();
   } catch (error) {
-    await showNotice('Replay failed', error.message);
+    // A missing key is a setup problem, not a failure of the replay itself,
+    // and the server has already said exactly which variable to set.
+    const title = error.status === 400 && error.body?.error === 'missing replay credential'
+      ? 'Replay needs a key'
+      : 'Replay failed';
+    await showNotice(title, error.message);
   }
 }
 
