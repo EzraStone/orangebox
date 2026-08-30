@@ -107,11 +107,26 @@ Same mechanism, different target. Pick the one aimed at your problem.
 
 **Replay and edit.** Open a call, choose **Replay & edit**, change the prompt, model, tools, or parameters, and orangebox sends it again in a new run. The original and replay are automatically aligned so output, latency, token, cost, model, error, prompt, and tool changes are visible together.
 
-Replay uses `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` from the orangebox process environment. Credentials are never recovered from a recording because orangebox deliberately does not store them.
+Replay reads the key from the environment orangebox itself runs in, per provider:
+
+| Provider | Variables checked, in order |
+| --- | --- |
+| `anthropic` | `ANTHROPIC_API_KEY` |
+| `openai` | `OPENAI_API_KEY` |
+| `gemini` | `GEMINI_API_KEY`, `GOOGLE_API_KEY` |
+| `bedrock` | `AWS_BEARER_TOKEN_BEDROCK`, `BEDROCK_API_KEY` |
+| `ollama` | none — local inference has nothing to authenticate against |
+
+Credentials are never recovered from a recording, because orangebox deliberately
+does not store them. If the variable is unset, replay refuses up front and names
+the one to set rather than sending an unauthenticated request and handing you the
+provider's 401. That check applies only when the provider still points at its own
+cloud endpoint; if you have overridden the upstream, orangebox forwards and lets
+that endpoint decide what it wants.
 
 **Whole-run comparison.** Compare any two runs call by call. Missing calls and regressions are explicit instead of being buried in two timelines.
 
-**Find old evidence.** Search run names and tags; filter by model, tool, error state, minimum latency, minimum cost, or date; rename and tag runs; and page through the complete history.
+**Find old evidence.** Search run names and tags; filter by model, provider, tool, error state, minimum latency, minimum cost, or date; rename and tag runs; and page through the complete history.
 
 **Share without shipping the database.** **Share** previews a self-contained sanitized HTML report that redacts system prompts, tool payloads, emails, IDs, credential-shaped values, and secrets; save that page to share it. JSON and OpenTelemetry exports remain available for machine workflows.
 
