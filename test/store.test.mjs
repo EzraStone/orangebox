@@ -415,3 +415,73 @@ test('spend orderings are a fixed table, not caller input (§12.1)', () => {
   }
   store.close();
 });
+
+test('spend separates "no rate" from "no usage recorded" (§19.5)', () => {
+  // Both leave cost null, but they need opposite advice. Telling someone to
+  // add rates to pricing.json for a call that errored before reporting any
+  // tokens sends them to edit a file that cannot possibly help.
+  const store = memStore();
+  const run = store.createRun({ source: 'gap' });
+  const now = Date.now();
+
+  const add = (overrides) =>
+    store.insertCall({
+      id: newId(),
+      run_id: run.id,
+      seq: store.nextSeq(run.id),
+      provider: 'anthropic',
+      endpoint: '/v1/messages',
+      model: 'claude-opus-5',
+      started_at: now,
+      request_json: '{}',
+      ...overrides
+    });
+
+  add({ input_tokens: 100, output_tokens: 50, cost_usd: 0.01 }); // priced
+  add({ input_tokens: 100, output_tokens: 50, cost_usd: null }); // tokens, no rate
+  add({ cost_usd: null, error_type: 'upstream_unreachable' }); // never got tokens
+  add({ cost_usd: null, error_type: 'client_aborted' }); // hung up early
+
+  const spend = store.spend({ groupBy: 'model' });
+  assert.equal(spend.total_calls, 4);
+  assert.equal(spend.unpriced_calls, 3, 'three calls contribute nothing to the total');
+  assert.equal(spend.unrated_calls, 1, 'exactly one is fixable by adding a rate');
+  assert.equal(spend.no_usage_calls, 2, 'two never reported usage at all');
+  assert.equal(
+    spend.unrated_calls + spend.no_usage_calls,
+    spend.unpriced_calls,
+    'the two reasons account for every unpriced call'
+  );
+
+  const group = spend.groups[0];
+  assert.equal(group.unrated_calls, 1);
+  assert.equal(group.no_usage_calls, 2);
+
+  store.close();
+});
+
+test('a partly-reported call counts as unrated, not as missing usage', () => {
+  // A streamed OpenAI call without include_usage can report input tokens and
+  // no output tokens. It has usage, so the gap is a rate, not the counts.
+  const store = memStore();
+  const run = store.createRun({ source: 'gap' });
+
+  store.insertCall({
+    id: newId(),
+    run_id: run.id,
+    seq: store.nextSeq(run.id),
+    provider: 'openai',
+    endpoint: '/v1/chat/completions',
+    model: 'mystery-model',
+    started_at: Date.now(),
+    request_json: '{}',
+    input_tokens: 900,
+    output_tokens: null,
+    cost_usd: null
+  });
+
+  const spend = store.spend({ groupBy: 'model' });
+  assert.equal(spend.unrated_calls, 1);
+  assert.equal(spend.no_usage_calls, 0);
+  store.close();
+});

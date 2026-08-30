@@ -287,6 +287,20 @@ export class Store {
                    SUM(COALESCE(c.output_tokens, 0)) AS output_tokens,
                    SUM(COALESCE(c.cost_usd, 0))      AS cost_usd,
                    SUM(CASE WHEN c.cost_usd IS NULL THEN 1 ELSE 0 END) AS unpriced_calls,
+                   -- Two quite different reasons a cost is null, and they need
+                   -- different advice. Tokens but no cost means no rate for the
+                   -- model: editing pricing.json fixes it. No tokens at all
+                   -- means the call never reported usage — it errored, the
+                   -- client hung up, or it streamed without include_usage — and
+                   -- no amount of editing pricing.json will help.
+                   SUM(CASE WHEN c.cost_usd IS NULL AND (
+                         c.input_tokens IS NOT NULL OR c.output_tokens IS NOT NULL OR
+                         c.cache_read_tokens IS NOT NULL OR c.cache_write_tokens IS NOT NULL
+                       ) THEN 1 ELSE 0 END) AS unrated_calls,
+                   SUM(CASE WHEN c.cost_usd IS NULL AND
+                         c.input_tokens IS NULL AND c.output_tokens IS NULL AND
+                         c.cache_read_tokens IS NULL AND c.cache_write_tokens IS NULL
+                       THEN 1 ELSE 0 END) AS no_usage_calls,
                    SUM(CASE WHEN c.error_type IS NOT NULL THEN 1 ELSE 0 END) AS error_calls
               FROM calls c
               JOIN runs r ON r.id = c.run_id
@@ -521,10 +535,14 @@ export class Store {
     let totalCost = 0;
     let totalCalls = 0;
     let unpricedCalls = 0;
+    let unratedCalls = 0;
+    let noUsageCalls = 0;
     const groups = rows.map((row) => {
       totalCost += row.cost_usd ?? 0;
       totalCalls += row.calls;
       unpricedCalls += row.unpriced_calls;
+      unratedCalls += row.unrated_calls;
+      noUsageCalls += row.no_usage_calls;
       return {
         key: row.key ?? '(unknown)',
         calls: row.calls,
@@ -532,6 +550,8 @@ export class Store {
         output_tokens: row.output_tokens ?? 0,
         cost_usd: row.cost_usd ?? 0,
         unpriced_calls: row.unpriced_calls,
+        unrated_calls: row.unrated_calls,
+        no_usage_calls: row.no_usage_calls,
         error_calls: row.error_calls
       };
     });
@@ -542,8 +562,13 @@ export class Store {
       until,
       total_calls: totalCalls,
       total_cost_usd: Math.round(totalCost * 1e8) / 1e8,
-      // How much of the total is missing because we had no rate for it.
+      // Calls the total is missing, split by why — because the fix differs.
+      // unrated: no rate for the model, so pricing.json closes the gap.
+      // no_usage: the call never reported tokens (errored, aborted, or streamed
+      // without usage), so nothing in pricing.json would help.
       unpriced_calls: unpricedCalls,
+      unrated_calls: unratedCalls,
+      no_usage_calls: noUsageCalls,
       priced_share: totalCalls === 0 ? 1 : (totalCalls - unpricedCalls) / totalCalls,
       groups
     };
