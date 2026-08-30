@@ -41,6 +41,19 @@ const PROVIDERS = {
   bedrock: `https://bedrock-runtime.${process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1'}.amazonaws.com`
 };
 
+/**
+ * The providers the router accepts, derived from the upstream table so the two
+ * cannot drift. They did once: gemini, ollama and bedrock were added to the
+ * route regexes and to PROVIDERS, but the CLI built its own map holding only
+ * openai and anthropic, so every real invocation proxied them to
+ * "undefined/...". Every test passed, because tests inject providers directly.
+ */
+export const ROUTABLE_PROVIDERS = Object.keys(PROVIDERS);
+
+const PROVIDER_PATTERN = ROUTABLE_PROVIDERS.join("|");
+const SCOPED_ROUTE = new RegExp(`^/r/([^/]+)/(${PROVIDER_PATTERN})(/.*)?$`);
+const BARE_ROUTE = new RegExp(`^/(${PROVIDER_PATTERN})(/.*)?$`);
+
 /** OLLAMA_HOST is commonly set bare, as `host:port`, with no scheme. */
 function normalizeOllamaHost(value) {
   if (typeof value !== 'string' || value.trim() === '') return null;
@@ -189,7 +202,7 @@ async function handle(req, res, ctx) {
   }
 
   // 1. Run-scoped proxy: /r/:runId/{anthropic,openai}/*
-  const scoped = pathname.match(/^\/r\/([^/]+)\/(anthropic|openai|ollama|gemini|bedrock)(\/.*)?$/);
+  const scoped = pathname.match(SCOPED_ROUTE);
   if (scoped) {
     return ctx.proxy.handle(req, res, {
       provider: scoped[2],
@@ -200,7 +213,7 @@ async function handle(req, res, ctx) {
   }
 
   // 2. Bare proxy: /{anthropic,openai}/*
-  const bare = pathname.match(/^\/(anthropic|openai|ollama|gemini|bedrock)(\/.*)?$/);
+  const bare = pathname.match(BARE_ROUTE);
   if (bare) {
     return ctx.proxy.handle(req, res, {
       provider: bare[1],

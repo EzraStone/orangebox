@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import process from 'node:process';
 
-import { createServer, VERSION } from './server.mjs';
+import { createServer, VERSION, PROVIDERS } from './server.mjs';
 import { defaultDbPath } from './store.mjs';
 import { evaluateRunAssertions } from './assertions.mjs';
 
@@ -78,6 +78,9 @@ function parseFlags(args) {
       case '--retain': out.retain = int(next(), '--retain'); break;
       case '--openai-upstream': out.openaiUpstream = next(); break;
       case '--anthropic-upstream': out.anthropicUpstream = next(); break;
+      case '--gemini-upstream': out.geminiUpstream = next(); break;
+      case '--ollama-upstream': out.ollamaUpstream = next(); break;
+      case '--bedrock-upstream': out.bedrockUpstream = next(); break;
       case '--auth-token': out.authToken = next(); break;
       case '--mobile': out.mobile = true; break;
       case '--unsafe-no-auth': out.unsafeNoAuth = true; break;
@@ -204,6 +207,9 @@ async function runWrapped(args) {
       case '--gap': opts.gap = int(next(), '--gap'); break;
       case '--openai-upstream': opts.openaiUpstream = next(); break;
       case '--anthropic-upstream': opts.anthropicUpstream = next(); break;
+      case '--gemini-upstream': opts.geminiUpstream = next(); break;
+      case '--ollama-upstream': opts.ollamaUpstream = next(); break;
+      case '--bedrock-upstream': opts.bedrockUpstream = next(); break;
       case '--auth-token': opts.authToken = next(); break;
       case '--mobile': opts.mobile = true; break;
       case '--unsafe-no-auth': opts.unsafeNoAuth = true; break;
@@ -657,10 +663,23 @@ function lanOrigin(port) {
   return `http://localhost:${port}`;
 }
 
-function providersFrom(opts) {
+/**
+ * Start from the shipped defaults and override only what a flag supplies.
+ *
+ * This used to name its two providers literally, so gemini, ollama and
+ * bedrock — routable, parsed, and priced — resolved to undefined here and
+ * every request to them was proxied to "undefined/v1/...". Spreading
+ * PROVIDERS means adding a provider to that table is enough; there is no
+ * second list to remember.
+ */
+export function providersFrom(opts) {
   return {
+    ...PROVIDERS,
     openai: upstream(opts.openaiUpstream, '--openai-upstream'),
-    anthropic: upstream(opts.anthropicUpstream, '--anthropic-upstream')
+    anthropic: upstream(opts.anthropicUpstream, '--anthropic-upstream'),
+    ...(opts.geminiUpstream ? { gemini: upstream(opts.geminiUpstream, '--gemini-upstream') } : {}),
+    ...(opts.ollamaUpstream ? { ollama: upstream(opts.ollamaUpstream, '--ollama-upstream') } : {}),
+    ...(opts.bedrockUpstream ? { bedrock: upstream(opts.bedrockUpstream, '--bedrock-upstream') } : {})
   };
 }
 
@@ -736,6 +755,9 @@ OPTIONS (start)
   --retain <days>  delete runs older than N days      (default 0 = keep forever)
   --openai-upstream <url>     OpenAI-compatible upstream
   --anthropic-upstream <url>  Anthropic-compatible upstream
+  --gemini-upstream <url>     Gemini-compatible upstream
+  --ollama-upstream <url>     Ollama host (or set OLLAMA_HOST)
+  --bedrock-upstream <url>    Bedrock runtime endpoint (or set AWS_REGION)
   --auth-token <token>        require x-orangebox-auth (required for safe remote use)
   --mobile                    bind to the LAN with read-only device pairing
   --unsafe-no-auth            allow a non-loopback host without authentication

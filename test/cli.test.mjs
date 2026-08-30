@@ -49,3 +49,44 @@ test('long keys are ellipsised to the column width', () => {
   assert.equal(out.length, 20);
   assert.ok(out.endsWith('\u2026'));
 });
+
+test('every routable provider has an upstream when started from the CLI', async () => {
+  // The bug this catches shipped in 1.2.0: gemini, ollama and bedrock were
+  // routable, parsed, priced and tested, yet `npx orangebox` proxied all three
+  // to "undefined/v1/...". Every existing test passed because the harness
+  // injects a providers map directly, which is exactly the path a real user
+  // never takes.
+  const { providersFrom } = await import('../src/cli.mjs');
+  const { ROUTABLE_PROVIDERS } = await import('../src/server.mjs');
+
+  const built = providersFrom({
+    openaiUpstream: 'https://api.openai.com',
+    anthropicUpstream: 'https://api.anthropic.com'
+  });
+
+  for (const provider of ROUTABLE_PROVIDERS) {
+    const upstream = built[provider];
+    assert.ok(upstream, `${provider} is routable but has no upstream`);
+    assert.match(upstream, /^https?:\/\//, `${provider} upstream is not a URL: ${upstream}`);
+  }
+});
+
+test('an upstream flag overrides just its own provider', async () => {
+  const { providersFrom } = await import('../src/cli.mjs');
+  const built = providersFrom({
+    openaiUpstream: 'https://api.openai.com',
+    anthropicUpstream: 'https://api.anthropic.com',
+    geminiUpstream: 'http://127.0.0.1:9999'
+  });
+
+  assert.equal(built.gemini, 'http://127.0.0.1:9999');
+  assert.match(built.bedrock, /bedrock-runtime/, 'the others keep their defaults');
+  assert.equal(built.anthropic, 'https://api.anthropic.com');
+});
+
+test('the route pattern and the upstream table are the same list', async () => {
+  // One source of truth: a provider added to PROVIDERS becomes routable, and
+  // nothing can be routable without somewhere to route it to.
+  const { ROUTABLE_PROVIDERS, PROVIDERS } = await import('../src/server.mjs');
+  assert.deepEqual([...ROUTABLE_PROVIDERS].sort(), Object.keys(PROVIDERS).sort());
+});
