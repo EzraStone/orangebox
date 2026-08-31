@@ -162,6 +162,7 @@ Recording happens **after** your client's response is finished — never in the 
 | `orangebox export <run-id> [-o file]` | Write a self-contained JSON file of the run — commit it to a bug report. |
 | `orangebox assert <run-id> [limits]` | Exit non-zero when cost, latency, errors, call count, or unknown costs exceed a CI threshold. |
 | `orangebox spend [--group <k>]` | What your agents have cost, by model, provider, run, or day — with an explicit count of what it could not price. |
+| `orangebox doctor` | Show what orangebox actually resolved: providers, upstreams, credentials, database, pricing coverage. Exits non-zero on a failure. |
 | `orangebox clear [--yes]` | Delete all recorded data. |
 
 | Flag | Default | Behavior |
@@ -248,6 +249,31 @@ A **no usage** call never reported token counts at all (it errored, the client
 hung up, or it streamed without `include_usage`), so its cost is unknowable and
 no edit to that file will help. Meanwhile `llama3.2` at a true `$0` stays
 visibly distinct from both.
+
+## Checking your setup
+
+```bash
+orangebox doctor
+```
+
+```
+  ok    orangebox              v1.2.1 on win32
+  ok    node                   v24.15.0
+  ok    database               ~/.orangebox/orangebox.db — 9 run(s), 281.0 KB, schema v2
+  note  provider anthropic     api.anthropic.com — recording works; replay needs ANTHROPIC_API_KEY
+  ok    provider ollama        127.0.0.1:11434 — no key needed
+  note  provider gemini        generativelanguage.googleapis.com — recording works; replay needs GEMINI_API_KEY or GOOGLE_API_KEY
+  ok    pricing table          56 model rates
+  note  unpriced models        6 recorded call(s) have no rate: some-finetune-2026, us.amazon.nova-pro-v1:0
+```
+
+A `note` is informational — recording works without a key, only replay needs
+one. A `FAIL` means something cannot work at all, and the command exits 1 so a
+setup script can stop on it. `--json` emits the same report for tooling.
+
+This exists because 1.2.0 shipped three providers pointed at nothing, and
+nothing in the product said so. Credentials are reported by variable name; the
+values never appear.
 
 ## Pricing
 
