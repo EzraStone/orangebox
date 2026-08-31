@@ -268,3 +268,51 @@ test('`doctor --json` is machine-readable and names no secrets', async () => {
   assert.match(anthropic.detail, /ANTHROPIC_API_KEY/, 'credits the variable that supplied the key');
   assert.doesNotMatch(result.stdout, /sk-ant-canary-doctor/, 'a key value must never be printed');
 });
+
+test('`tools` reports tool usage from a recorded database', async () => {
+  const upstream = await startMockUpstream((req, res) =>
+    jsonResponse(res, 200, {
+      model: 'claude-opus-5',
+      stop_reason: 'tool_use',
+      usage: { input_tokens: 100, output_tokens: 20 },
+      content: [
+        { type: 'text', text: 'looking' },
+        { type: 'tool_use', id: 'tu_1', name: 'grep_repo', input: { pattern: 'TODO' } }
+      ]
+    })
+  );
+  const server = await startCliServer(['--anthropic-upstream', upstream.origin]);
+
+  try {
+    await recordOneCall(server);
+
+    const table = await runCli(['tools', '--db', server.dbPath]);
+    assert.equal(table.code, 0, table.output);
+    assert.match(table.stdout, /grep_repo/);
+    assert.match(table.stdout, /tool call\(s\)/);
+
+    const json = await runCli(['tools', '--db', server.dbPath, '--json']);
+    const parsed = JSON.parse(json.stdout);
+    assert.equal(parsed.tools[0].key, 'grep_repo');
+    assert.equal(parsed.total_uses, 1);
+
+    const csv = await runCli(['tools', '--db', server.dbPath, '--csv']);
+    assert.match(csv.stdout.split(String.fromCharCode(10))[0], /^tool,uses,runs,errors,unanswered/);
+  } finally {
+    await server.stop();
+    await upstream.close();
+    removeTempDir(server.dbPath);
+  }
+});
+
+test('`tools` on an empty database says so instead of printing a blank table', async () => {
+  const server = await startCliServer();
+  try {
+    const result = await runCli(['tools', '--db', server.dbPath]);
+    assert.equal(result.code, 0);
+    assert.match(result.stdout, /No tool calls recorded/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});

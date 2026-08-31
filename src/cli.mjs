@@ -39,6 +39,8 @@ export async function main(argv) {
       return runWrapped(rest);
     case 'export':
       return exportRun(rest);
+    case 'tools':
+      return toolReport(rest);
     case 'doctor':
       return doctor(rest);
     case 'spend':
@@ -471,6 +473,97 @@ async function doctor(args) {
     store.close();
   }
 }
+
+// ---------------------------------------------------------------- tools
+
+/**
+ * §19.8 — which tools the agent leans on, which fail, and which are slow.
+ */
+async function toolReport(args) {
+  let dbPath = null;
+  let since = null;
+  let until = null;
+  let format = 'table';
+
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--since': since = epochArg(next(), '--since'); break;
+      case '--until': until = epochArg(next(), '--until'); break;
+      case '--days': since = Date.now() - int(next(), '--days') * 86_400_000; break;
+      case '--json': format = 'json'; break;
+      case '--csv': format = 'csv'; break;
+      default: fail(`unknown flag "${args[i]}"`);
+    }
+  }
+
+  const { openStore } = await import('./store.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+  try {
+    const data = store.toolStats({ since, until });
+    if (format === 'json') return void console.log(JSON.stringify(data, null, 2));
+    if (format === 'csv') return void printToolCsv(data);
+    printToolTable(data);
+  } finally {
+    store.close();
+  }
+}
+
+function printToolTable(data) {
+  if (data.total_uses === 0) {
+    console.log('No tool calls recorded in that window.');
+    return;
+  }
+
+  const width = Math.min(Math.max(...data.tools.map((t) => t.key.length), 4), 30);
+  console.log();
+  console.log(`  ${'tool'.padEnd(width)}  ${'uses'.padStart(6)}  ${'errors'.padStart(7)}  ${'avg'.padStart(9)}  ${'slowest'.padStart(9)}`);
+  console.log();
+
+  for (const tool of data.tools) {
+    const errors = tool.errors > 0 ? warn(String(tool.errors).padStart(7)) : String(tool.errors).padStart(7);
+    // avg is null when every use of this tool shared a call with others, so
+    // there is no gap that belongs to it alone.
+    const avg = (tool.avg_ms === null ? '—' : ms(tool.avg_ms)).padStart(9);
+    const slowest = (tool.slowest_ms === null ? '—' : ms(tool.slowest_ms)).padStart(9);
+    const notes = [];
+    if (tool.unanswered > 0) notes.push(`${tool.unanswered} unanswered`);
+    if (tool.avg_ms !== null && tool.timed_uses < tool.uses) {
+      notes.push(`timed on ${tool.timed_uses}/${tool.uses}`);
+    }
+    const trailer = notes.length ? warn(`  (${notes.join(', ')})`) : '';
+    console.log(`  ${truncate(tool.key, width).padEnd(width)}  ${String(tool.uses).padStart(6)}  ${errors}  ${avg}  ${slowest}${trailer}`);
+  }
+
+  console.log();
+  console.log(`  ${data.total_uses} tool call(s), ${data.total_errors} errored, ${data.total_unanswered} never answered`);
+  if (data.total_unanswered > 0) {
+    console.log(warn('  an unanswered call is one the model made and never got a result for — a broken loop, a crash, or a run cut short.'));
+  }
+  console.log();
+}
+
+function printToolCsv(data) {
+  console.log('tool,uses,runs,errors,unanswered,error_rate,timed_uses,avg_ms,slowest_ms');
+  for (const t of data.tools) {
+    console.log([
+      csvCell(t.key), t.uses, t.runs, t.errors, t.unanswered,
+      t.error_rate.toFixed(4), t.timed_uses, t.avg_ms ?? '', t.slowest_ms ?? ''
+    ].join(','));
+  }
+}
+
+function ms(value) {
+  if (value === null || value === undefined) return '—';
+  if (value < 1000) return `${Math.round(value)} ms`;
+  if (value < 60_000) return `${(value / 1000).toFixed(1)} s`;
+  return `${Math.floor(value / 60_000)}m ${Math.round((value % 60_000) / 1000)}s`;
+}
 // ---------------------------------------------------------------- spend
 
 /**
@@ -806,6 +899,7 @@ USAGE
   orangebox export <run-id> [-o file]  write a run to a self-contained JSON file
   orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
   orangebox spend [--group <k>]        what your agents have cost so far
+  orangebox tools                      which tools get used, fail, and take time
   orangebox doctor                     show what orangebox actually resolved
   orangebox clear [--yes]              delete all recorded data
   orangebox --version | --help
