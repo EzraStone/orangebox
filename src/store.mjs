@@ -272,6 +272,61 @@ export class Store {
       oldRuns: db.prepare('SELECT id FROM runs WHERE started_at < ?')
     };
 
+    // §19.8 — tool behaviour across runs. orangebox never watches a tool run;
+    // it sees the request go out and the result come back, so the only timing
+    // available is the wall-clock hole between two consecutive calls.
+    //
+    // When a call asks for three tools, that hole covers all three and cannot
+    // honestly be split. So timing is aggregated only over "solo" uses — where
+    // the emitting call requested exactly one tool — and the count of those is
+    // reported alongside, so a number derived from two samples out of ninety
+    // is visibly that.
+    this.q.toolStats = db.prepare(`
+      WITH gaps AS (
+        SELECT c.id AS call_id,
+               c.run_id,
+               (SELECT MIN(c2.started_at) FROM calls c2
+                 WHERE c2.run_id = c.run_id AND c2.seq > c.seq) - c.ended_at AS gap_ms
+          FROM calls c
+         WHERE c.ended_at IS NOT NULL
+           AND c.started_at BETWEEN @since AND @until
+      ),
+      per_call AS (
+        SELECT call_id, COUNT(*) AS uses_in_call
+          FROM tool_events
+         WHERE kind = 'tool_use'
+         GROUP BY call_id
+      ),
+      uses AS (
+        SELECT t.tool_name,
+               t.tool_use_id,
+               t.run_id,
+               g.gap_ms,
+               p.uses_in_call
+          FROM tool_events t
+          JOIN gaps g ON g.call_id = t.call_id
+          JOIN per_call p ON p.call_id = t.call_id
+         WHERE t.kind = 'tool_use'
+      )
+      SELECT COALESCE(u.tool_name, '(unnamed tool)') AS key,
+             COUNT(*)                                AS uses,
+             COUNT(DISTINCT u.run_id)                AS runs,
+             SUM(CASE WHEN r.is_error = 1 THEN 1 ELSE 0 END) AS errors,
+             SUM(CASE WHEN r.tool_use_id IS NULL THEN 1 ELSE 0 END) AS unanswered,
+             SUM(CASE WHEN u.uses_in_call = 1 AND u.gap_ms IS NOT NULL AND u.gap_ms >= 0
+                      THEN 1 ELSE 0 END) AS timed_uses,
+             SUM(CASE WHEN u.uses_in_call = 1 AND u.gap_ms IS NOT NULL AND u.gap_ms >= 0
+                      THEN u.gap_ms ELSE 0 END) AS timed_total_ms,
+             MAX(CASE WHEN u.uses_in_call = 1 AND u.gap_ms IS NOT NULL AND u.gap_ms >= 0
+                      THEN u.gap_ms ELSE NULL END) AS slowest_ms
+        FROM uses u
+        LEFT JOIN tool_events r
+               ON r.kind = 'tool_result'
+              AND r.tool_use_id = u.tool_use_id
+              AND r.run_id = u.run_id
+       GROUP BY key
+       ORDER BY uses DESC, key ASC`);
+
     // Built per grouping and memoised: the column is chosen from SPEND_GROUPS,
     // never from user input.
     const spendCache = new Map();
@@ -579,6 +634,46 @@ export class Store {
       no_usage_calls: noUsageCalls,
       priced_share: totalCalls === 0 ? 1 : (totalCalls - unpricedCalls) / totalCalls,
       groups
+    };
+  }
+
+  /**
+   * §19.8 — how each tool behaves across recorded runs.
+   *
+   * `timed_uses` is the honest part. Timing comes from the gap between two
+   * calls, which covers every tool the earlier one requested, so only uses
+   * where the call asked for exactly one tool contribute to the average. A
+   * tool used ninety times but timed twice reports both numbers.
+   */
+  toolStats({ since = null, until = null } = {}) {
+    const rows = this.q.toolStats.all({
+      since: since ?? 0,
+      until: until ?? Number.MAX_SAFE_INTEGER
+    });
+
+    const tools = rows.map((row) => ({
+      key: row.key,
+      uses: row.uses,
+      runs: row.runs,
+      errors: row.errors,
+      // A tool the model called and never got an answer to. Usually the agent
+      // crashed, the loop broke, or the run was cut short mid-turn — and it is
+      // invisible on a timeline unless you go looking.
+      unanswered: row.unanswered,
+      error_rate: row.uses === 0 ? 0 : row.errors / row.uses,
+      timed_uses: row.timed_uses,
+      avg_ms: row.timed_uses > 0 ? Math.round(row.timed_total_ms / row.timed_uses) : null,
+      total_ms: row.timed_uses > 0 ? row.timed_total_ms : null,
+      slowest_ms: row.slowest_ms ?? null
+    }));
+
+    return {
+      since,
+      until,
+      total_uses: tools.reduce((sum, t) => sum + t.uses, 0),
+      total_errors: tools.reduce((sum, t) => sum + t.errors, 0),
+      total_unanswered: tools.reduce((sum, t) => sum + t.unanswered, 0),
+      tools
     };
   }
 
