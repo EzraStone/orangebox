@@ -182,3 +182,40 @@ test('an empty database reports zeroes, not a crash', () => {
   assert.deepEqual(stats.tools, []);
   store.close();
 });
+
+test('GET /api/tools answers with the same shape as the store (§19.8)', async () => {
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const run = app.store.createRun({ source: 'gap' });
+    const callId = newId();
+    app.store.insertCall(
+      {
+        id: callId, run_id: run.id, seq: app.store.nextSeq(run.id),
+        provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+        started_at: Date.now(), ended_at: Date.now() + 500, request_json: '{}'
+      },
+      [{
+        id: newId(), run_id: run.id, call_id: callId,
+        kind: 'tool_use', tool_name: 'grep_repo', tool_use_id: 'u1',
+        is_error: 0, content_json: '{}'
+      }]
+    );
+
+    const res = await fetch(`${app.origin}/api/tools`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+
+    assert.equal(body.total_uses, 1);
+    assert.equal(body.tools[0].key, 'grep_repo');
+    assert.equal(body.tools[0].unanswered, 1, 'no result was ever recorded for it');
+
+    // The window parameters accept a date as readily as epoch ms.
+    const empty = await (await fetch(`${app.origin}/api/tools?since=2099-01-01`)).json();
+    assert.equal(empty.total_uses, 0);
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});

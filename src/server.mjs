@@ -459,6 +459,13 @@ async function handleApi(req, res, ctx, pathname, url) {
     return sendJson(res, 200, store.spend({ groupBy: group, since, until }));
   }
 
+  // GET /api/tools?since=&until=  (§19.8)
+  if (method === 'GET' && pathname === '/api/tools') {
+    const since = epochParam(url.searchParams.get('since'));
+    const until = epochParam(url.searchParams.get('until'));
+    return sendJson(res, 200, store.toolStats({ since, until }));
+  }
+
   // GET /api/export/:runId
   if (method === 'GET' && seg.length === 3 && seg[1] === 'export') {
     let payload = buildExport(store, seg[2]);
