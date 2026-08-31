@@ -169,3 +169,98 @@ export async function eventStreamResponse(res, frames, { delayMs = 2 } = {}) {
   }
   res.end();
 }
+
+// ---------------------------------------------------------- the real CLI
+//
+// Everything above builds a server in-process, which is fast and precise and
+// misses an entire class of bug: it never runs the code that turns flags into
+// configuration. Gemini, Ollama and Bedrock shipped completely unroutable
+// because providersFrom() named two providers literally, and no test noticed,
+// because no test had ever started orangebox the way a person does.
+
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'orangebox.mjs');
+
+/**
+ * Run the CLI to completion and return what a shell would have seen.
+ * Never rejects — a non-zero exit is an outcome to assert on, not a throw.
+ */
+export function runCli(args, { env = {}, cwd, timeoutMs = 30_000 } = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [CLI, ...args], {
+      cwd,
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => (stdout += c));
+    child.stderr.on('data', (c) => (stderr += c));
+
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal, stdout, stderr, output: stdout + stderr });
+    });
+  });
+}
+
+/**
+ * Start `orangebox` as a real subprocess and wait until it is listening.
+ * Resolves with the origin and a stop() that actually reaps the process, so a
+ * failing test cannot leave a server holding a port.
+ */
+export async function startCliServer(args = [], { env = {}, timeoutMs = 30_000 } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orangebox-cli-'));
+  const dbPath = path.join(dir, 'cli.db');
+  const port = 0;
+
+  const child = spawn(
+    process.execPath,
+    [CLI, '--db', dbPath, '--port', String(pickPort()), '--no-open', ...args],
+    { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+
+  let output = '';
+  const origin = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`CLI never reported a URL:\n${output}`)), timeoutMs);
+    const scan = (chunk) => {
+      output += chunk;
+      // The banner prints "recording on   http://127.0.0.1:<port>".
+      const match = output.match(/recording on\s+(http:\/\/\S+)/);
+      if (match) {
+        clearTimeout(timer);
+        resolve(match[1].trim());
+      }
+    };
+    child.stdout.on('data', scan);
+    child.stderr.on('data', scan);
+    child.on('close', () => {
+      clearTimeout(timer);
+      reject(new Error(`CLI exited before listening:\n${output}`));
+    });
+  });
+
+  return {
+    origin,
+    dbPath,
+    dir,
+    get output() {
+      return output;
+    },
+    stop: () =>
+      new Promise((resolve) => {
+        if (child.exitCode !== null) return resolve();
+        child.once('close', () => resolve());
+        child.kill('SIGKILL');
+      })
+  };
+}
+
+/** An ephemeral port the CLI can bind. It takes a number, not a zero. */
+function pickPort() {
+  return 20000 + Math.floor(Math.random() * 20000);
+}
