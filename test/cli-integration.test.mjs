@@ -4,6 +4,8 @@
 // providers map already assembled. That skips the code turning flags into
 // configuration, which is exactly where three providers were silently broken.
 import test from 'node:test';
+import fs from 'node:fs';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import { runCli, startCliServer, removeTempDir, startMockUpstream, jsonResponse } from './helpers.mjs';
 
@@ -37,7 +39,7 @@ test('the banner names the database and the UI url', async () => {
   try {
     assert.match(server.output, /orangebox v\d+\.\d+\.\d+/);
     assert.match(server.output, /recording on/);
-    assert.match(server.output, /database/);
+    assert.ok(await server.waitForOutput(/database/), `banner never named the database:\n${server.output}`);
     assert.match(server.origin, /^http:\/\/127\.0\.0\.1:\d+$/);
   } finally {
     await server.stop();
@@ -138,6 +140,101 @@ test('a provider with no flag still resolves its default upstream', async () => 
     const body = await res.json();
     assert.equal(res.status, 200, `ollama did not resolve a default upstream: ${JSON.stringify(body)}`);
     assert.equal(body.ok, true);
+  } finally {
+    await server.stop();
+    await upstream.close();
+    removeTempDir(server.dbPath);
+  }
+});
+
+/** Record one call through a CLI-started server and return its ids. */
+async function recordOneCall(server, { model = 'claude-opus-5' } = {}) {
+  const res = await fetch(`${server.origin}/anthropic/v1/messages`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-orangebox-run-id': 'cli-test-run' },
+    body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }] })
+  });
+  await res.text();
+
+  for (let i = 0; i < 100; i++) {
+    const runs = await (await fetch(`${server.origin}/api/runs`)).json();
+    const run = runs.runs.find((r) => r.id === 'cli-test-run');
+    if (run?.call_count > 0) return run;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error('the call was never recorded');
+}
+
+test('`spend` reads a database written by a different process', async () => {
+  // The CLI subcommands open the same SQLite file the server is writing. WAL
+  // mode is what makes that safe, and nothing tested it across two processes.
+  const upstream = await startMockUpstream((req, res) =>
+    jsonResponse(res, 200, {
+      model: 'claude-opus-5',
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 1000, output_tokens: 200 }
+    })
+  );
+  const server = await startCliServer(['--anthropic-upstream', upstream.origin]);
+
+  try {
+    await recordOneCall(server);
+
+    const table = await runCli(['spend', '--db', server.dbPath]);
+    assert.equal(table.code, 0, table.output);
+    assert.match(table.stdout, /spend by model/);
+    assert.match(table.stdout, /claude-opus-5/);
+    assert.match(table.stdout, /total \$/);
+
+    const json = await runCli(['spend', '--db', server.dbPath, '--json']);
+    assert.equal(json.code, 0);
+    const parsed = JSON.parse(json.stdout);
+    assert.equal(parsed.total_calls, 1);
+    assert.equal(parsed.groups[0].key, 'claude-opus-5');
+
+    const csv = await runCli(['spend', '--db', server.dbPath, '--csv']);
+    assert.match(csv.stdout.split(String.fromCharCode(10))[0], /^key,calls,/);
+  } finally {
+    await server.stop();
+    await upstream.close();
+    removeTempDir(server.dbPath);
+  }
+});
+
+test('`export` and `assert` operate on a recorded run', async () => {
+  const upstream = await startMockUpstream((req, res) =>
+    jsonResponse(res, 200, {
+      model: 'claude-opus-5',
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 1000, output_tokens: 200 }
+    })
+  );
+  const server = await startCliServer(['--anthropic-upstream', upstream.origin]);
+
+  try {
+    await recordOneCall(server);
+
+    // export writes a file and reports what it wrote; it does not stream JSON.
+    const outFile = path.join(server.dir, 'exported.json');
+    const exported = await runCli(['export', 'cli-test-run', '--db', server.dbPath, '-o', outFile]);
+    assert.equal(exported.code, 0, exported.output);
+    assert.match(exported.stdout, /wrote /);
+
+    const payload = JSON.parse(fs.readFileSync(outFile, 'utf8'));
+    assert.equal(payload.run.id, 'cli-test-run');
+    assert.equal(payload.calls.length, 1);
+    assert.doesNotMatch(JSON.stringify(payload), /x-api-key|authorization/i, 'an export must not carry credentials');
+
+    // A generous ceiling passes; a zero ceiling has to fail, or the CI gate is
+    // decorative.
+    const ok = await runCli(['assert', 'cli-test-run', '--db', server.dbPath, '--max-cost', '10']);
+    assert.equal(ok.code, 0, ok.output);
+    assert.match(ok.stdout, /assertions passed/);
+
+    const bad = await runCli(['assert', 'cli-test-run', '--db', server.dbPath, '--max-cost', '0']);
+    assert.equal(bad.code, 1);
+    assert.match(bad.output, /assertions failed/);
+    assert.match(bad.output, /cost/);
   } finally {
     await server.stop();
     await upstream.close();

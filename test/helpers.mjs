@@ -251,6 +251,20 @@ export async function startCliServer(args = [], { env = {}, timeoutMs = 30_000 }
     get output() {
       return output;
     },
+    /**
+     * Wait for more of the banner. startCliServer resolves as soon as the
+     * URL appears, because that is the first thing a caller needs, but the
+     * remaining lines are still arriving — asserting on them immediately is
+     * a race that fails perhaps one run in five.
+     */
+    waitForOutput: async (pattern, timeoutMs = 5000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        if (pattern.test(output)) return true;
+        await sleep(10);
+      }
+      return false;
+    },
     stop: () =>
       new Promise((resolve) => {
         if (child.exitCode !== null) return resolve();
