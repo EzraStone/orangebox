@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import process from 'node:process';
 
-import { createServer, VERSION, PROVIDERS } from './server.mjs';
+import { createServer, VERSION, PROVIDERS, ROUTABLE_PROVIDERS } from './server.mjs';
 import { defaultDbPath } from './store.mjs';
 import { evaluateRunAssertions } from './assertions.mjs';
 
@@ -39,6 +39,8 @@ export async function main(argv) {
       return runWrapped(rest);
     case 'export':
       return exportRun(rest);
+    case 'doctor':
+      return doctor(rest);
     case 'spend':
       return spendReport(rest);
     case 'assert':
@@ -409,6 +411,66 @@ async function assertRun(args) {
 }
 
 
+
+// --------------------------------------------------------------- doctor
+
+const STATUS_MARK = { ok: "ok  ", note: "note", warn: "warn", fail: "FAIL" };
+
+/**
+ * Print what orangebox actually resolved, rather than what it was asked for.
+ * Exits non-zero on a failed check so it can gate a setup script.
+ */
+async function doctor(args) {
+  let dbPath = null;
+  let format = 'text';
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--json': format = 'json'; break;
+      default: fail(`unknown flag "${args[i]}"`);
+    }
+  }
+
+  const { openStore } = await import('./store.mjs');
+  const { loadPricing } = await import('./pricing.mjs');
+  const {
+    checkRuntime, checkDatabase, checkProviders, checkPricing, worst, OK
+  } = await import('./doctor.mjs');
+
+  const store = openStore(dbPath ?? defaultDbPath());
+  try {
+    const checks = [
+      ...checkRuntime({ version: VERSION }),
+      ...checkDatabase(store),
+      ...checkProviders(providersFrom({
+        openaiUpstream: PROVIDERS.openai,
+        anthropicUpstream: PROVIDERS.anthropic
+      }), { routable: ROUTABLE_PROVIDERS }),
+      ...checkPricing(store, loadPricing())
+    ];
+
+    if (format === 'json') {
+      console.log(JSON.stringify({ status: worst(checks), checks }, null, 2));
+    } else {
+      console.log();
+      for (const check of checks) {
+        const mark = STATUS_MARK[check.status] ?? check.status;
+        const line = `  ${mark}  ${check.name.padEnd(22)} ${check.detail}`;
+        console.log(check.status === 'fail' ? warn(line) : line);
+      }
+      console.log();
+    }
+
+    if (worst(checks) === 'fail') process.exitCode = 1;
+  } finally {
+    store.close();
+  }
+}
 // ---------------------------------------------------------------- spend
 
 /**
@@ -744,6 +806,7 @@ USAGE
   orangebox export <run-id> [-o file]  write a run to a self-contained JSON file
   orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
   orangebox spend [--group <k>]        what your agents have cost so far
+  orangebox doctor                     show what orangebox actually resolved
   orangebox clear [--yes]              delete all recorded data
   orangebox --version | --help
 

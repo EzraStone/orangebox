@@ -241,3 +241,30 @@ test('`export` and `assert` operate on a recorded run', async () => {
     removeTempDir(server.dbPath);
   }
 });
+
+test('`doctor` reports every provider and exits clean on a healthy install', async () => {
+  const result = await runCli(['doctor']);
+  assert.equal(result.code, 0, result.output);
+
+  for (const provider of ['anthropic', 'openai', 'gemini', 'ollama', 'bedrock']) {
+    assert.match(result.stdout, new RegExp(`provider ${provider}`), `doctor omits ${provider}`);
+  }
+  assert.match(result.stdout, /orangebox\s+v\d+\.\d+\.\d+/);
+  assert.match(result.stdout, /pricing table/);
+  assert.doesNotMatch(result.stdout, /FAIL/);
+});
+
+test('`doctor --json` is machine-readable and names no secrets', async () => {
+  const result = await runCli(['doctor', '--json'], {
+    env: { ANTHROPIC_API_KEY: 'sk-ant-canary-doctor' }
+  });
+  assert.equal(result.code, 0, result.output);
+
+  const report = JSON.parse(result.stdout);
+  assert.ok(['ok', 'note', 'warn'].includes(report.status), `unexpected status ${report.status}`);
+  assert.ok(report.checks.length >= 8);
+
+  const anthropic = report.checks.find((c) => c.provider === 'anthropic');
+  assert.match(anthropic.detail, /ANTHROPIC_API_KEY/, 'credits the variable that supplied the key');
+  assert.doesNotMatch(result.stdout, /sk-ant-canary-doctor/, 'a key value must never be printed');
+});

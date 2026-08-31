@@ -29,8 +29,14 @@ export function worst(checks) {
  * authenticate. Credential *values* are never read into the result — only the
  * name of the variable that supplied one.
  */
-export function checkProviders(providers, env = process.env) {
-  return Object.entries(providers).map(([provider, upstream]) => {
+export function checkProviders(providers, { env = process.env, routable } = {}) {
+  // Iterate what the router will accept, not what happens to be configured.
+  // A provider missing from the map is the failure worth reporting, and it
+  // reports as absence — which is the one thing nobody notices in a list.
+  const names = routable ?? Object.keys(providers);
+
+  return names.map((provider) => {
+    const upstream = Object.hasOwn(providers, provider) ? providers[provider] : undefined;
     const known = Object.hasOwn(PROVIDER_CREDENTIALS, provider);
 
     // The exact shape of the shipped bug: routable, but with nothing to route
@@ -39,7 +45,7 @@ export function checkProviders(providers, env = process.env) {
       return {
         name: `provider ${provider}`,
         status: FAIL,
-        detail: 'no upstream configured — requests to this provider cannot be proxied',
+        detail: 'routable but has no upstream — requests to it cannot be proxied at all',
         provider
       };
     }
