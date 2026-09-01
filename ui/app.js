@@ -4,6 +4,7 @@
 import { diffLines, collapseUnchanged, diffStats } from '/diff.js';
 import { el, $, fmt } from '/dom.js';
 import { renderSpend, loadSpend } from '/spend.js';
+import { renderTools, loadTools } from '/tools.js';
 
 const authToken = new URLSearchParams(location.search).get('token');
 let csrfToken = null;
@@ -75,7 +76,7 @@ const state = {
   readOnly: false,
   mobileAccess: false,
   filters: { search: '', model: '', provider: '', tool: '', error: '', min_latency: '', min_cost: '', from: '', to: '' },
-  view: 'runs', // 'runs' | 'spend'
+  view: 'runs', // 'runs' | 'spend' | 'tools'
   runId: null,
   run: null,
   calls: [],
@@ -269,6 +270,25 @@ const SPEND_PATH = '/spend';
 
 const pathIsSpend = () => location.pathname === SPEND_PATH;
 
+const TOOLS_PATH = '/tools';
+const pathIsTools = () => location.pathname === TOOLS_PATH;
+
+/** §19.8 — the same shape as openSpend, on its own route. */
+async function openTools({ replace = false } = {}) {
+  state.view = 'tools';
+  if (!pathIsTools()) history[replace ? 'replaceState' : 'pushState']({}, '', TOOLS_PATH);
+  closeDetail();
+  renderRuns();
+  renderTimeline();
+  syncMobileNav();
+  await refreshTools();
+}
+
+async function refreshTools() {
+  await loadTools((path) => api.get(path));
+  if (state.view === 'tools') renderTimeline();
+}
+
 /**
  * Spend is a route, not a modal. It survives a reload, the back button does
  * the obvious thing, and "here is where the month went" is a link you can
@@ -289,7 +309,7 @@ async function refreshSpend() {
   if (state.view === 'spend') renderTimeline();
 }
 
-function closeSpend() {
+function closeAnalytics() {
   state.view = 'runs';
   // Not navigate(): the run has not changed, so selectRun would early-return
   // and leave the spend view on screen.
@@ -301,6 +321,7 @@ function closeSpend() {
 
 window.addEventListener('popstate', () => {
   if (pathIsSpend()) return void openSpend({ replace: true });
+  if (pathIsTools()) return void openTools({ replace: true });
   state.view = 'runs';
   selectRun(pathRunId(), { fromNav: true });
   renderTimeline();
@@ -448,12 +469,12 @@ function renderRuns() {
 
 // ======================================================== timeline render
 
-function renderSpendHeader() {
+function renderAnalyticsHeader(title) {
   $('run-header').replaceChildren(
-    el('span', { class: 'run-head', text: 'Spend' }),
+    el('span', { class: 'run-head', text: title }),
     el('span', { class: 'spacer' }),
     el('div', { class: 'run-actions' }, [
-      el('button', { class: 'btn', type: 'button', text: 'Back to runs', on: { click: closeSpend } })
+      el('button', { class: 'btn', type: 'button', text: 'Back to runs', on: { click: closeAnalytics } })
     ])
   );
 }
@@ -600,8 +621,12 @@ async function deleteRun(run) {
 }
 
 function renderTimeline() {
+  if (state.view === 'tools') {
+    renderAnalyticsHeader('Tools');
+    return void renderTools($('timeline'), () => void refreshTools(), applySpendDrilldown);
+  }
   if (state.view === 'spend') {
-    renderSpendHeader();
+    renderAnalyticsHeader('Spend');
     return void renderSpend($('timeline'), () => void refreshSpend(), applySpendDrilldown);
   }
   renderRunHeader();
@@ -1562,17 +1587,22 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     // Escape backs out of whatever is on top: the spend view, then the detail
     // pane. Two different exits on one key, in the order they were opened.
-    if (state.view === 'spend') return void closeSpend();
+    if (state.view !== 'runs') return void closeAnalytics();
     return void closeDetail();
   }
 
   if (e.key === '$') {
     e.preventDefault();
-    return void (state.view === 'spend' ? closeSpend() : openSpend());
+    return void (state.view === 'spend' ? closeAnalytics() : openSpend());
+  }
+
+  if (e.key === 't') {
+    e.preventDefault();
+    return void (state.view === 'tools' ? closeAnalytics() : openTools());
   }
 
   // The rest of these steer the timeline, which is not what is on screen.
-  if (state.view === 'spend') return;
+  if (state.view !== 'runs') return;
 
   const index = state.calls.findIndex((c) => c.id === state.callId);
 
@@ -1695,8 +1725,13 @@ function dateBoundary(value, endOfDay) {
   return String(date.getTime());
 }
 
+$('tools-open').addEventListener('click', () => {
+  if (state.view === 'tools') closeAnalytics();
+  else void openTools();
+});
+
 $('spend-open').addEventListener('click', () => {
-  if (state.view === 'spend') closeSpend();
+  if (state.view === 'spend') closeAnalytics();
   else void openSpend();
 });
 
@@ -1776,13 +1811,18 @@ async function boot() {
     // when no run is named, and that replaceState overwrites /spend before we
     // would otherwise get around to looking at it.
     const bootSpend = pathIsSpend();
+    const bootTools = pathIsTools();
     state.runId = pathRunId();
     renderPill();
     await loadRuns();
     if (state.runId) await loadRun(state.runId);
     if (bootSpend) await openSpend({ replace: true });
+    if (bootTools) await openTools({ replace: true });
     connectLive();
-  } catch {
+  } catch (error) {
+    // The user-facing message stays friendly, but swallowing the reason
+    // entirely makes a boot failure impossible to diagnose from a bug report.
+    console.error('orangebox: startup failed', error);
     if (await offerMobilePairing()) {
       syncMobileNav();
       return;

@@ -1,10 +1,12 @@
-const CACHE = 'orangebox-shell-v2';
+const CACHE = 'orangebox-shell-v3';
 const SHELL = [
   '/',
   '/style.css',
   '/app.js',
   '/diff.js',
   '/dom.js',
+  '/spend.js',
+  '/tools.js',
   '/manifest.webmanifest',
   '/icon.svg',
   '/icon-maskable.svg'
