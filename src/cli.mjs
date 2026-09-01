@@ -1273,5 +1273,8 @@ EASIEST START
 
 POINT AN EXISTING PROCESS AT IT
   ${environmentCommands('http://127.0.0.1:4100').join('\n  ')}
+
+  Gemini, Ollama and Bedrock record the same way, at /gemini, /ollama and
+  /bedrock. The run wrapper sets the variable for every provider itself.
 `);
 }

@@ -124,6 +124,8 @@ provider's 401. That check applies only when the provider still points at its ow
 cloud endpoint; if you have overridden the upstream, orangebox forwards and lets
 that endpoint decide what it wants.
 
+**Share a run, and open one.** `orangebox export` writes a self-contained JSON file; `orangebox import` reads one back in, so a recording from a teammate lands in your own timeline and can be diffed against your own runs. Imports are additive and named as imports — a recording somebody else made should never be mistaken for your own.
+
 **Whole-run comparison.** Compare any two runs call by call. Missing calls and regressions are explicit instead of being buried in two timelines.
 
 **Find old evidence.** Search *inside* recorded prompts and responses at `/find` (or `orangebox find`), so "the run where the model mentioned the migration lock" is one query rather than an afternoon. Search run names and tags; filter by model, provider, tool, error state, minimum latency, minimum cost, or date; rename and tag runs; and page through the complete history.
@@ -169,6 +171,8 @@ four times budget — a regression rather than a noisy neighbour.
 | `orangebox export <run-id> [-o file]` | Write a self-contained JSON file of the run — commit it to a bug report. |
 | `orangebox assert <run-id> [limits]` | Exit non-zero when cost, latency, errors, call count, or unknown costs exceed a CI threshold. |
 | `orangebox spend [--group <k>]` | What your agents have cost, by model, provider, run, or day — with an explicit count of what it could not price. |
+| `orangebox import <file.json>` | Load a run somebody exported. Additive — never overwrites what you already have. |
+| `orangebox prune [--older-than <d>]` | Reclaim space by age or size (`--max-size 500MB`), or rebuild the file (`--vacuum`). |
 | `orangebox find <text>` | Search recorded prompts and responses. Prints the run, call, model, and a snippet. |
 | `orangebox tools [--sort]` | Which tools your agent leans on, which fail, and which never got an answer. |
 | `orangebox doctor` | Show what orangebox actually resolved: providers, upstreams, credentials, database, pricing coverage. Exits non-zero on a failure. |

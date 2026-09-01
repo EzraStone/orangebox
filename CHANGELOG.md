@@ -6,6 +6,8 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Added
 
+- `orangebox import <file.json>` reads an exported run into the local database (§10.7).
+- `orangebox prune` reclaims space by age or size, and `--vacuum` rebuilds the file so deleted pages return to the filesystem.
 - Optional config file at `~/.orangebox/config.json` for port, host, db, gap, retention, upstreams, and redaction rules. Flags win over the file; the file wins over defaults.
 - User-defined redaction (§12.4): regexes in `redact` scrub sensitive text from recorded prompts and responses before they are written. Affects what is stored, never what is forwarded.
 - Keyboard shortcut overlay behind `?`.
@@ -27,6 +29,7 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Fixed
 
+- `orangebox run` set base URLs for Anthropic and OpenAI only, so wrapping a Gemini, Ollama or Bedrock agent produced an empty run while reporting that it was recording. All five providers are now pointed at the run-scoped prefix.
 - A failure during UI startup rendered "Recorder unavailable" with the underlying error discarded, making it indistinguishable from the server being down. The reason is now logged.
 
 - **Gemini, Ollama and Bedrock were unreachable from the CLI.** They shipped in 1.2.0 routable, parsed, priced and covered by end-to-end tests, but `providersFrom()` named only openai and anthropic, so every real invocation proxied the other three to `undefined/v1/...`. The test suite passed throughout because the harness injects a providers map directly — the one path no user takes. Provider routes are now derived from the upstream table, so nothing can be routable without somewhere to route it.
