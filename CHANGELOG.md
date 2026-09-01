@@ -2,21 +2,12 @@
 
 All notable changes to orangebox are documented here. Versions follow semantic versioning.
 
-## Unreleased
+## [1.3.0] - 2026-09-01
 
 ### Added
 
 - Import by dropping an exported run onto the UI, and `POST /api/import`.
 - `orangebox assert --max-unanswered-tools` and `--max-tool-errors`: fail CI when an agent loop does not complete, which every existing threshold passes through.
-
-### Changed
-
-- The segmented control and time-window list are shared by every cross-run view instead of being redefined three times, where they had already drifted.
-
-## [1.3.0] - 2026-09-01
-
-### Added
-
 - `orangebox import <file.json>` reads an exported run into the local database (§10.7).
 - `orangebox prune` reclaims space by age or size, and `--vacuum` rebuilds the file so deleted pages return to the filesystem.
 - Optional config file at `~/.orangebox/config.json` for port, host, db, gap, retention, upstreams, and redaction rules. Flags win over the file; the file wins over defaults.
@@ -28,6 +19,10 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 - Tool analytics (§19.8) at `/tools` and as `orangebox tools`: uses, error rate, unanswered calls, and timing per tool, with `--json` and `--csv`. Served at `GET /api/tools`.
 - `orangebox doctor`: reports the resolved version, database, every routable provider with its upstream and credential status, and pricing coverage against calls actually recorded. Exits non-zero on a failure; `--json` for tooling.
 - Integration tests that run the CLI as a real subprocess, covering provider routing, `spend`, `export`, `assert`, and `doctor`. The 1.2.0 provider bug survived a full release because every test built the server in-process, skipping the code that turns flags into configuration.
+
+### Changed
+
+- The segmented control and time-window list are shared by every cross-run view instead of being redefined three times, where they had already drifted.
 
 ## [1.2.1] - 2026-08-30
 
