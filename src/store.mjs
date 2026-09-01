@@ -767,6 +767,72 @@ export class Store {
     return ids.length;
   }
 
+  /**
+   * Delete the oldest runs until the database is at or below `targetBytes`.
+   *
+   * Size-based pruning exists because "keep 30 days" is the wrong question
+   * when one afternoon of a chatty agent outweighs a quiet month. Deletion is
+   * still oldest-first: age is the only ordering anyone can reason about, and
+   * dropping the *largest* run would take out exactly the recording most worth
+   * keeping.
+   *
+   * Returns { deleted, before, after, reclaimed }. Nothing is deleted when the
+   * database is already small enough, and the newest run is never removed —
+   * pruning to nothing would leave a tool that appears to have lost your data.
+   */
+  pruneToSize(targetBytes, { vacuum = true } = {}) {
+    const before = this.sizeBytes();
+    if (!Number.isFinite(targetBytes) || targetBytes <= 0 || before <= targetBytes) {
+      return { deleted: 0, before, after: before, reclaimed: 0 };
+    }
+
+    const runs = this.db
+      .prepare('SELECT id FROM runs ORDER BY started_at ASC')
+      .all()
+      .map((r) => r.id);
+
+    let deleted = 0;
+    // Leave the newest run alone whatever happens.
+    for (const id of runs.slice(0, -1)) {
+      this.q.deleteRun.run(id);
+      deleted += 1;
+
+      // Space is only actually reclaimed after a checkpoint, so measuring
+      // between every delete would report no progress and delete everything.
+      if (deleted % 25 === 0 && this.checkpoint() <= targetBytes) break;
+    }
+
+    if (vacuum) this.vacuum();
+    const after = this.sizeBytes();
+    return { deleted, before, after, reclaimed: Math.max(0, before - after) };
+  }
+
+  /** Fold the WAL back into the main file and report the resulting size. */
+  checkpoint() {
+    if (this.path === ':memory:') return 0;
+    try {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch {
+      // A checkpoint can fail while another connection holds a read; that is
+      // not a reason to abandon pruning.
+    }
+    return this.sizeBytes();
+  }
+
+  /**
+   * Rebuild the file so deleted pages are returned to the filesystem.
+   * SQLite frees pages for reuse on delete but does not shrink the file, so
+   * without this a prune reports success and the file stays the same size.
+   */
+  vacuum() {
+    if (this.path === ':memory:') return 0;
+    const before = this.sizeBytes();
+    this.checkpoint();
+    this.db.exec('VACUUM');
+    this.checkpoint();
+    return Math.max(0, before - this.sizeBytes());
+  }
+
   sizeBytes() {
     if (this.path === ':memory:') return 0;
     let total = 0;
