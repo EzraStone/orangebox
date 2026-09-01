@@ -886,3 +886,45 @@ footer.trust {
   outline: 2px solid var(--orange);
   outline-offset: -2px;
 }
+
+/* ---------------------------------------------------- §19.9 search view */
+
+.find-input {
+  width: 100%;
+  max-width: 520px;
+  padding: 7px 10px;
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+}
+.find-input:focus { outline: none; border-color: var(--orange); }
+
+.find-list { list-style: none; margin: 14px 0 0; padding: 0; }
+.find-hit {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.find-hit:hover { background: var(--panel-hi); border-color: #3a3f47; }
+.find-hit:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px; }
+
+.find-hit-head { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; font-size: 12px; margin-bottom: 5px; }
+.find-run { color: var(--text); font-weight: 500; }
+.find-sep, .find-meta { color: var(--muted); font-size: 11px; }
+.find-call { color: var(--orange); font-family: var(--mono); font-size: 11px; }
+
+/* Snippets are raw JSON, so they stay on one line and clip rather than
+   wrapping into a wall of braces. */
+.find-snippet {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.find-snippet mark { background: var(--orange-dim); color: var(--text); border-radius: 2px; padding: 0 1px; }

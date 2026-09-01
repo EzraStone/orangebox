@@ -5,6 +5,7 @@ import { diffLines, collapseUnchanged, diffStats } from '/diff.js';
 import { el, $, fmt } from '/dom.js';
 import { renderSpend, loadSpend } from '/spend.js';
 import { renderTools, loadTools } from '/tools.js';
+import { renderFind, loadFind, state as findState } from '/find.js';
 
 const authToken = new URLSearchParams(location.search).get('token');
 let csrfToken = null;
@@ -76,7 +77,7 @@ const state = {
   readOnly: false,
   mobileAccess: false,
   filters: { search: '', model: '', provider: '', tool: '', error: '', min_latency: '', min_cost: '', from: '', to: '' },
-  view: 'runs', // 'runs' | 'spend' | 'tools'
+  view: 'runs', // 'runs' | 'spend' | 'tools' | 'find'
   runId: null,
   run: null,
   calls: [],
@@ -271,6 +272,28 @@ const SPEND_PATH = '/spend';
 const pathIsSpend = () => location.pathname === SPEND_PATH;
 
 const TOOLS_PATH = '/tools';
+const FIND_PATH = '/find';
+const pathIsFind = () => location.pathname === FIND_PATH;
+
+/** §19.9 — search recorded content. */
+async function openFind({ replace = false } = {}) {
+  state.view = 'find';
+  if (!pathIsFind()) history[replace ? 'replaceState' : 'pushState']({}, '', FIND_PATH);
+  closeDetail();
+  renderRuns();
+  renderTimeline();
+  syncMobileNav();
+}
+
+let findTimer = null;
+function scheduleFind() {
+  clearTimeout(findTimer);
+  // Debounced: every keystroke otherwise scans every stored prompt.
+  findTimer = setTimeout(async () => {
+    await loadFind((path) => api.get(path));
+    if (state.view === 'find') renderTimeline();
+  }, 220);
+}
 const pathIsTools = () => location.pathname === TOOLS_PATH;
 
 /** §19.8 — the same shape as openSpend, on its own route. */
@@ -322,6 +345,7 @@ function closeAnalytics() {
 window.addEventListener('popstate', () => {
   if (pathIsSpend()) return void openSpend({ replace: true });
   if (pathIsTools()) return void openTools({ replace: true });
+  if (pathIsFind()) return void openFind({ replace: true });
   state.view = 'runs';
   selectRun(pathRunId(), { fromNav: true });
   renderTimeline();
@@ -621,6 +645,16 @@ async function deleteRun(run) {
 }
 
 function renderTimeline() {
+  if (state.view === 'find') {
+    renderAnalyticsHeader('Search');
+    return void renderFind($('timeline'), {
+      onSearch: scheduleFind,
+      onOpen: (hit) => {
+        closeAnalytics();
+        navigate(hit.run_id)?.then?.(() => selectCall(hit.id));
+      }
+    });
+  }
   if (state.view === 'tools') {
     renderAnalyticsHeader('Tools');
     return void renderTools($('timeline'), () => void refreshTools(), applySpendDrilldown);
@@ -1601,6 +1635,11 @@ document.addEventListener('keydown', (e) => {
     return void (state.view === 'tools' ? closeAnalytics() : openTools());
   }
 
+  if (e.key === '/') {
+    e.preventDefault();
+    return void (state.view === 'find' ? closeAnalytics() : openFind());
+  }
+
   // The rest of these steer the timeline, which is not what is on screen.
   if (state.view !== 'runs') return;
 
@@ -1725,6 +1764,11 @@ function dateBoundary(value, endOfDay) {
   return String(date.getTime());
 }
 
+$('find-open').addEventListener('click', () => {
+  if (state.view === 'find') closeAnalytics();
+  else void openFind();
+});
+
 $('tools-open').addEventListener('click', () => {
   if (state.view === 'tools') closeAnalytics();
   else void openTools();
@@ -1812,12 +1856,14 @@ async function boot() {
     // would otherwise get around to looking at it.
     const bootSpend = pathIsSpend();
     const bootTools = pathIsTools();
+    const bootFind = pathIsFind();
     state.runId = pathRunId();
     renderPill();
     await loadRuns();
     if (state.runId) await loadRun(state.runId);
     if (bootSpend) await openSpend({ replace: true });
     if (bootTools) await openTools({ replace: true });
+    if (bootFind) await openFind({ replace: true });
     connectLive();
   } catch (error) {
     // The user-facing message stays friendly, but swallowing the reason
