@@ -203,6 +203,49 @@ CI example:
 orangebox assert "$RUN_ID" --max-cost 0.25 --max-latency 5000 --max-errors 0 --max-calls 12 --require-known-cost
 ```
 
+## Configuration file
+
+Optional, at `~/.orangebox/config.json`. A flag always beats the file, and the
+file always beats the built-in default.
+
+```json
+{
+  "_comment": "keys starting with _ are ignored, so you can leave notes",
+  "port": 4100,
+  "gap": 300,
+  "retain": 30,
+  "upstreams": {
+    "openai": "http://127.0.0.1:8000/v1"
+  },
+  "redact": [
+    "ACCT-[0-9]{6}",
+    { "pattern": "[a-z0-9._]+@corp[.]example[.]com", "replacement": "[employee]", "label": "staff email" }
+  ]
+}
+```
+
+A malformed file prints the problem and orangebox starts on defaults — failing
+to boot over a stray comma is worse than starting without the file. An unknown
+key is reported rather than ignored, because a typo that silently does nothing
+leaves you believing the setting applied. `orangebox doctor` shows what was
+actually loaded.
+
+### Redacting your own prompts
+
+`redact` is a list of regular expressions applied to every string in a recorded
+prompt and response before it is written. orangebox already refuses to store API
+keys from headers (§12.2); this is for the sensitive text *inside* the prompt —
+a customer email, an internal hostname, an account number.
+
+Redaction changes what is **stored**, never what is **forwarded**. Your agent
+still sends and receives the real thing; only the recording is filtered.
+
+Rules run before the size cap, so a secret cannot survive by sitting past it.
+Object keys are left alone — renaming a field changes the shape of the record,
+and a payload whose structure silently changed is harder to debug than one with
+a visible placeholder. A call whose payload was rewritten says so, with a count
+per rule, so a filtered record is never mistaken for a verbatim one.
+
 ## Grouping calls into runs
 
 Every call belongs to exactly one run, resolved in this order:
