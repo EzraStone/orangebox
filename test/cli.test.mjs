@@ -90,3 +90,30 @@ test('the route pattern and the upstream table are the same list', async () => {
   const { ROUTABLE_PROVIDERS, PROVIDERS } = await import('../src/server.mjs');
   assert.deepEqual([...ROUTABLE_PROVIDERS].sort(), Object.keys(PROVIDERS).sort());
 });
+
+test('`run` points every recordable provider at the run-scoped prefix', async () => {
+  // The gap this closes: only ANTHROPIC_BASE_URL and OPENAI_BASE_URL were set,
+  // so wrapping a Gemini or Ollama agent produced an empty run while reporting
+  // that it was recording — the provider-routing bug again, in another file.
+  const { runScopedEnv } = await import('../src/cli.mjs');
+  const { ROUTABLE_PROVIDERS } = await import('../src/server.mjs');
+
+  const env = runScopedEnv('http://127.0.0.1:4100', 'run-1');
+  const urls = Object.values(env);
+
+  for (const provider of ROUTABLE_PROVIDERS) {
+    assert.ok(
+      urls.some((url) => url.endsWith(`/r/run-1/${provider}`)),
+      `no environment variable points at ${provider}`
+    );
+  }
+});
+
+test('run ids with awkward characters are escaped into the url', () => {
+  // Run ids are generated, but a caller can supply one via the header, and an
+  // unescaped slash would silently reroute the agent to a different provider.
+  return import('../src/cli.mjs').then(({ runScopedEnv }) => {
+    const env = runScopedEnv('http://x', 'a b/c');
+    assert.equal(env.ANTHROPIC_BASE_URL, 'http://x/r/a%20b%2Fc/anthropic');
+  });
+});

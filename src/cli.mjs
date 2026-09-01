@@ -310,8 +310,7 @@ async function runWrapped(args) {
 
   const env = {
     ...process.env,
-    ANTHROPIC_BASE_URL: `${origin}/r/${runId}/anthropic`,
-    OPENAI_BASE_URL: `${origin}/r/${runId}/openai`,
+    ...runScopedEnv(origin, runId),
     ORANGEBOX_RUN_ID: runId,
     ...(opts.authToken ? { ORANGEBOX_AUTH_TOKEN: opts.authToken } : {})
   };
@@ -1156,6 +1155,32 @@ function upstream(value, flag) {
 
 function displayHost(host) {
   return host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host;
+}
+
+/**
+ * The environment variables that point an agent's SDK at a run-scoped prefix.
+ *
+ * One entry per provider orangebox can record, because `orangebox run` setting
+ * only two of five meant a Gemini or Ollama agent was wrapped, reported as
+ * recording, and produced an empty run — the same shape of gap as the provider
+ * routing bug, in a different file.
+ *
+ * SDKs disagree about which variable they read, and some read none. Setting one
+ * an SDK ignores costs nothing, so this errs towards covering the documented
+ * name for each; anything unrecognised is simply inert in the child process.
+ */
+export function runScopedEnv(origin, runId) {
+  const base = (provider) => `${origin}/r/${encodeURIComponent(runId)}/${provider}`;
+  return {
+    ANTHROPIC_BASE_URL: base('anthropic'),
+    OPENAI_BASE_URL: base('openai'),
+    // Google's GenAI SDKs read this; older ones take a baseUrl in code instead.
+    GOOGLE_GEMINI_BASE_URL: base('gemini'),
+    // Ollama's own tooling and clients read OLLAMA_HOST.
+    OLLAMA_HOST: base('ollama'),
+    // AWS SDK v3 honours a per-service endpoint override.
+    AWS_ENDPOINT_URL_BEDROCK_RUNTIME: base('bedrock')
+  };
 }
 
 function environmentCommands(origin) {
