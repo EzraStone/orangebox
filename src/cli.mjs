@@ -427,6 +427,7 @@ async function exportRun(args) {
 async function assertRun(args) {
   const positional = [];
   let dbPath = null;
+  let asJson = false;
   const limits = {};
   for (let i = 0; i < args.length; i++) {
     const next = () => {
@@ -441,6 +442,7 @@ async function assertRun(args) {
       case '--max-errors': limits.maxErrors = int(next(), '--max-errors'); break;
       case '--max-calls': limits.maxCalls = int(next(), '--max-calls'); break;
       case '--require-known-cost': limits.requireKnownCost = true; break;
+      case '--json': asJson = true; break;
       case '--max-tool-errors': limits.maxToolErrors = int(next(), '--max-tool-errors'); break;
       case '--max-unanswered-tools': limits.maxUnansweredTools = int(next(), '--max-unanswered-tools'); break;
       default:
@@ -457,6 +459,28 @@ async function assertRun(args) {
     const run = store.getRun(runId);
     if (!run) fail(`no run with id "${runId}"`);
     const result = evaluateRunAssertions(run, store.callSummaries(runId), limits, store.toolEvents(runId));
+
+    if (asJson) {
+      // Everything a build step might branch on, including the measurements
+      // that passed — a gate that only reports failures cannot be graphed.
+      console.log(JSON.stringify({
+        run_id: runId,
+        ok: result.ok,
+        failures: result.failures,
+        limits,
+        measured: {
+          cost_usd: run.cost_usd,
+          calls: run.call_count,
+          errors: run.error_count,
+          unknown_cost: run.unknown_cost_count,
+          max_latency_ms: result.maxLatency,
+          tools: result.tools
+        }
+      }, null, 2));
+      if (!result.ok) process.exitCode = 1;
+      return;
+    }
+
     if (result.ok) {
       console.log(`orangebox assertions passed for ${runId}`);
       return;
@@ -1329,6 +1353,7 @@ ASSERT LIMITS
   --require-known-cost      fail when any call has unknown cost
   --max-tool-errors <n>     maximum failed tool results
   --max-unanswered-tools <n>  maximum tool calls that never got a result
+  --json                    machine-readable result, including what passed
 
 EASIEST START
   orangebox run --name "checkout bot" -- node agent.js

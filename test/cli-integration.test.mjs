@@ -371,3 +371,38 @@ test('`errors` reports a clean database as clean', async () => {
     removeTempDir(server.dbPath);
   }
 });
+
+test('`assert --json` reports what passed as well as what failed', async () => {
+  const upstream = await startMockUpstream((req, res) =>
+    jsonResponse(res, 200, {
+      model: 'claude-opus-5', stop_reason: 'end_turn',
+      usage: { input_tokens: 1000, output_tokens: 200 }
+    })
+  );
+  const server = await startCliServer(['--anthropic-upstream', upstream.origin]);
+
+  try {
+    await recordOneCall(server);
+
+    const pass = await runCli(['assert', 'cli-test-run', '--db', server.dbPath, '--max-cost', '10', '--json']);
+    assert.equal(pass.code, 0, pass.output);
+    const passed = JSON.parse(pass.stdout);
+    assert.equal(passed.ok, true);
+    assert.deepEqual(passed.failures, []);
+    // A gate that reports only failures cannot be graphed over time.
+    assert.equal(typeof passed.measured.cost_usd, 'number');
+    assert.equal(passed.measured.calls, 1);
+    assert.equal(typeof passed.measured.tools.unanswered, 'number');
+
+    const fail = await runCli(['assert', 'cli-test-run', '--db', server.dbPath, '--max-cost', '0', '--json']);
+    assert.equal(fail.code, 1, 'a failed assertion must still exit non-zero in json mode');
+    const failed = JSON.parse(fail.stdout);
+    assert.equal(failed.ok, false);
+    assert.equal(failed.failures.length, 1);
+    assert.equal(failed.limits.maxCost, 0, 'the limits are echoed back');
+  } finally {
+    await server.stop();
+    await upstream.close();
+    removeTempDir(server.dbPath);
+  }
+});
