@@ -68,6 +68,10 @@ function splitCommand(argv) {
 }
 
 function parseFlags(args) {
+  // Which settings the user actually typed. parseFlags starts from DEFAULTS,
+  // so without this there is no way to tell "--port 4100" from "not given" —
+  // and the config file would be unable to change anything with a default.
+  const explicit = new Set();
   const out = { ...DEFAULTS };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -77,31 +81,68 @@ function parseFlags(args) {
       return v;
     };
     switch (arg) {
-      case '--port': out.port = int(next(), '--port'); break;
-      case '--host': out.host = next(); break;
-      case '--db': out.db = next(); break;
-      case '--gap': out.gap = int(next(), '--gap'); break;
-      case '--retain': out.retain = int(next(), '--retain'); break;
-      case '--openai-upstream': out.openaiUpstream = next(); break;
-      case '--anthropic-upstream': out.anthropicUpstream = next(); break;
-      case '--gemini-upstream': out.geminiUpstream = next(); break;
-      case '--ollama-upstream': out.ollamaUpstream = next(); break;
-      case '--bedrock-upstream': out.bedrockUpstream = next(); break;
-      case '--auth-token': out.authToken = next(); break;
-      case '--mobile': out.mobile = true; break;
-      case '--unsafe-no-auth': out.unsafeNoAuth = true; break;
-      case '--no-open': out.open = false; break;
+      case '--port': out.port = int(next(), '--port'); explicit.add('port'); break;
+      case '--host': out.host = next(); explicit.add('host'); break;
+      case '--db': out.db = next(); explicit.add('db'); break;
+      case '--gap': out.gap = int(next(), '--gap'); explicit.add('gap'); break;
+      case '--retain': out.retain = int(next(), '--retain'); explicit.add('retain'); break;
+      case '--openai-upstream': out.openaiUpstream = next(); explicit.add('openaiUpstream'); break;
+      case '--anthropic-upstream': out.anthropicUpstream = next(); explicit.add('anthropicUpstream'); break;
+      case '--gemini-upstream': out.geminiUpstream = next(); explicit.add('geminiUpstream'); break;
+      case '--ollama-upstream': out.ollamaUpstream = next(); explicit.add('ollamaUpstream'); break;
+      case '--bedrock-upstream': out.bedrockUpstream = next(); explicit.add('bedrockUpstream'); break;
+      case '--auth-token': out.authToken = next(); explicit.add('authToken'); break;
+      case '--mobile': out.mobile = true; explicit.add('mobile'); break;
+      case '--unsafe-no-auth': out.unsafeNoAuth = true; explicit.add('unsafeNoAuth'); break;
+      case '--no-open': out.open = false; explicit.add('open'); break;
       case '--help': case '-h': printHelp(); process.exit(0);
       default: fail(`unknown flag "${arg}"`);
     }
   }
   if (out.mobile && out.host === DEFAULTS.host) out.host = '0.0.0.0';
+  out.explicit = explicit;
   return out;
 }
 
+/**
+ * Fold ~/.orangebox/config.json into the parsed flags.
+ *
+ * Only settings the user did not type are taken from the file, so a flag
+ * always wins. Problems with the file are printed rather than thrown: a
+ * typo in a config file should not stop the recorder starting.
+ */
+async function applyConfig(opts) {
+  const { loadConfig, compileRedactionRules } = await import('./config.mjs');
+  const { config, path: file, present, errors } = loadConfig();
+
+  for (const message of errors) console.error(warn(`  ${message}`));
+
+  const take = (key, flagKey = key) => {
+    if (config[key] !== undefined && !opts.explicit.has(flagKey)) opts[flagKey] = config[key];
+  };
+  take('port');
+  take('host');
+  take('db');
+  take('gap');
+  take('retain');
+  take('open');
+
+  if (config.upstreams) {
+    for (const [provider, url] of Object.entries(config.upstreams)) {
+      const flagKey = `${provider}Upstream`;
+      if (!opts.explicit.has(flagKey)) opts[flagKey] = url;
+    }
+  }
+
+  const { rules, errors: ruleErrors } = compileRedactionRules(config.redact ?? []);
+  for (const message of ruleErrors) console.error(warn(`  ${message}`));
+
+  return { opts, redactionRules: rules, configPath: present ? file : null };
+}
 // ------------------------------------------------------------------ start
 
-async function start(opts) {
+async function start(rawOpts) {
+  const { opts, redactionRules, configPath } = await applyConfig(rawOpts);
   requireRemoteSafety(opts);
   const dbPath = opts.db ?? defaultDbPath();
   let app;
@@ -111,7 +152,8 @@ async function start(opts) {
       gapSeconds: opts.gap,
       providers: providersFrom(opts),
       authToken: opts.authToken,
-      mobileAccess: opts.mobile
+      mobileAccess: opts.mobile,
+      redactionRules
     });
   } catch (err) {
     fail(err.message);
@@ -132,7 +174,7 @@ async function start(opts) {
   }
 
   const origin = `http://${displayHost(opts.host)}:${opts.port}`;
-  banner({ origin, store: app.store, host: opts.host, port: opts.port, willOpen: opts.open, authToken: opts.authToken, mobile: app.mobile });
+  banner({ origin, store: app.store, host: opts.host, port: opts.port, willOpen: opts.open, authToken: opts.authToken, mobile: app.mobile, configPath, redactionCount: redactionRules.length });
 
   if (opts.open) openBrowser(opts.authToken ? `${origin}?token=${encodeURIComponent(opts.authToken)}` : origin);
 
@@ -145,7 +187,7 @@ async function start(opts) {
   return app;
 }
 
-function banner({ origin, store, host, port, willOpen, authToken, mobile }) {
+function banner({ origin, store, host, port, willOpen, authToken, mobile, configPath = null, redactionCount = 0 }) {
   const size = store.sizeBytes();
   const runs = store.countRuns();
   console.log('');
@@ -157,6 +199,12 @@ function banner({ origin, store, host, port, willOpen, authToken, mobile }) {
   for (const line of environmentCommands(origin)) console.log(`  ▮   ${line}`);
   console.log(`  ▮ ui             ${origin}${willOpen ? '  (opening browser…)' : ''}`);
   if (authToken) console.log('  ▮ authentication x-orangebox-auth is required');
+  // Both of these change what ends up recorded, so running with them
+  // silently would be the wrong kind of quiet.
+  if (configPath) console.log(`  ▮ config         ${configPath}`);
+  if (redactionCount > 0) {
+    console.log(`  ▮ redaction      ${redactionCount} rule${redactionCount === 1 ? '' : 's'} applied to recorded prompts`);
+  }
   if (mobile?.enabled) {
     const mobileOrigin = lanOrigin(port);
     console.log(`  ▮ mobile         ${mobileOrigin}`);
