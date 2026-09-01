@@ -153,6 +153,13 @@ Recording happens **after** your client's response is finished — never in the 
 | Request → recorded | 3 ms p50 | < 150 ms |
 | UI open, 1000-call run | 11 ms | < 500 ms |
 
+Reproduce them with `npm run bench`. It is deliberately not part of `npm test`:
+these are wall-clock numbers, and a shared CI runner under load would fail them
+for reasons that have nothing to do with orangebox. A flaky performance test
+teaches people to re-run until it passes, which is how a real regression gets
+waved through. The script reports every measurement and exits non-zero only at
+four times budget — a regression rather than a noisy neighbour.
+
 ## CLI
 
 | Command | What it does |
