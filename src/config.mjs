@@ -136,6 +136,11 @@ export function resolveSettings({ flags = {}, config = {}, defaults = {} } = {})
   return out;
 }
 
+function forceGlobal(flags) {
+  const clean = typeof flags === 'string' ? flags.replace(/[^gimsu]/g, '') : '';
+  return clean.includes('g') ? clean : 'g' + clean;
+}
+
 /** Turn validated rules into compiled regexes, dropping any that will not compile. */
 export function compileRedactionRules(rules = []) {
   const compiled = [];
@@ -144,7 +149,10 @@ export function compileRedactionRules(rules = []) {
   for (const rule of rules) {
     try {
       compiled.push({
-        regex: new RegExp(rule.pattern, rule.flags ?? 'g'),
+        // Force g here as well as in the config parser: this function is the
+        // last gate, and a non-global rule scrubs only the first occurrence
+        // of a secret, which is not scrubbing it.
+        regex: new RegExp(rule.pattern, forceGlobal(rule.flags)),
         replacement: rule.replacement ?? '[redacted]',
         label: rule.label ?? rule.pattern
       });

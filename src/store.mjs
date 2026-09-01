@@ -920,6 +920,56 @@ function placeholder(kind, byteLength) {
  * leaves — longest first — until it fits. Structure always survives; only bulk
  * text is cut. Returns { json, truncated }.
  */
+/**
+ * §12.4 — apply the user's own redaction rules to a recorded payload.
+ *
+ * orangebox already refuses to store credentials from headers (§12.2). This is
+ * the other half: text inside the prompt itself that the person recording knows
+ * is sensitive — a customer email, an internal hostname, an account number.
+ *
+ * Applied to strings only, and applied before truncation, so a secret cannot
+ * survive by sitting past the size cap. Object keys are left alone: renaming a
+ * field changes the shape of the record, and a prompt whose structure has
+ * silently changed is worse for debugging than one with a visible placeholder
+ * in it.
+ *
+ * Returns { value, hits } — hits counts replacements per rule label, so the UI
+ * can say a record was scrubbed rather than leaving the user to wonder whether
+ * their rules fired.
+ */
+export function applyRedactionRules(value, rules = []) {
+  if (rules.length === 0) return { value, hits: {} };
+
+  const hits = {};
+  const scrub = (text) => {
+    let out = text;
+    for (const rule of rules) {
+      // Reset lastIndex: a /g regex reused across calls resumes where it
+      // stopped, so every other payload would be skipped.
+      rule.regex.lastIndex = 0;
+      const replaced = out.replace(rule.regex, () => {
+        hits[rule.label] = (hits[rule.label] ?? 0) + 1;
+        return rule.replacement;
+      });
+      out = replaced;
+    }
+    return out;
+  };
+
+  const walk = (node) => {
+    if (typeof node === 'string') return scrub(node);
+    if (Array.isArray(node)) return node.map(walk);
+    if (node !== null && typeof node === 'object') {
+      const out = {};
+      for (const [key, child] of Object.entries(node)) out[key] = walk(child);
+      return out;
+    }
+    return node;
+  };
+
+  return { value: walk(value), hits };
+}
+
 export function serializeForStorage(value, limit = MAX_BLOB_BYTES) {
   let json = safeStringify(value);
   if (Buffer.byteLength(json) <= limit) return { json, truncated: 0 };
