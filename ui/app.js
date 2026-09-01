@@ -2,13 +2,49 @@
 // third-party anything. Every piece of recorded content is inserted with
 // textContent; a prompt containing markup renders inert (§12.3).
 import { diffLines, collapseUnchanged, diffStats } from '/diff.js';
-import { el, $, fmt } from '/dom.js';
+import { el, $, fmt, SHORTCUTS } from '/dom.js';
 import { renderSpend, loadSpend } from '/spend.js';
 import { renderTools, loadTools } from '/tools.js';
 import { renderFind, loadFind, state as findState } from '/find.js';
 
 const authToken = new URLSearchParams(location.search).get('token');
 let csrfToken = null;
+
+/** The overlay itself. Reuses the modal layer so Escape and click-away work. */
+function openShortcutHelp() {
+  if (document.querySelector('.shortcut-layer')) return;
+
+  const rows = SHORTCUTS.map((shortcut) =>
+    el('div', { class: 'shortcut-row' }, [
+      el('span', { class: 'shortcut-keys' }, shortcut.keys.map((key) => el('kbd', { text: key }))),
+      el('span', { class: 'shortcut-label', text: shortcut.label })
+    ])
+  );
+
+  const card = el('section', { class: 'modal-card shortcut-card' }, [
+    el('h2', { class: 'modal-title', text: 'Keyboard shortcuts' }),
+    el('div', { class: 'shortcut-grid' }, rows),
+    el('p', { class: 'note', text: 'Shortcuts are ignored while a text field has focus.' })
+  ]);
+
+  const layer = el('div', { class: 'modal-layer shortcut-layer' }, [card]);
+  const close = () => {
+    document.removeEventListener('keydown', onKey);
+    layer.remove();
+  };
+  const onKey = (event) => {
+    if (event.key === 'Escape' || event.key === '?') {
+      event.preventDefault();
+      close();
+    }
+  };
+
+  layer.addEventListener('click', (event) => {
+    if (event.target === layer) close();
+  });
+  document.addEventListener('keydown', onKey);
+  document.body.append(layer);
+}
 
 function openModal({ title, message = '', fields = [], confirmText = 'Save', danger = false }) {
   return new Promise((resolve) => {
@@ -1633,6 +1669,11 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 't') {
     e.preventDefault();
     return void (state.view === 'tools' ? closeAnalytics() : openTools());
+  }
+
+  if (e.key === '?') {
+    e.preventDefault();
+    return void openShortcutHelp();
   }
 
   if (e.key === '/') {

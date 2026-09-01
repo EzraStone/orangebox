@@ -97,3 +97,23 @@ export const fmt = {
     }
   }
 };
+
+/**
+ * §11 — every keyboard shortcut, in one place.
+ *
+ * Exported as data so the overlay and a test read the same list. The app grew
+ * eight shortcuts with no way to discover any of them; a binding nobody knows
+ * about is a binding that does not exist.
+ */
+export const SHORTCUTS = [
+  { keys: ['j'], label: 'Next call' },
+  { keys: ['k'], label: 'Previous call' },
+  { keys: ['Enter'], label: 'Open the selected call' },
+  { keys: ['g'], label: 'Jump to the newest call and follow live' },
+  { keys: ['/'], label: 'Search recorded prompts and responses' },
+  { keys: ['$'], label: 'Spend across runs' },
+  { keys: ['t'], label: 'Tool usage across runs' },
+  { keys: [String.fromCharCode(92)], label: 'Show or hide the runs pane' },
+  { keys: ['?'], label: 'This list' },
+  { keys: ['Esc'], label: 'Close whatever is open' }
+];
