@@ -316,3 +316,46 @@ test('`tools` on an empty database says so instead of printing a blank table', a
     removeTempDir(server.dbPath);
   }
 });
+
+test('`find` searches recorded content and reports where it matched', async () => {
+  const upstream = await startMockUpstream((req, res) =>
+    jsonResponse(res, 200, {
+      model: 'claude-opus-5',
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 10, output_tokens: 5 },
+      content: [{ type: 'text', text: 'the migration lock was still held' }]
+    })
+  );
+  const server = await startCliServer(['--anthropic-upstream', upstream.origin]);
+
+  try {
+    await recordOneCall(server);
+
+    const hit = await runCli(['find', 'migration lock', '--db', server.dbPath]);
+    assert.equal(hit.code, 0, hit.output);
+    assert.match(hit.stdout, /migration lock/);
+    assert.match(hit.stdout, /response/);
+    assert.match(hit.stdout, /1 match/);
+
+    // The snippet must survive whitespace collapsing intact. A mangled regex
+    // here once deleted every letter s from the output.
+    assert.match(hit.stdout, /was still held/);
+
+    const miss = await runCli(['find', 'nothing-like-this-exists', '--db', server.dbPath]);
+    assert.equal(miss.code, 0);
+    assert.match(miss.stdout, /no recorded call contains/);
+
+    const json = await runCli(['find', 'migration', '--db', server.dbPath, '--json']);
+    assert.equal(JSON.parse(json.stdout).total, 1);
+  } finally {
+    await server.stop();
+    await upstream.close();
+    removeTempDir(server.dbPath);
+  }
+});
+
+test('`find` with no search text explains itself instead of dumping the database', async () => {
+  const result = await runCli(['find']);
+  assert.notEqual(result.code, 0);
+  assert.match(result.output, /usage: orangebox find/);
+});

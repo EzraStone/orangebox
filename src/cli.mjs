@@ -39,6 +39,8 @@ export async function main(argv) {
       return runWrapped(rest);
     case 'export':
       return exportRun(rest);
+    case 'find':
+      return findCalls(rest);
     case 'tools':
       return toolReport(rest);
     case 'doctor':
@@ -474,6 +476,94 @@ async function doctor(args) {
   }
 }
 
+
+// ----------------------------------------------------------------- find
+
+/**
+ * §19.9 — grep your own recorded prompts and responses.
+ */
+async function findCalls(args) {
+  const positional = [];
+  let dbPath = null;
+  let limit = 20;
+  let since = null;
+  let until = null;
+  let format = 'text';
+
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--limit': case '-n': limit = int(next(), '--limit'); break;
+      case '--since': since = epochArg(next(), '--since'); break;
+      case '--until': until = epochArg(next(), '--until'); break;
+      case '--days': since = Date.now() - int(next(), '--days') * 86_400_000; break;
+      case '--json': format = 'json'; break;
+      default:
+        if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
+        positional.push(args[i]);
+    }
+  }
+
+  const query = positional.join(' ');
+  if (!query) fail('usage: orangebox find <text> [--limit n] [--days n]');
+
+  const { openStore } = await import('./store.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+  try {
+    const found = store.searchCalls({ query, limit, since, until });
+    if (format === 'json') return void console.log(JSON.stringify(found, null, 2));
+
+    if (found.total === 0) {
+      console.log(`no recorded call contains ${JSON.stringify(query)}`);
+      return;
+    }
+
+    console.log();
+    for (const hit of found.results) {
+      const when = new Date(hit.started_at).toISOString().replace(/[TZ]/g, " ").slice(0, 19);
+      const flags = [hit.where, hit.error_type].filter(Boolean).join(', ');
+      console.log(`  ${hit.run_name}  ·  call ${String(hit.seq).padStart(2, "0")}  ·  ${hit.model ?? "?"}  ·  ${when} (${flags})`);
+      console.log(`    ${highlight(collapse(hit.snippet ?? ''), query)}`);
+      console.log(`    ${hit.id}`);
+      console.log();
+    }
+
+    const capped = found.total === found.limit;
+    console.log(`  ${found.total} match${found.total === 1 ? "" : "es"}${capped ? ` (capped at ${found.limit}; raise it with --limit)` : ""}`);
+    console.log();
+  } finally {
+    store.close();
+  }
+}
+
+/**
+ * Snippets come from JSON blobs, so they arrive full of newlines and padding.
+ *
+ * The whitespace class is built with String.fromCharCode rather than written
+ * as a regex literal, because that literal has lost its backslash in transit
+ * before — and the resulting /s+/ silently deletes every letter s from the
+ * output, which reads as a font problem rather than a bug.
+ */
+function collapse(text) {
+  const WHITESPACE = new RegExp(String.fromCharCode(92) + 's+', 'g');
+  return String(text).replace(WHITESPACE, ' ').trim();
+}
+
+/** Mark the hit, when a human is watching. */
+function highlight(text, query) {
+  if (!useColour()) return text;
+  const at = text.toLowerCase().indexOf(query.toLowerCase());
+  if (at === -1) return text;
+  const ESC = String.fromCharCode(27);
+  return text.slice(0, at) +
+    ESC + "[1m" + text.slice(at, at + query.length) + ESC + "[0m" +
+    text.slice(at + query.length);
+}
 // ---------------------------------------------------------------- tools
 
 /**
@@ -899,6 +989,7 @@ USAGE
   orangebox export <run-id> [-o file]  write a run to a self-contained JSON file
   orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
   orangebox spend [--group <k>]        what your agents have cost so far
+  orangebox find <text>                search your recorded prompts and responses
   orangebox tools                      which tools get used, fail, and take time
   orangebox doctor                     show what orangebox actually resolved
   orangebox clear [--yes]              delete all recorded data
