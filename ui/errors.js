@@ -4,14 +4,8 @@
 // "12" tells you nothing until you know whether that is 12 of 12 or 12 of
 // 9,000. So every row leads with a rate and the count sits behind it.
 
-import { el, fmt } from './dom.js';
+import { el, fmt, segmented, WINDOWS } from './dom.js';
 
-export const WINDOWS = [
-  ['', 'All time'],
-  ['1', '24 hours'],
-  ['7', '7 days'],
-  ['30', '30 days']
-];
 
 /** How alarming a share is. Thresholds, not a gradient — a bar chart of error
  *  rates invites comparing failures to each other rather than to zero. */
@@ -57,27 +51,6 @@ export async function loadErrors(get) {
   }
 }
 
-function segmented(options, current, apply, onChange, label) {
-  const wrap = el('div', { class: 'segmented', role: 'group', 'aria-label': label });
-  for (const [value, text] of options) {
-    wrap.append(
-      el('button', {
-        class: 'seg',
-        type: 'button',
-        'aria-pressed': String(current === value),
-        text,
-        on: {
-          click: () => {
-            if (current === value) return;
-            apply(value);
-            onChange();
-          }
-        }
-      })
-    );
-  }
-  return wrap;
-}
 
 function errorRow(error, onOpen) {
   return el('li', {
@@ -114,7 +87,7 @@ export function renderErrors(host, onChange, onOpen) {
   body.append(
     el('div', { class: 'spend-controls' }, [
       el('span', { class: 'spend-ctl-label', text: 'window' }),
-      segmented(WINDOWS, state.days, (v) => (state.days = v), onChange, 'Time window')
+      segmented({ options: WINDOWS, current: state.days, label: 'Time window', onPick: (v) => { state.days = v; onChange(); } })
     ])
   );
 

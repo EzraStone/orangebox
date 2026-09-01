@@ -118,3 +118,43 @@ export const SHORTCUTS = [
   { keys: ['?'], label: 'This list' },
   { keys: ['Esc'], label: 'Close whatever is open' }
 ];
+
+/**
+ * The time windows every cross-run view offers. One list, because three views
+ * each defining their own drifted immediately — spend had "24 hours" where
+ * tools had "Last 24 hours", for no reason anyone chose.
+ */
+export const WINDOWS = [
+  ['', 'All time'],
+  ['1', '24 hours'],
+  ['7', '7 days'],
+  ['30', '30 days']
+];
+
+/**
+ * A row of mutually exclusive buttons.
+ *
+ * `aria-pressed` rather than a class, so the current choice is announced
+ * rather than only coloured; the label names the group for anyone arriving
+ * without seeing the text beside it.
+ */
+export function segmented({ options, current, onPick, label }) {
+  const wrap = el('div', { class: 'segmented', role: 'group', 'aria-label': label });
+  for (const [value, text] of options) {
+    wrap.append(
+      el('button', {
+        class: 'seg',
+        type: 'button',
+        'aria-pressed': String(current === value),
+        text,
+        on: {
+          click: () => {
+            if (current === value) return; // re-picking the current filter is a no-op
+            onPick(value);
+          }
+        }
+      })
+    );
+  }
+  return wrap;
+}

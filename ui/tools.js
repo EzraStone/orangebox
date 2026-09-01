@@ -5,14 +5,8 @@
 // much of the number is real, rather than presenting a confident average built
 // from two samples.
 
-import { el, fmt } from './dom.js';
+import { el, fmt, segmented, WINDOWS } from './dom.js';
 
-export const WINDOWS = [
-  ['', 'All time'],
-  ['1', '24 hours'],
-  ['7', '7 days'],
-  ['30', '30 days']
-];
 
 export const SORTS = [
   ['uses', 'Most used'],
@@ -90,27 +84,6 @@ export async function loadTools(get) {
   }
 }
 
-function segmented(options, current, apply, onChange, label) {
-  const wrap = el('div', { class: 'segmented', role: 'group', 'aria-label': label });
-  for (const [value, text] of options) {
-    wrap.append(
-      el('button', {
-        class: 'seg',
-        type: 'button',
-        'aria-pressed': String(current === value),
-        text,
-        on: {
-          click: () => {
-            if (current === value) return;
-            apply(value);
-            onChange();
-          }
-        }
-      })
-    );
-  }
-  return wrap;
-}
 
 function table(tools, onDrill) {
   const head = el('tr', {}, [
@@ -191,10 +164,10 @@ export function renderTools(host, onChange, onDrill) {
   body.append(
     el('div', { class: 'spend-controls' }, [
       el('span', { class: 'spend-ctl-label', text: 'sort' }),
-      segmented(SORTS, state.sort, (v) => (state.sort = v), onChange, 'Sort tools by'),
+      segmented({ options: SORTS, current: state.sort, label: 'Sort tools by', onPick: (v) => { state.sort = v; onChange(); } }),
       el('span', { class: 'spend-ctl-gap' }),
       el('span', { class: 'spend-ctl-label', text: 'window' }),
-      segmented(WINDOWS, state.days, (v) => (state.days = v), onChange, 'Time window')
+      segmented({ options: WINDOWS, current: state.days, label: 'Time window', onPick: (v) => { state.days = v; onChange(); } })
     ])
   );
 

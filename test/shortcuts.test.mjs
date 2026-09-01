@@ -45,3 +45,20 @@ test('the help overlay is itself reachable by keyboard', () => {
   assert.ok(SHORTCUTS.some((s) => s.keys.includes('?')), '? must be listed');
   assert.ok(APP.includes('openShortcutHelp'), 'and wired to something');
 });
+
+test('the shared time windows are used, not redefined per view', async () => {
+  // Three views each defined their own list and had already drifted — spend
+  // said "24 hours" where tools said "Last 24 hours", for no reason anyone
+  // chose. One list means that cannot happen again.
+  const { WINDOWS } = await import('../ui/dom.js');
+  assert.ok(WINDOWS.length >= 3);
+  assert.deepEqual(WINDOWS[0], ['', 'All time'], 'the default window is all of it');
+
+  const fsMod = await import('node:fs');
+  for (const view of ['spend.js', 'tools.js', 'errors.js']) {
+    const source = fsMod.readFileSync(new URL(`../ui/${view}`, import.meta.url), 'utf8');
+    assert.ok(!source.includes('const WINDOWS = ['), `${view} redefines WINDOWS`);
+    assert.ok(!source.includes('function segmented('), `${view} redefines segmented()`);
+    assert.match(source, /from '\.\/dom\.js'/, `${view} does not import the shared helpers`);
+  }
+});

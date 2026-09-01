@@ -9,7 +9,7 @@
 // travels with the total everywhere it goes, and the chart marks the bars it
 // affects.
 
-import { el, fmt } from './dom.js';
+import { el, fmt, segmented, WINDOWS } from './dom.js';
 
 export const GROUPS = [
   ['model', 'Model'],
@@ -18,12 +18,6 @@ export const GROUPS = [
   ['day', 'Day']
 ];
 
-export const WINDOWS = [
-  ['', 'All time'],
-  ['1', '24 hours'],
-  ['7', '7 days'],
-  ['30', '30 days']
-];
 
 /** Bars beyond this get folded into one "other" row rather than dropped. */
 export const CHART_ROWS = 12;
@@ -204,27 +198,6 @@ export async function loadSpend(get) {
   }
 }
 
-function segmented(options, current, apply, onChange, label) {
-  const wrap = el('div', { class: 'segmented', role: 'group', 'aria-label': label });
-  for (const [value, text] of options) {
-    wrap.append(
-      el('button', {
-        class: 'seg',
-        type: 'button',
-        'aria-pressed': String(current === value),
-        text,
-        on: {
-          click: () => {
-            if (current === value) return;
-            apply(value);
-            onChange();
-          }
-        }
-      })
-    );
-  }
-  return wrap;
-}
 
 function chart(groups) {
   const bars = barGeometry(groups);
@@ -370,10 +343,10 @@ export function renderSpend(host, onChange, onDrill) {
   body.append(
     el('div', { class: 'spend-controls' }, [
       el('span', { class: 'spend-ctl-label', text: 'group by' }),
-      segmented(GROUPS, state.group, (v) => (state.group = v), onChange, 'Group spend by'),
+      segmented({ options: GROUPS, current: state.group, label: 'Group spend by', onPick: (v) => { state.group = v; onChange(); } }),
       el('span', { class: 'spend-ctl-gap' }),
       el('span', { class: 'spend-ctl-label', text: 'window' }),
-      segmented(WINDOWS, state.days, (v) => (state.days = v), onChange, 'Time window')
+      segmented({ options: WINDOWS, current: state.days, label: 'Time window', onPick: (v) => { state.days = v; onChange(); } })
     ])
   );
 
