@@ -117,3 +117,31 @@ test('run ids with awkward characters are escaped into the url', () => {
     assert.equal(env.ANTHROPIC_BASE_URL, 'http://x/r/a%20b%2Fc/anthropic');
   });
 });
+
+test('every command the CLI dispatches is in --help', async () => {
+  // The recurring failure in this codebase is two lists that drift: routes and
+  // upstreams, providers and env vars, docs and code. This is the same shape —
+  // a command nobody can discover is a command that does not exist.
+  const fs = await import('node:fs');
+  const source = fs.readFileSync(new URL('../src/cli.mjs', import.meta.url), 'utf8');
+
+  const dispatchStart = source.indexOf('export async function main(');
+  const dispatchEnd = source.indexOf('}', source.indexOf('default:', dispatchStart));
+  const dispatch = source.slice(dispatchStart, dispatchEnd);
+
+  const commands = [...dispatch.matchAll(/case '([a-z]+)':/g)]
+    .map((m) => m[1])
+    .filter((name) => !['help', 'version'].includes(name));
+
+  assert.ok(commands.length >= 10, `only found ${commands.length} commands to check`);
+
+  const helpStart = source.indexOf('USAGE');
+  const help = source.slice(helpStart, helpStart + 2000);
+
+  for (const command of commands) {
+    assert.ok(
+      help.includes(`orangebox ${command}`) || help.includes(`orangebox [${command}]`),
+      `"${command}" is dispatched but never appears in --help`
+    );
+  }
+});
