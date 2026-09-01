@@ -1,4 +1,4 @@
-const CACHE = 'orangebox-shell-v4';
+const CACHE = 'orangebox-shell-v5';
 const SHELL = [
   '/',
   '/style.css',
@@ -8,6 +8,7 @@ const SHELL = [
   '/spend.js',
   '/tools.js',
   '/find.js',
+  '/errors.js',
   '/manifest.webmanifest',
   '/icon.svg',
   '/icon-maskable.svg'

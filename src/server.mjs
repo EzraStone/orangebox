@@ -559,6 +559,7 @@ async function serveStatic(req, res, pathname) {
     pathname === '/spend' ||
     pathname === '/tools' ||
     pathname === '/find' ||
+    pathname === '/errors' ||
     pathname.startsWith('/run/');
 
   let file = null;

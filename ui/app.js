@@ -6,6 +6,7 @@ import { el, $, fmt, SHORTCUTS } from '/dom.js';
 import { renderSpend, loadSpend } from '/spend.js';
 import { renderTools, loadTools } from '/tools.js';
 import { renderFind, loadFind, state as findState } from '/find.js';
+import { renderErrors, loadErrors } from '/errors.js';
 
 const authToken = new URLSearchParams(location.search).get('token');
 let csrfToken = null;
@@ -113,7 +114,7 @@ const state = {
   readOnly: false,
   mobileAccess: false,
   filters: { search: '', model: '', provider: '', tool: '', error: '', min_latency: '', min_cost: '', from: '', to: '' },
-  view: 'runs', // 'runs' | 'spend' | 'tools' | 'find'
+  view: 'runs', // 'runs' | 'spend' | 'tools' | 'find' | 'errors'
   runId: null,
   run: null,
   calls: [],
@@ -309,6 +310,36 @@ const pathIsSpend = () => location.pathname === SPEND_PATH;
 
 const TOOLS_PATH = '/tools';
 const FIND_PATH = '/find';
+const ERRORS_PATH = '/errors';
+const pathIsErrors = () => location.pathname === ERRORS_PATH;
+
+/** §19.10 — failures across runs. */
+async function openErrors({ replace = false } = {}) {
+  state.view = 'errors';
+  if (!pathIsErrors()) history[replace ? 'replaceState' : 'pushState']({}, '', ERRORS_PATH);
+  closeDetail();
+  renderRuns();
+  renderTimeline();
+  syncMobileNav();
+  await refreshErrors();
+}
+
+/** Navigate to whichever run owns a call, then open it. */
+async function openCallById(callId) {
+  try {
+    const { call } = await api.get(`/api/calls/${encodeURIComponent(callId)}`);
+    if (!call) return;
+    await navigate(call.run_id);
+    await selectCall(call.id);
+  } catch {
+    // The call was deleted between the aggregate and the click.
+  }
+}
+
+async function refreshErrors() {
+  await loadErrors((path) => api.get(path));
+  if (state.view === 'errors') renderTimeline();
+}
 const pathIsFind = () => location.pathname === FIND_PATH;
 
 /** §19.9 — search recorded content. */
@@ -382,6 +413,7 @@ window.addEventListener('popstate', () => {
   if (pathIsSpend()) return void openSpend({ replace: true });
   if (pathIsTools()) return void openTools({ replace: true });
   if (pathIsFind()) return void openFind({ replace: true });
+  if (pathIsErrors()) return void openErrors({ replace: true });
   state.view = 'runs';
   selectRun(pathRunId(), { fromNav: true });
   renderTimeline();
@@ -681,6 +713,14 @@ async function deleteRun(run) {
 }
 
 function renderTimeline() {
+  if (state.view === 'errors') {
+    renderAnalyticsHeader('Errors');
+    return void renderErrors($('timeline'), () => void refreshErrors(), (error) => {
+      if (!error.latest_call_id) return;
+      closeAnalytics();
+      void openCallById(error.latest_call_id);
+    });
+  }
   if (state.view === 'find') {
     renderAnalyticsHeader('Search');
     return void renderFind($('timeline'), {
@@ -1681,6 +1721,11 @@ document.addEventListener('keydown', (e) => {
     return void (state.view === 'find' ? closeAnalytics() : openFind());
   }
 
+  if (e.key === 'e') {
+    e.preventDefault();
+    return void (state.view === 'errors' ? closeAnalytics() : openErrors());
+  }
+
   // The rest of these steer the timeline, which is not what is on screen.
   if (state.view !== 'runs') return;
 
@@ -1805,6 +1850,11 @@ function dateBoundary(value, endOfDay) {
   return String(date.getTime());
 }
 
+$('errors-open').addEventListener('click', () => {
+  if (state.view === 'errors') closeAnalytics();
+  else void openErrors();
+});
+
 $('find-open').addEventListener('click', () => {
   if (state.view === 'find') closeAnalytics();
   else void openFind();
@@ -1898,6 +1948,7 @@ async function boot() {
     const bootSpend = pathIsSpend();
     const bootTools = pathIsTools();
     const bootFind = pathIsFind();
+    const bootErrors = pathIsErrors();
     state.runId = pathRunId();
     renderPill();
     await loadRuns();
@@ -1905,6 +1956,7 @@ async function boot() {
     if (bootSpend) await openSpend({ replace: true });
     if (bootTools) await openTools({ replace: true });
     if (bootFind) await openFind({ replace: true });
+    if (bootErrors) await openErrors({ replace: true });
     connectLive();
   } catch (error) {
     // The user-facing message stays friendly, but swallowing the reason

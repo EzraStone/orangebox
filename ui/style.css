@@ -949,3 +949,32 @@ kbd {
   border-bottom-width: 2px;
   border-radius: 3px;
 }
+
+/* ---------------------------------------------------- §19.10 errors view */
+
+.err-list { list-style: none; margin: 14px 0 0; padding: 0; }
+.err-row {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.err-row:hover { background: var(--panel-hi); }
+.err-row:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px; }
+
+/* Banded rather than a gradient: the comparison that matters is against zero,
+   not between one failure and another. */
+.err-row.sev-low { border-left-color: var(--line); }
+.err-row.sev-medium { border-left-color: var(--amber); }
+.err-row.sev-high { border-left-color: var(--err); }
+
+.err-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.err-rate { font-family: var(--mono); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sev-high .err-rate { color: var(--err); }
+.sev-medium .err-rate { color: var(--amber); }
+.sev-low .err-rate { color: var(--muted); }
+.err-key { font-family: var(--mono); font-size: 12px; color: var(--text); }
+.err-count { font-size: 11px; color: var(--muted); margin-left: auto; }
+.err-meta { font-size: 11px; color: var(--muted); }
