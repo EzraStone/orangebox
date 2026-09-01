@@ -359,3 +359,15 @@ test('`find` with no search text explains itself instead of dumping the database
   assert.notEqual(result.code, 0);
   assert.match(result.output, /usage: orangebox find/);
 });
+
+test('`errors` reports a clean database as clean', async () => {
+  const server = await startCliServer();
+  try {
+    const result = await runCli(['errors', '--db', server.dbPath]);
+    assert.equal(result.code, 0);
+    assert.match(result.stdout, /No calls recorded/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});

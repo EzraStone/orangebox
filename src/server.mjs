@@ -471,6 +471,14 @@ async function handleApi(req, res, ctx, pathname, url) {
     }));
   }
 
+  // GET /api/errors?since=&until=  (§19.10)
+  if (method === 'GET' && pathname === '/api/errors') {
+    return sendJson(res, 200, store.errorStats({
+      since: epochParam(url.searchParams.get('since')),
+      until: epochParam(url.searchParams.get('until'))
+    }));
+  }
+
   // GET /api/tools?since=&until=  (§19.8)
   if (method === 'GET' && pathname === '/api/tools') {
     const since = epochParam(url.searchParams.get('since'));

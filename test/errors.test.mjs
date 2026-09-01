@@ -104,3 +104,28 @@ test('a window narrows both the errors and the denominator', () => {
   assert.equal(narrow.total_errors, 0);
   store.close();
 });
+
+test('GET /api/errors answers with the same shape as the store', async () => {
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const run = app.store.createRun({ source: 'gap' });
+    for (const error of ['http_429', 'http_429', null]) {
+      app.store.insertCall({
+        id: newId(), run_id: run.id, seq: app.store.nextSeq(run.id),
+        provider: 'openai', endpoint: '/v1/chat/completions', model: 'gpt-5.4',
+        started_at: Date.now(), error_type: error, request_json: '{}'
+      });
+    }
+
+    const body = await (await fetch(`${app.origin}/api/errors`)).json();
+    assert.equal(body.total_calls, 3);
+    assert.equal(body.total_errors, 2);
+    assert.equal(body.errors[0].key, 'http_429');
+    assert.ok(Math.abs(body.error_rate - 2 / 3) < 1e-9);
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});

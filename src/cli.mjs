@@ -45,6 +45,8 @@ export async function main(argv) {
       return prune(rest);
     case 'find':
       return findCalls(rest);
+    case 'errors':
+      return errorReport(rest);
     case 'tools':
       return toolReport(rest);
     case 'doctor':
@@ -779,6 +781,61 @@ function highlight(text, query) {
     ESC + "[1m" + text.slice(at, at + query.length) + ESC + "[0m" +
     text.slice(at + query.length);
 }
+
+// --------------------------------------------------------------- errors
+
+/** §19.10 — which failures keep happening, across every run. */
+async function errorReport(args) {
+  let dbPath = null;
+  let since = null;
+  let until = null;
+  let format = 'table';
+
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--since': since = epochArg(next(), '--since'); break;
+      case '--until': until = epochArg(next(), '--until'); break;
+      case '--days': since = Date.now() - int(next(), '--days') * 86_400_000; break;
+      case '--json': format = 'json'; break;
+      default: fail(`unknown flag "${args[i]}"`);
+    }
+  }
+
+  const { openStore } = await import('./store.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+  try {
+    const data = store.errorStats({ since, until });
+    if (format === 'json') return void console.log(JSON.stringify(data, null, 2));
+
+    if (data.total_calls === 0) {
+      console.log('No calls recorded in that window.');
+      return;
+    }
+    if (data.total_errors === 0) {
+      console.log(`  ${data.total_calls} call(s), none failed.`);
+      return;
+    }
+
+    const width = Math.min(Math.max(...data.errors.map((e) => e.key.length), 5), 28);
+    console.log();
+    for (const error of data.errors) {
+      const share = `${(error.share * 100).toFixed(1)}%`.padStart(6);
+      console.log(`  ${truncate(error.key, width).padEnd(width)}  ${String(error.count).padStart(5)}  ${share}  across ${error.runs} run(s), ${error.providers.join(", ")}`);
+      console.log(`  ${" ".repeat(width)}  last: ${error.latest_model} at ${new Date(error.last_seen).toISOString().slice(0, 19).replace("T", " ")}  ${error.latest_call_id}`);
+    }
+    console.log();
+    console.log(`  ${data.total_errors} of ${data.total_calls} call(s) failed (${(data.error_rate * 100).toFixed(1)}%)`);
+    console.log();
+  } finally {
+    store.close();
+  }
+}
 // ---------------------------------------------------------------- tools
 
 /**
@@ -1231,6 +1288,7 @@ USAGE
   orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
   orangebox spend [--group <k>]        what your agents have cost so far
   orangebox find <text>                search your recorded prompts and responses
+  orangebox errors                     which failures keep happening, across runs
   orangebox tools                      which tools get used, fail, and take time
   orangebox doctor                     show what orangebox actually resolved
   orangebox import <file.json>         load a run somebody exported
