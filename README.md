@@ -124,7 +124,7 @@ provider's 401. That check applies only when the provider still points at its ow
 cloud endpoint; if you have overridden the upstream, orangebox forwards and lets
 that endpoint decide what it wants.
 
-**Share a run, and open one.** `orangebox export` writes a self-contained JSON file; `orangebox import` reads one back in, so a recording from a teammate lands in your own timeline and can be diffed against your own runs. Imports are additive and named as imports — a recording somebody else made should never be mistaken for your own.
+**Share a run, and open one.** `orangebox export` writes a self-contained JSON file; `orangebox import` — or dropping the file onto the window — reads one back in, so a recording from a teammate lands in your own timeline and can be diffed against your own runs. Imports are additive and named as imports — a recording somebody else made should never be mistaken for your own.
 
 **Whole-run comparison.** Compare any two runs call by call. Missing calls and regressions are explicit instead of being buried in two timelines.
 
@@ -210,8 +210,12 @@ variables already exist and nobody should have to learn a second name for them:
 
 CI example:
 
+`--max-unanswered-tools 0` is the one worth adding first. An agent whose tool
+calls never come back finishes the run, costs almost nothing, and reports zero
+errors — every other threshold passes while nothing worked.
+
 ```bash
-orangebox assert "$RUN_ID" --max-cost 0.25 --max-latency 5000 --max-errors 0 --max-calls 12 --require-known-cost
+orangebox assert "$RUN_ID" --max-cost 0.25 --max-latency 5000 --max-errors 0 --max-calls 12 --max-unanswered-tools 0 --require-known-cost
 ```
 
 ## Configuration file

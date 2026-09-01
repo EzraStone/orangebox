@@ -2,6 +2,17 @@
 
 All notable changes to orangebox are documented here. Versions follow semantic versioning.
 
+## Unreleased
+
+### Added
+
+- Import by dropping an exported run onto the UI, and `POST /api/import`.
+- `orangebox assert --max-unanswered-tools` and `--max-tool-errors`: fail CI when an agent loop does not complete, which every existing threshold passes through.
+
+### Changed
+
+- The segmented control and time-window list are shared by every cross-run view instead of being redefined three times, where they had already drifted.
+
 ## [1.3.0] - 2026-09-01
 
 ### Added
