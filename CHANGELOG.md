@@ -11,6 +11,7 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 - Optional config file at `~/.orangebox/config.json` for port, host, db, gap, retention, upstreams, and redaction rules. Flags win over the file; the file wins over defaults.
 - User-defined redaction (§12.4): regexes in `redact` scrub sensitive text from recorded prompts and responses before they are written. Affects what is stored, never what is forwarded.
 - Keyboard shortcut overlay behind `?`.
+- Error analytics (§19.10) at `/errors`, as `orangebox errors`, and at `GET /api/errors`: failures grouped by type with their share of all calls, how many runs and providers they touched, and a link to the newest example.
 - Content search (§19.9) at `/find`, as `orangebox find`, and at `GET /api/search`: searches recorded prompts and responses, returning a snippet around each hit.
 - `npm run bench` measures the four §13 performance budgets the README publishes.
 - Tool analytics (§19.8) at `/tools` and as `orangebox tools`: uses, error rate, unanswered calls, and timing per tool, with `--json` and `--csv`. Served at `GET /api/tools`.

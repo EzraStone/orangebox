@@ -174,6 +174,7 @@ four times budget — a regression rather than a noisy neighbour.
 | `orangebox import <file.json>` | Load a run somebody exported. Additive — never overwrites what you already have. |
 | `orangebox prune [--older-than <d>]` | Reclaim space by age or size (`--max-size 500MB`), or rebuild the file (`--vacuum`). |
 | `orangebox find <text>` | Search recorded prompts and responses. Prints the run, call, model, and a snippet. |
+| `orangebox errors` | Which failures keep happening, with each one's share of all calls. |
 | `orangebox tools [--sort]` | Which tools your agent leans on, which fail, and which never got an answer. |
 | `orangebox doctor` | Show what orangebox actually resolved: providers, upstreams, credentials, database, pricing coverage. Exits non-zero on a failure. |
 | `orangebox clear [--yes]` | Delete all recorded data. |
@@ -332,6 +333,25 @@ result come back. When one call requests three tools, that hole covers all
 three and cannot honestly be split, so only single-tool calls contribute to the
 average. `timed on 2/3` says how much of the number is real. A tool only ever
 used alongside others reports an em-dash rather than a plausible figure.
+
+## Analytics
+
+Four views over everything recorded, in the UI and in the terminal:
+
+| View | Key | Command | Answers |
+| --- | --- | --- | --- |
+| `/spend` | `$` | `orangebox spend` | Where the money went, and how much of the total it can vouch for |
+| `/tools` | `t` | `orangebox tools` | Which tools get used, fail, or never get an answer |
+| `/errors` | `e` | `orangebox errors` | Which failures keep happening, and how widely |
+| `/find` | `/` | `orangebox find` | Which call said the thing you half-remember |
+
+Press `?` in the UI for the full list of keys.
+
+They share one habit: a number is always shown next to how much of it is
+real. Spend reports what it could not price. Tool timing says how many uses
+it was measured over. Errors lead with a share rather than a count, because
+12 failures means nothing until you know whether it is 12 of 12 or 12 of
+9,000.
 
 ## Checking your setup
 
