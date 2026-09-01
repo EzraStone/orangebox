@@ -13,6 +13,7 @@ import {
   redactHeaders,
   stripBase64,
   serializeForStorage,
+  applyRedactionRules,
   safeStringify
 } from './store.mjs';
 import * as anthropic from './parse/anthropic.mjs';
@@ -106,11 +107,13 @@ export function createProxy({
   pricing,
   gapSeconds,
   providers,
-  maxPendingCapture = MAX_PENDING_CAPTURE
+  maxPendingCapture = MAX_PENDING_CAPTURE,
+  redactionRules = []
 }) {
   const ctx = {
     store, live, pricing, gapSeconds, providers,
     maxPendingCapture,
+    redactionRules,
     recorder: createRecordQueue()
   };
   return {
@@ -555,9 +558,30 @@ async function writeRecord(ctx, input) {
     captureTruncated: input.responseCaptureTruncated
   });
 
-  const request = serializeForStorage(requestBlob);
+  // §12.4 — the user's own rules, applied before truncation so a secret
+  // cannot survive by sitting past the size cap, and before serialization
+  // so nothing unscrubbed is ever turned into the string we store.
+  const redaction = ctx.redactionRules ?? [];
+  const scrubbedRequest = applyRedactionRules(requestBlob, redaction);
+  const scrubbedResponse =
+    responseBlob === null ? { value: null, hits: {} } : applyRedactionRules(responseBlob, redaction);
+
+  const redactionHits = { ...scrubbedRequest.hits };
+  for (const [label, count] of Object.entries(scrubbedResponse.hits)) {
+    redactionHits[label] = (redactionHits[label] ?? 0) + count;
+  }
+  if (Object.keys(redactionHits).length > 0) {
+    // Say so on the record. A payload that was quietly altered is a payload
+    // you cannot reason about later.
+    scrubbedRequest.value._orangebox = {
+      ...(scrubbedRequest.value._orangebox ?? {}),
+      redacted: redactionHits
+    };
+  }
+
+  const request = serializeForStorage(scrubbedRequest.value);
   const response =
-    responseBlob === null ? { json: null, truncated: 0 } : serializeForStorage(responseBlob);
+    scrubbedResponse.value === null ? { json: null, truncated: 0 } : serializeForStorage(scrubbedResponse.value);
 
   const latency = input.ended_at != null ? input.ended_at - input.started_at : null;
   const ttft = input.first_token_at != null ? input.first_token_at - input.started_at : null;

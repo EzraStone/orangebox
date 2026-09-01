@@ -33,11 +33,12 @@ export async function startOrangebox({
   gapSeconds = 120,
   authToken = null,
   mobileAccess = false,
-  maxPendingCapture
+  maxPendingCapture,
+  redactionRules
 } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orangebox-test-'));
   const dbPath = path.join(dir, 'test.db');
-  const app = createServer({ dbPath, gapSeconds, providers, authToken, mobileAccess, maxPendingCapture });
+  const app = createServer({ dbPath, gapSeconds, providers, authToken, mobileAccess, maxPendingCapture, redactionRules });
   const address = await app.listen(0, '127.0.0.1');
 
   return {

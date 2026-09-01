@@ -87,6 +87,7 @@ export function createServer({
   dbPath,
   gapSeconds = 120,
   providers = PROVIDERS,
+  redactionRules = [],
   authToken = null,
   mobileAccess = false,
   maxPendingCapture
@@ -94,7 +95,7 @@ export function createServer({
   const store = openStore(dbPath);
   const live = createLiveHub();
   const pricing = loadPricing();
-  const proxy = createProxy({ store, live, pricing, gapSeconds, providers, maxPendingCapture });
+  const proxy = createProxy({ store, live, pricing, gapSeconds, providers, maxPendingCapture, redactionRules });
   const mobile = createMobileAccess({ enabled: mobileAccess });
   const security = {
     csrfToken: crypto.randomBytes(24).toString('base64url'),
