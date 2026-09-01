@@ -148,12 +148,18 @@ One process, one port. Requests are proxied through untouched and teed to a pars
 
 Recording happens **after** your client's response is finished — never in the hot path. Measured against a local mock, on one machine:
 
-| Metric | Measured | Budget |
+| Metric | Budget | Typical |
 | --- | --- | --- |
-| Added latency, non-streamed call | 0.73 ms p50 | < 5 ms |
-| 50 concurrent streams, event-loop lag | 31 ms max | < 50 ms |
-| Request → recorded | 3 ms p50 | < 150 ms |
-| UI open, 1000-call run | 11 ms | < 500 ms |
+| Added latency, non-streamed call | < 5 ms | 0.7–1.8 ms p50 |
+| 50 concurrent streams, event-loop lag | < 50 ms | 31–46 ms max |
+| Request → recorded | < 150 ms | 2–3 ms p50 |
+| UI open, 1000-call run | < 500 ms | 8–15 ms |
+
+The budget is the promise; the typical column is a range across the machines
+these have actually been run on. Event-loop lag under 50 concurrent streams is
+the one with real headroom to lose — it lands near its budget on a busy laptop
+and comfortably under it on a quiet one, so measure your own rather than
+trusting the number here.
 
 Reproduce them with `npm run bench`. It is deliberately not part of `npm test`:
 these are wall-clock numbers, and a shared CI runner under load would fail them
