@@ -534,7 +534,7 @@ async function doctor(args) {
   const { loadPricing } = await import('./pricing.mjs');
   const { loadConfig, compileRedactionRules } = await import('./config.mjs');
   const {
-    checkRuntime, checkDatabase, checkProviders, checkPricing, checkConfig, worst, OK
+    checkRuntime, checkDatabase, checkWritable, checkProviders, checkPricing, checkConfig, worst, OK
   } = await import('./doctor.mjs');
 
   const store = openStore(dbPath ?? defaultDbPath());
@@ -542,6 +542,7 @@ async function doctor(args) {
     const checks = [
       ...checkRuntime({ version: VERSION }),
       ...checkDatabase(store),
+      ...checkWritable(store),
       ...checkProviders(providersFrom({
         openaiUpstream: PROVIDERS.openai,
         anthropicUpstream: PROVIDERS.anthropic

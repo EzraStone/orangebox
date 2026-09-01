@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { Store, newId } from '../src/store.mjs';
 import { loadPricing } from '../src/pricing.mjs';
 import {
-  checkProviders, checkRuntime, checkDatabase, checkPricing, checkConfig, worst,
+  checkProviders, checkRuntime, checkDatabase, checkWritable, checkPricing, checkConfig, worst,
   OK, NOTE, FAIL
 } from '../src/doctor.mjs';
 
@@ -138,4 +138,60 @@ test('active redaction is always stated, even when nothing is wrong', () => {
   const redaction = checks.find((c) => c.name === 'redaction');
   assert.equal(redaction.status, NOTE);
   assert.match(redaction.detail, /accounts, hostnames/);
+});
+
+test('the writable probe rolls itself back', async () => {
+  // It writes a real row, because opening a database for writing is not the
+  // same as being able to write to it — SQLite defers that failure until it
+  // needs the file. So the probe has to leave nothing behind.
+  const fsMod = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { Store } = await import('../src/store.mjs');
+
+  const dir = fsMod.mkdtempSync(path.join(os.tmpdir(), 'orangebox-writable-'));
+  const store = new Store(path.join(dir, 'w.db'));
+
+  try {
+    const [check] = checkWritable(store);
+    assert.equal(check.status, OK);
+    assert.match(check.detail, /accepts writes/);
+
+    const probe = store.db.prepare("SELECT value FROM meta WHERE key = 'doctor_probe'").get();
+    assert.equal(probe, undefined, 'the probe row must not survive');
+  } finally {
+    store.close();
+    fsMod.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an in-memory database is a note, not a pass or a failure', () => {
+  const store = new Store(':memory:');
+  try {
+    const [check] = checkWritable(store);
+    assert.equal(check.status, NOTE);
+    assert.match(check.detail, /nothing is persisted/);
+  } finally {
+    store.close();
+  }
+});
+
+test('a database that cannot be written to fails loudly', async () => {
+  // The worst failure this tool has is recording nothing and saying nothing.
+  // Reading works fine on a read-only database, so every other check passes.
+  const broken = {
+    path: '/somewhere/real.db',
+    db: {
+      transaction() {
+        return () => {
+          throw new Error('attempt to write a readonly database');
+        };
+      }
+    }
+  };
+
+  const [check] = checkWritable(broken);
+  assert.equal(check.status, FAIL);
+  assert.match(check.detail, /readonly/);
+  assert.match(check.detail, /fail silently/, 'says what the consequence is');
 });

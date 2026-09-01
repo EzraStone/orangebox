@@ -183,6 +183,43 @@ export function checkPricing(store, pricing) {
   return checks;
 }
 
+
+/**
+ * Can orangebox actually write here?
+ *
+ * "It records nothing and says nothing" is the worst failure this tool has,
+ * and a read-only directory or a database opened by another process both
+ * produce exactly that. Reading works fine in both cases, so every other check
+ * in this file passes while recording is impossible.
+ */
+export function checkWritable(store) {
+  if (store.path === ':memory:') {
+    return [{ name: 'writable', status: NOTE, detail: 'in-memory database — nothing is persisted' }];
+  }
+
+  try {
+    // A real write, rolled back. Opening for write is not the same as being
+    // able to write: SQLite defers the failure until it needs the file.
+    store.db.transaction(() => {
+      store.db.prepare("INSERT INTO meta (key, value) VALUES ('doctor_probe', '1')").run();
+      throw new ProbeComplete();
+    })();
+    return [{ name: 'writable', status: OK, detail: 'the database accepts writes' }];
+  } catch (error) {
+    if (error instanceof ProbeComplete) {
+      return [{ name: 'writable', status: OK, detail: 'the database accepts writes' }];
+    }
+    return [{
+      name: 'writable',
+      status: FAIL,
+      detail: `cannot write to ${store.path} — ${error?.message ?? error}. Recording will fail silently.`
+    }];
+  }
+}
+
+/** Thrown to roll the probe back; not an error anyone needs to see. */
+class ProbeComplete extends Error {}
+
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return 'unknown size';
   if (bytes < 1024) return `${bytes} B`;
