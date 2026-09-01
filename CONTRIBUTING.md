@@ -51,8 +51,24 @@ Section references in code comments (`§06.3`, `§14.2`) point into it.
 
 ## Adding a provider
 
-One file in `src/parse/`, exporting six functions, plus a prefix in the §04
-routing table and an entry in `PARSERS`. `ollama.mjs` is the shortest example
+One file in `src/parse/`, exporting six functions — **and six other places**.
+That list is not padding: Gemini, Ollama and Bedrock each shipped a release
+having missed at least one of them.
+
+1. `src/parse/<provider>.mjs` — the six exports below
+2. `PARSERS` in `src/proxy.mjs`
+3. `PROVIDERS` in `src/server.mjs` — the routing table is *derived* from this,
+   so adding it here is what makes the provider routable
+4. `providersFrom()` in `src/cli.mjs` — spreads `PROVIDERS`, so usually free,
+   but add a `--<provider>-upstream` flag
+5. `runScopedEnv()` in `src/cli.mjs` — the variable an SDK reads to find us
+6. `PROVIDER_CREDENTIALS` in `src/credentials.mjs` — how replay authenticates
+7. `src/pricing.json` — or the provider records as unpriced, which is honest
+   but unhelpful
+
+Three tests already fail if you miss 3, 4, 5 or 6. Run `npm test` and believe
+it over this list.
+ `ollama.mjs` is the shortest example
 and the least like the others — it speaks newline-delimited JSON rather than
 SSE, which is the point: nothing outside the parser should know that.
 
@@ -86,6 +102,23 @@ nulls or an empty array; a record with missing fields beats no record.
   content goes in via `textContent`.
 - **No new runtime dependencies.** One is the budget and it is spent.
 - **No telemetry, ever.** Not a version check, not an anonymous ping. Ever.
+
+## When two lists have to agree, write the test
+
+Nearly every bug this project has shipped has been the same shape: two places
+that must stay in step, kept in step by remembering. Routes and upstreams.
+Providers and their environment variables. Dispatched commands and `--help`.
+UI modules and the offline precache list.
+
+They are nasty because the symptom never points at the cause. Three providers
+proxied to `undefined/...` for a whole release with a green test suite,
+because every test built the server in-process and skipped the code that turns
+flags into configuration.
+
+So: if you add a thing that must appear in two places, add a test that derives
+one from the other. `test/cli.test.mjs` and `test/shell.test.mjs` have several
+to copy. Confirm it fails before you make it pass — a drift test that never
+bites is worse than none, because it reads like coverage.
 
 ## Manual probes
 
