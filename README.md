@@ -126,7 +126,7 @@ that endpoint decide what it wants.
 
 **Whole-run comparison.** Compare any two runs call by call. Missing calls and regressions are explicit instead of being buried in two timelines.
 
-**Find old evidence.** Search run names and tags; filter by model, provider, tool, error state, minimum latency, minimum cost, or date; rename and tag runs; and page through the complete history.
+**Find old evidence.** Search *inside* recorded prompts and responses at `/find` (or `orangebox find`), so "the run where the model mentioned the migration lock" is one query rather than an afternoon. Search run names and tags; filter by model, provider, tool, error state, minimum latency, minimum cost, or date; rename and tag runs; and page through the complete history.
 
 **Share without shipping the database.** **Share** previews a self-contained sanitized HTML report that redacts system prompts, tool payloads, emails, IDs, credential-shaped values, and secrets; save that page to share it. JSON and OpenTelemetry exports remain available for machine workflows.
 
@@ -169,6 +169,7 @@ four times budget — a regression rather than a noisy neighbour.
 | `orangebox export <run-id> [-o file]` | Write a self-contained JSON file of the run — commit it to a bug report. |
 | `orangebox assert <run-id> [limits]` | Exit non-zero when cost, latency, errors, call count, or unknown costs exceed a CI threshold. |
 | `orangebox spend [--group <k>]` | What your agents have cost, by model, provider, run, or day — with an explicit count of what it could not price. |
+| `orangebox find <text>` | Search recorded prompts and responses. Prints the run, call, model, and a snippet. |
 | `orangebox tools [--sort]` | Which tools your agent leans on, which fail, and which never got an answer. |
 | `orangebox doctor` | Show what orangebox actually resolved: providers, upstreams, credentials, database, pricing coverage. Exits non-zero on a failure. |
 | `orangebox clear [--yes]` | Delete all recorded data. |

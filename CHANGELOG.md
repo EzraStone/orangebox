@@ -6,6 +6,8 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Added
 
+- Content search (§19.9) at `/find`, as `orangebox find`, and at `GET /api/search`: searches recorded prompts and responses, returning a snippet around each hit.
+- `npm run bench` measures the four §13 performance budgets the README publishes.
 - Tool analytics (§19.8) at `/tools` and as `orangebox tools`: uses, error rate, unanswered calls, and timing per tool, with `--json` and `--csv`. Served at `GET /api/tools`.
 - `orangebox doctor`: reports the resolved version, database, every routable provider with its upstream and credential status, and pricing coverage against calls actually recorded. Exits non-zero on a failure; `--json` for tooling.
 - Integration tests that run the CLI as a real subprocess, covering provider routing, `spend`, `export`, `assert`, and `doctor`. The 1.2.0 provider bug survived a full release because every test built the server in-process, skipping the code that turns flags into configuration.
