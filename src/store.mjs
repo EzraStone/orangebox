@@ -272,6 +272,38 @@ export class Store {
       oldRuns: db.prepare('SELECT id FROM runs WHERE started_at < ?')
     };
 
+    // §19.10 — failures, grouped by what went wrong rather than by when.
+    //
+    // A run shows you its own errors. What a run cannot show is that the same
+    // upstream_error has hit four models across nine runs since Tuesday, which
+    // is the difference between "this run was unlucky" and "something is
+    // broken".
+    this.q.errorStats = db.prepare(`
+      SELECT c.error_type                       AS key,
+             COUNT(*)                           AS count,
+             COUNT(DISTINCT c.run_id)           AS runs,
+             COUNT(DISTINCT c.model)            AS models,
+             MIN(c.started_at)                  AS first_seen,
+             MAX(c.started_at)                  AS last_seen,
+             GROUP_CONCAT(DISTINCT c.provider)  AS providers,
+             (SELECT c2.id FROM calls c2
+               WHERE c2.error_type = c.error_type
+                 AND c2.started_at BETWEEN @since AND @until
+               ORDER BY c2.started_at DESC LIMIT 1) AS latest_call_id,
+             (SELECT COALESCE(c3.model, '(no model)') FROM calls c3
+               WHERE c3.error_type = c.error_type
+                 AND c3.started_at BETWEEN @since AND @until
+               ORDER BY c3.started_at DESC LIMIT 1) AS latest_model
+        FROM calls c
+       WHERE c.error_type IS NOT NULL
+         AND c.started_at BETWEEN @since AND @until
+       GROUP BY c.error_type
+       ORDER BY count DESC, key ASC`);
+
+    this.q.callTotals = db.prepare(
+      'SELECT COUNT(*) AS total FROM calls WHERE started_at BETWEEN @since AND @until'
+    );
+
     // §19.9 — search inside recorded content.
     //
     // LIKE over the JSON blobs, not FTS5. A virtual table would be faster and
@@ -714,6 +746,42 @@ export class Store {
     });
 
     return { query: needle, total: results.length, limit, results };
+  }
+
+  /**
+   * §19.10 — which failures keep happening.
+   *
+   * `share` is the fraction of all calls in the window that failed this way.
+   * A raw count says nothing on its own: twelve timeouts out of twelve calls
+   * and twelve out of nine thousand are different situations entirely.
+   */
+  errorStats({ since = null, until = null } = {}) {
+    const window = { since: since ?? 0, until: until ?? Number.MAX_SAFE_INTEGER };
+    const rows = this.q.errorStats.all(window);
+    const { total } = this.q.callTotals.get(window);
+
+    const errors = rows.map((row) => ({
+      key: row.key,
+      count: row.count,
+      runs: row.runs,
+      models: row.models,
+      providers: (row.providers ?? '').split(',').filter(Boolean),
+      first_seen: row.first_seen,
+      last_seen: row.last_seen,
+      latest_call_id: row.latest_call_id,
+      latest_model: row.latest_model,
+      share: total === 0 ? 0 : row.count / total
+    }));
+
+    const failed = errors.reduce((sum, e) => sum + e.count, 0);
+    return {
+      since,
+      until,
+      total_calls: total,
+      total_errors: failed,
+      error_rate: total === 0 ? 0 : failed / total,
+      errors
+    };
   }
 
   toolStats({ since = null, until = null } = {}) {
