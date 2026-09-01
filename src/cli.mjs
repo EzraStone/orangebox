@@ -441,6 +441,8 @@ async function assertRun(args) {
       case '--max-errors': limits.maxErrors = int(next(), '--max-errors'); break;
       case '--max-calls': limits.maxCalls = int(next(), '--max-calls'); break;
       case '--require-known-cost': limits.requireKnownCost = true; break;
+      case '--max-tool-errors': limits.maxToolErrors = int(next(), '--max-tool-errors'); break;
+      case '--max-unanswered-tools': limits.maxUnansweredTools = int(next(), '--max-unanswered-tools'); break;
       default:
         if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
         positional.push(args[i]);
@@ -454,7 +456,7 @@ async function assertRun(args) {
   try {
     const run = store.getRun(runId);
     if (!run) fail(`no run with id "${runId}"`);
-    const result = evaluateRunAssertions(run, store.callSummaries(runId), limits);
+    const result = evaluateRunAssertions(run, store.callSummaries(runId), limits, store.toolEvents(runId));
     if (result.ok) {
       console.log(`orangebox assertions passed for ${runId}`);
       return;
@@ -1325,6 +1327,8 @@ ASSERT LIMITS
   --max-errors <n>          maximum error count
   --max-calls <n>           maximum agent-loop call count
   --require-known-cost      fail when any call has unknown cost
+  --max-tool-errors <n>     maximum failed tool results
+  --max-unanswered-tools <n>  maximum tool calls that never got a result
 
 EASIEST START
   orangebox run --name "checkout bot" -- node agent.js

@@ -560,3 +560,49 @@ test('runs can be filtered by provider', () => {
 
   store.close();
 });
+
+test('the CI gate can fail on tool outcomes (§19.6)', async () => {
+  // An agent whose tool calls never come back is broken in a way none of the
+  // other limits can see: the run finishes, costs almost nothing, errors zero
+  // times, and did not do the job.
+  const { evaluateRunAssertions, countToolOutcomes } = await import('../src/assertions.mjs');
+
+  const tools = [
+    { kind: 'tool_use', tool_use_id: 'a' },
+    { kind: 'tool_result', tool_use_id: 'a', is_error: 0 },
+    { kind: 'tool_use', tool_use_id: 'b' },
+    { kind: 'tool_result', tool_use_id: 'b', is_error: 1 },
+    { kind: 'tool_use', tool_use_id: 'c' } // never answered
+  ];
+
+  assert.deepEqual(countToolOutcomes(tools), { uses: 3, errors: 1, unanswered: 1 });
+
+  const run = { cost_usd: 0.01, error_count: 0, call_count: 3, unknown_cost_count: 0 };
+  const clean = evaluateRunAssertions(run, [], {}, tools);
+  assert.equal(clean.ok, true, 'no tool limits means no tool failures');
+  assert.deepEqual(clean.tools, { uses: 3, errors: 1, unanswered: 1 });
+
+  const strict = evaluateRunAssertions(run, [], { maxUnansweredTools: 0 }, tools);
+  assert.equal(strict.ok, false);
+  assert.match(strict.failures[0], /never got a result/);
+  assert.match(strict.failures[0], /agent loop did not complete/);
+
+  const errorGate = evaluateRunAssertions(run, [], { maxToolErrors: 0 }, tools);
+  assert.equal(errorGate.ok, false);
+  assert.match(errorGate.failures[0], /1 tool error/);
+
+  // A generous ceiling passes, so the gate is not simply always-on.
+  assert.equal(
+    evaluateRunAssertions(run, [], { maxToolErrors: 5, maxUnansweredTools: 5 }, tools).ok,
+    true
+  );
+});
+
+test('assertions still work for callers that pass no tools', () => {
+  // The signature grew a parameter; every existing caller has to keep working.
+  return import('../src/assertions.mjs').then(({ evaluateRunAssertions }) => {
+    const run = { cost_usd: 0.5, error_count: 0, call_count: 1, unknown_cost_count: 0 };
+    assert.equal(evaluateRunAssertions(run, [], { maxCost: 1 }).ok, true);
+    assert.equal(evaluateRunAssertions(run, [], { maxCost: 0.1 }).ok, false);
+  });
+});
