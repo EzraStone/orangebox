@@ -272,6 +272,32 @@ export class Store {
       oldRuns: db.prepare('SELECT id FROM runs WHERE started_at < ?')
     };
 
+    // §19.9 — search inside recorded content.
+    //
+    // LIKE over the JSON blobs, not FTS5. A virtual table would be faster and
+    // would mean a schema migration, a second copy of every prompt on disk, and
+    // a tokeniser deciding what counts as a word inside JSON. For a local
+    // database on one machine, scanning is the honest trade: it stays exact,
+    // costs nothing to maintain, and the cap below keeps it bounded.
+    this.q.searchCalls = db.prepare(`
+      SELECT c.id, c.run_id, c.seq, c.provider, c.model, c.started_at,
+             c.error_type, c.cost_usd, c.latency_ms,
+             COALESCE(r.name, c.run_id) AS run_name,
+             CASE WHEN c.request_json LIKE @like ESCAPE '\\' THEN 1 ELSE 0 END  AS in_request,
+             CASE WHEN c.response_json LIKE @like ESCAPE '\\' THEN 1 ELSE 0 END AS in_response
+        FROM calls c
+        JOIN runs r ON r.id = c.run_id
+       WHERE (c.request_json LIKE @like ESCAPE '\\' OR c.response_json LIKE @like ESCAPE '\\')
+         AND c.started_at BETWEEN @since AND @until
+       ORDER BY c.started_at DESC
+       LIMIT @limit`);
+
+    // The blobs themselves, fetched only for the rows being shown, so a search
+    // over a large history never pulls every prompt into memory.
+    this.q.callBlobs = db.prepare(
+      'SELECT request_json, response_json FROM calls WHERE id = ?'
+    );
+
     // §19.8 — tool behaviour across runs. orangebox never watches a tool run;
     // it sees the request go out and the result come back, so the only timing
     // available is the wall-clock hole between two consecutive calls.
@@ -645,6 +671,51 @@ export class Store {
    * where the call asked for exactly one tool contribute to the average. A
    * tool used ninety times but timed twice reports both numbers.
    */
+  /**
+   * §19.9 — find calls whose recorded prompt or response contains `query`.
+   *
+   * Returns a snippet around the first hit rather than the blob, because the
+   * point is to see enough to recognise the call, and a 200KB prompt in a
+   * results list helps nobody. Matching is literal and case-insensitive:
+   * SQLite's LIKE folds ASCII case, which is what people expect when typing a
+   * few words they remember.
+   */
+  searchCalls({ query, limit = 50, since = null, until = null, snippetChars = 160 } = {}) {
+    const needle = String(query ?? '').trim();
+    if (needle === '') return { query: '', total: 0, results: [] };
+
+    const rows = this.q.searchCalls.all({
+      // Escape the LIKE metacharacters, or a query containing % matches
+      // everything and _ matches any character — silently wrong results
+      // rather than no results, which is worse.
+      like: `%${likeLiteral(needle)}%`,
+      since: since ?? 0,
+      until: until ?? Number.MAX_SAFE_INTEGER,
+      limit: Math.max(1, Math.min(limit, 500))
+    });
+
+    const results = rows.map((row) => {
+      const blobs = this.q.callBlobs.get(row.id) ?? {};
+      const haystack = row.in_request ? blobs.request_json : blobs.response_json;
+      return {
+        id: row.id,
+        run_id: row.run_id,
+        run_name: row.run_name,
+        seq: row.seq,
+        provider: row.provider,
+        model: row.model,
+        started_at: row.started_at,
+        error_type: row.error_type,
+        cost_usd: row.cost_usd,
+        latency_ms: row.latency_ms,
+        where: row.in_request && row.in_response ? 'both' : row.in_request ? 'request' : 'response',
+        snippet: snippetAround(haystack, needle, snippetChars)
+      };
+    });
+
+    return { query: needle, total: results.length, limit, results };
+  }
+
   toolStats({ since = null, until = null } = {}) {
     const rows = this.q.toolStats.all({
       since: since ?? 0,
@@ -746,6 +817,43 @@ export function autoRunName(ts = Date.now()) {
  * Reduce request headers to the allowlist. Anything that could carry a
  * credential is dropped regardless of the allowlist.
  */
+/**
+ * A window of text around the first case-insensitive hit, with ellipses where
+ * it was cut. Returns null when the needle is not actually in this blob — the
+ * row matched on the other one.
+ */
+/**
+ * Make `text` match literally inside a LIKE pattern.
+ *
+ * Built from String.fromCharCode rather than written as escapes, because a
+ * backslash in this function has survived three layers of quoting to get here
+ * and silently losing one produces a search that returns everything instead of
+ * one thing — which reads as working.
+ *
+ * The escape character is declared to SQLite with ESCAPE in the query itself;
+ * the two have to agree.
+ */
+export const LIKE_ESCAPE = String.fromCharCode(92);
+
+export function likeLiteral(text) {
+  return String(text ?? '')
+    .split(LIKE_ESCAPE).join(LIKE_ESCAPE + LIKE_ESCAPE)
+    .split('%').join(LIKE_ESCAPE + '%')
+    .split('_').join(LIKE_ESCAPE + '_');
+}
+
+export function snippetAround(text, needle, chars = 160) {
+  if (typeof text !== 'string' || text === '') return null;
+  const at = text.toLowerCase().indexOf(needle.toLowerCase());
+  if (at === -1) return null;
+
+  const half = Math.max(0, Math.floor((chars - needle.length) / 2));
+  const start = Math.max(0, at - half);
+  const end = Math.min(text.length, at + needle.length + half);
+
+  return (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
+}
+
 export function redactHeaders(headers = {}) {
   const out = {};
   for (const [rawName, value] of Object.entries(headers)) {
