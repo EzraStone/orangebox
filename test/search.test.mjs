@@ -156,3 +156,75 @@ test('a snippet of a blob that does not contain the needle is null', () => {
   assert.equal(snippetAround(null, 'needle'), null);
   assert.equal(snippetAround('', 'needle'), null);
 });
+
+test('GET /api/search finds a call recorded through the proxy (§19.9)', async () => {
+  const { startOrangebox, startMockUpstream, jsonResponse, settle, removeTempDir } =
+    await import('./helpers.mjs');
+
+  const upstream = await startMockUpstream((req, res) =>
+    jsonResponse(res, 200, {
+      model: 'claude-opus-5',
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 10, output_tokens: 5 },
+      content: [{ type: 'text', text: 'the migration lock was still held' }]
+    })
+  );
+  const app = await startOrangebox({ providers: { anthropic: upstream.origin, openai: upstream.origin } });
+
+  try {
+    await fetch(`${app.origin}/anthropic/v1/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-opus-5', messages: [{ role: 'user', content: 'why did the deploy fail?' }] })
+    }).then((r) => r.text());
+
+    assert.ok(await settle(app, () => app.store.countRuns() === 1));
+
+    const hitResponse = await (await fetch(`${app.origin}/api/search?q=${encodeURIComponent('migration lock')}`)).json();
+    assert.equal(hitResponse.total, 1);
+    assert.equal(hitResponse.results[0].where, 'response');
+    assert.match(hitResponse.results[0].snippet, /migration lock/);
+
+    const hitRequest = await (await fetch(`${app.origin}/api/search?q=${encodeURIComponent('deploy fail')}`)).json();
+    assert.equal(hitRequest.results[0].where, 'request');
+
+    const miss = await (await fetch(`${app.origin}/api/search?q=nothingmatchesthis`)).json();
+    assert.equal(miss.total, 0);
+
+    // An empty q must not be read as "everything".
+    const blank = await (await fetch(`${app.origin}/api/search?q=`)).json();
+    assert.equal(blank.total, 0);
+  } finally {
+    await app.close();
+    await upstream.close();
+    removeTempDir(app.dbPath);
+  }
+});
+
+test('search results never carry a credential (§12.2)', async () => {
+  const { startOrangebox, startMockUpstream, jsonResponse, settle, removeTempDir } =
+    await import('./helpers.mjs');
+
+  const upstream = await startMockUpstream((req, res) =>
+    jsonResponse(res, 200, { model: 'claude-opus-5', content: [{ type: 'text', text: 'canary reply' }] })
+  );
+  const app = await startOrangebox({ providers: { anthropic: upstream.origin, openai: upstream.origin } });
+
+  try {
+    await fetch(`${app.origin}/anthropic/v1/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': 'sk-ant-SEARCHCANARY' },
+      body: JSON.stringify({ model: 'claude-opus-5', messages: [{ role: 'user', content: 'canary' }] })
+    }).then((r) => r.text());
+
+    assert.ok(await settle(app, () => app.store.countRuns() === 1));
+
+    const body = await (await fetch(`${app.origin}/api/search?q=canary`)).text();
+    assert.ok(body.includes('canary reply') || body.includes('canary'), 'the call was found');
+    assert.doesNotMatch(body, /SEARCHCANARY/, 'an api key must never surface in search results');
+  } finally {
+    await app.close();
+    await upstream.close();
+    removeTempDir(app.dbPath);
+  }
+});

@@ -459,6 +459,17 @@ async function handleApi(req, res, ctx, pathname, url) {
     return sendJson(res, 200, store.spend({ groupBy: group, since, until }));
   }
 
+  // GET /api/search?q=&limit=&since=&until=  (§19.9)
+  if (method === 'GET' && pathname === '/api/search') {
+    const query = url.searchParams.get('q') ?? '';
+    return sendJson(res, 200, store.searchCalls({
+      query,
+      limit: clampInt(url.searchParams.get('limit'), 50, 1, 500),
+      since: epochParam(url.searchParams.get('since')),
+      until: epochParam(url.searchParams.get('until'))
+    }));
+  }
+
   // GET /api/tools?since=&until=  (§19.8)
   if (method === 'GET' && pathname === '/api/tools') {
     const since = epochParam(url.searchParams.get('since'));
