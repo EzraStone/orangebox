@@ -47,7 +47,7 @@ function openShortcutHelp() {
   document.body.append(layer);
 }
 
-function openModal({ title, message = '', fields = [], confirmText = 'Save', danger = false }) {
+function openModal({ title, message = '', fields = [], confirmText = 'Save', danger = false, dismissOnly = false }) {
   return new Promise((resolve) => {
     const form = el('form', { class: 'modal-card' }, [
       el('h2', { text: title }),
@@ -68,7 +68,14 @@ function openModal({ title, message = '', fields = [], confirmText = 'Save', dan
       if (field.required) control.required = true;
       form.append(el('label', { class: 'modal-field' }, [el('span', { text: field.label }), control]));
     }
-    const cancel = el('button', { class: 'btn', type: 'button', text: 'Cancel' });
+    // A notice has nothing to cancel: offering the choice invites the reader
+    // to wonder what declining an 'Imported' message would undo.
+    const cancel = el('button', {
+      class: 'btn',
+      type: 'button',
+      text: 'Cancel',
+      hidden: dismissOnly
+    });
     const submit = el('button', {
       class: `btn primary${danger ? ' danger' : ''}`,
       type: 'submit',
@@ -99,7 +106,7 @@ function openModal({ title, message = '', fields = [], confirmText = 'Save', dan
 }
 
 function showNotice(title, message) {
-  return openModal({ title, message, confirmText: 'OK' });
+  return openModal({ title, message, confirmText: 'OK', dismissOnly: true });
 }
 
 // ============================================================= formatting
@@ -1880,6 +1887,71 @@ try {
 } catch {
   /* ignored */
 }
+
+
+// ============================================================ drop to import
+//
+// §10.7 — a teammate sends you an export; dropping it on the window should be
+// enough. The CLI has `orangebox import`, but the person looking at a timeline
+// is already in the browser and should not have to leave it.
+
+function setupImportDrop() {
+  const shell = $('shell');
+  let depth = 0; // dragenter/dragleave fire per child, so count rather than toggle
+
+  const show = (on) => shell.classList.toggle('drop-target', on);
+
+  window.addEventListener('dragover', (event) => {
+    if (!event.dataTransfer?.types?.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  });
+
+  window.addEventListener('dragenter', (event) => {
+    if (!event.dataTransfer?.types?.includes('Files')) return;
+    depth += 1;
+    show(true);
+  });
+
+  window.addEventListener('dragleave', () => {
+    depth = Math.max(0, depth - 1);
+    if (depth === 0) show(false);
+  });
+
+  window.addEventListener('drop', async (event) => {
+    if (!event.dataTransfer?.files?.length) return;
+    event.preventDefault();
+    depth = 0;
+    show(false);
+
+    if (state.readOnly) {
+      return void await showNotice('Read-only', 'Paired mobile devices cannot import runs.');
+    }
+
+    const file = event.dataTransfer.files[0];
+    let payload;
+    try {
+      payload = JSON.parse(await file.text());
+    } catch (error) {
+      return void await showNotice('Could not read that file', `${file.name} is not valid JSON.`);
+    }
+
+    try {
+      const result = await api.send('POST', '/api/import', payload);
+      await loadRuns();
+      await navigate(result.run_id);
+      const extra = result.renamed ? ' It shares an id with a run you already had, so it was given a new one.' : '';
+      await showNotice(
+        'Imported',
+        `${result.calls} call(s) from ${file.name}, as "${result.name}".${extra}`
+      );
+    } catch (error) {
+      await showNotice('Import failed', error.message);
+    }
+  });
+}
+
+setupImportDrop();
 
 // ====================================================== resizable drawer
 
