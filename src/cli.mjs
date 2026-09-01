@@ -39,6 +39,8 @@ export async function main(argv) {
       return runWrapped(rest);
     case 'export':
       return exportRun(rest);
+    case 'prune':
+      return prune(rest);
     case 'find':
       return findCalls(rest);
     case 'tools':
@@ -538,6 +540,102 @@ async function doctor(args) {
 }
 
 
+
+// ---------------------------------------------------------------- prune
+
+/**
+ * Reclaim space. Age, size, or just a rebuild of the file.
+ */
+async function prune(args) {
+  let dbPath = null;
+  let days = null;
+  let maxBytes = null;
+  let vacuumOnly = false;
+  let yes = false;
+
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--older-than': days = int(next(), '--older-than'); break;
+      case '--max-size': maxBytes = parseSize(next()); break;
+      case '--vacuum': vacuumOnly = true; break;
+      case '--yes': case '-y': yes = true; break;
+      default: fail(`unknown flag "${args[i]}"`);
+    }
+  }
+
+  if (days === null && maxBytes === null && !vacuumOnly) {
+    fail('usage: orangebox prune [--older-than <days>] [--max-size <e.g. 500MB>] [--vacuum]');
+  }
+
+  const { openStore } = await import('./store.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+  try {
+    const before = store.sizeBytes();
+    const runsBefore = store.countRuns();
+    console.log(`  ${store.path}`);
+    console.log(`  ${runsBefore} run(s), ${formatBytes(before)}`);
+
+    // Deleting recordings is not undoable, so say what will go and ask —
+    // unless the caller has already said yes, as a script would.
+    if (!vacuumOnly && !yes) {
+      const doomed = describePlan(store, { days, maxBytes });
+      if (doomed === 0) {
+        console.log('  nothing matches — nothing to do.');
+        return;
+      }
+      const ok = await confirm(`  delete ${doomed} run(s)? [y/N] `);
+      if (!ok) {
+        console.log('  cancelled.');
+        return;
+      }
+    }
+
+    let deleted = 0;
+    if (days !== null) deleted += store.retain(days);
+    if (maxBytes !== null) deleted += store.pruneToSize(maxBytes).deleted;
+    if (vacuumOnly && deleted === 0) store.vacuum();
+    else store.vacuum();
+
+    const after = store.sizeBytes();
+    console.log(`  deleted ${deleted} run(s), reclaimed ${formatBytes(Math.max(0, before - after))}`);
+    console.log(`  now ${store.countRuns()} run(s), ${formatBytes(after)}`);
+  } finally {
+    store.close();
+  }
+}
+
+/** How many runs the requested prune would remove, without removing them. */
+function describePlan(store, { days, maxBytes }) {
+  let doomed = 0;
+  if (days !== null) {
+    const cutoff = Date.now() - days * 86_400_000;
+    doomed += store.db.prepare('SELECT COUNT(*) n FROM runs WHERE started_at < ?').get(cutoff).n;
+  }
+  if (maxBytes !== null && store.sizeBytes() > maxBytes) {
+    // Size pruning is iterative, so this is a floor rather than an exact
+    // count. Saying "at least" beats implying precision we do not have.
+    doomed += 1;
+  }
+  return doomed;
+}
+
+/** "500MB", "2GB", "1048576" — the forms people actually type. */
+export function parseSize(text) {
+  // Built from a string rather than a literal: the whitespace class in this
+  // file has been eaten in transit before, and /s*/ silently rejects "700 kb"
+  // while accepting everything else, which looks like a picky parser.
+  const SIZE = new RegExp('^([0-9]+(?:[.][0-9]+)?)[ \t]*(B|KB|MB|GB)?$', 'i');
+  const match = String(text).trim().match(SIZE);
+  if (!match) fail(`--max-size needs a size like 500MB, got "${text}"`);
+  const units = { b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3 };
+  return Math.round(Number(match[1]) * units[(match[2] ?? 'B').toLowerCase()]);
+}
 // ----------------------------------------------------------------- find
 
 /**
@@ -1053,6 +1151,7 @@ USAGE
   orangebox find <text>                search your recorded prompts and responses
   orangebox tools                      which tools get used, fail, and take time
   orangebox doctor                     show what orangebox actually resolved
+  orangebox prune [--older-than <d>]   reclaim space; also --max-size, --vacuum
   orangebox clear [--yes]              delete all recorded data
   orangebox --version | --help
 

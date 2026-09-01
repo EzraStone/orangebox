@@ -133,3 +133,14 @@ test('an in-memory store reports zero rather than failing', () => {
   assert.deepEqual(store.pruneToSize(100), { deleted: 0, before: 0, after: 0, reclaimed: 0 });
   store.close();
 });
+
+test('parseSize accepts the forms people actually type', async () => {
+  const { parseSize } = await import('../src/cli.mjs');
+  assert.equal(parseSize('1024'), 1024);
+  assert.equal(parseSize('500MB'), 500 * 1024 ** 2);
+  assert.equal(parseSize('2GB'), 2 * 1024 ** 3);
+  assert.equal(parseSize('1.5GB'), Math.round(1.5 * 1024 ** 3));
+  // Lower case and a space, because both are what a person types.
+  assert.equal(parseSize('700 kb'), 700 * 1024);
+  assert.equal(parseSize('12 MB'), 12 * 1024 ** 2);
+});
