@@ -153,3 +153,80 @@ test('a second import of the same file gets a distinguishable name', () => {
   assert.match(store.getRun(third.run_id).name, /#3$/);
   store.close();
 });
+
+test('POST /api/import loads a run and announces it live (§10.7)', async () => {
+  const { startOrangebox, getJson, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const { payload } = exported();
+    const csrf = (await getJson(`${app.origin}/api/health`)).body.csrf_token;
+
+    const res = await fetch(`${app.origin}/api/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-orangebox-csrf': csrf },
+      body: JSON.stringify(payload)
+    });
+
+    assert.equal(res.status, 200);
+    const result = await res.json();
+    assert.equal(result.calls, 1);
+
+    const runs = (await getJson(`${app.origin}/api/runs`)).body.runs;
+    assert.equal(runs.length, 1);
+    assert.match(runs[0].name, /imported/);
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});
+
+test('a bad import is refused with what is wrong, not a bare 400', async () => {
+  const { startOrangebox, getJson, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const csrf = (await getJson(`${app.origin}/api/health`)).body.csrf_token;
+    const post = (body) =>
+      fetch(`${app.origin}/api/import`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-orangebox-csrf': csrf },
+        body
+      });
+
+    const notExport = await post(JSON.stringify({ hello: true }));
+    assert.equal(notExport.status, 400);
+    assert.match((await notExport.json()).error, /orangebox_export/);
+
+    // "not JSON" and "too big" both used to be an indistinguishable null.
+    const notJson = await post('{ definitely not json');
+    assert.equal(notJson.status, 400);
+    assert.match((await notJson.json()).error, /not valid JSON/);
+
+    const empty = await post('');
+    assert.equal(empty.status, 400);
+    assert.match((await empty.json()).error, /empty request body/);
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});
+
+test('import is a mutation, so it needs the CSRF token', async () => {
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const { payload } = exported();
+    const res = await fetch(`${app.origin}/api/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    assert.equal(res.status, 403, 'import without a CSRF token must be refused');
+    assert.equal(app.store.countRuns(), 0, 'and must not have inserted anything');
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});

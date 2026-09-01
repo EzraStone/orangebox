@@ -321,6 +321,22 @@ async function handleApi(req, res, ctx, pathname, url) {
     return sendJson(res, 200, { id: run.id, run });
   }
 
+  // POST /api/import  (§10.7)
+  if (method === 'POST' && pathname === '/api/import') {
+    const body = await readLargeJsonBody(req, MAX_IMPORT_BYTES);
+    if (!body.ok) return sendJson(res, body.status, { error: body.error });
+
+    const { importRun, ImportError } = await import('./import.mjs');
+    try {
+      const result = importRun(store, body.value);
+      live.publish('run.created', { run: store.getRun(result.run_id) });
+      return sendJson(res, 200, result);
+    } catch (error) {
+      if (error instanceof ImportError) return sendJson(res, 400, { error: error.message });
+      throw error;
+    }
+  }
+
   // POST /api/clear
   if (method === 'POST' && pathname === '/api/clear') {
     store.clearAll();
@@ -607,6 +623,37 @@ export function sendJson(res, status, body, extraHeaders = {}) {
     ...extraHeaders
   });
   res.end(text);
+}
+
+/**
+ * An export is a whole run of prompts, so the 1MB body limit the mutating
+ * endpoints use is far too small. This one is generous and, unlike
+ * readJsonBody, distinguishes "too large" from "not JSON" — both return null
+ * there, which would leave the user guessing which of the two happened.
+ */
+const MAX_IMPORT_BYTES = 128 * 1024 * 1024;
+
+async function readLargeJsonBody(req, limitBytes) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limitBytes) {
+      return {
+        ok: false,
+        status: 413,
+        error: `import is larger than ${Math.round(limitBytes / 1024 / 1024)}MB`
+      };
+    }
+    chunks.push(chunk);
+  }
+
+  if (chunks.length === 0) return { ok: false, status: 400, error: 'empty request body' };
+  try {
+    return { ok: true, value: JSON.parse(Buffer.concat(chunks).toString('utf8')) };
+  } catch (error) {
+    return { ok: false, status: 400, error: `not valid JSON (${error.message})` };
+  }
 }
 
 async function readJsonBody(req, limitBytes = 1_000_000) {
