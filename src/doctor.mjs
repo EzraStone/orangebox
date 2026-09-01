@@ -190,3 +190,42 @@ function formatBytes(bytes) {
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
+
+/**
+ * The config file, if there is one: whether it parsed, what it complained
+ * about, and how many redaction rules are live.
+ *
+ * Redaction gets its own line even when everything is fine, because a database
+ * recorded through filters is a different artifact from one recorded without
+ * them, and the person reading it later needs to know which they have.
+ */
+export function checkConfig({ present, path: file, errors = [], redactionRules = [] } = {}) {
+  const checks = [];
+
+  if (!present) {
+    checks.push({ name: 'config', status: OK, detail: 'none — using flags and defaults' });
+  } else if (errors.length > 0) {
+    checks.push({
+      name: 'config',
+      status: WARN,
+      detail: `${file} — ${errors.length} problem${errors.length === 1 ? '' : 's'}`
+    });
+    for (const message of errors) {
+      checks.push({ name: 'config problem', status: WARN, detail: message.replace(/^config: /, '') });
+    }
+  } else {
+    checks.push({ name: 'config', status: OK, detail: file });
+  }
+
+  checks.push(
+    redactionRules.length === 0
+      ? { name: 'redaction', status: OK, detail: 'no rules — prompts are stored as recorded' }
+      : {
+          name: 'redaction',
+          status: NOTE,
+          detail: `${redactionRules.length} rule(s) rewriting recorded prompts: ${redactionRules.map((r) => r.label).join(', ')}`
+        }
+  );
+
+  return checks;
+}

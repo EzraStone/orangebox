@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { Store, newId } from '../src/store.mjs';
 import { loadPricing } from '../src/pricing.mjs';
 import {
-  checkProviders, checkRuntime, checkDatabase, checkPricing, worst,
+  checkProviders, checkRuntime, checkDatabase, checkPricing, checkConfig, worst,
   OK, NOTE, FAIL
 } from '../src/doctor.mjs';
 
@@ -105,4 +105,37 @@ test('worst() ranks outcomes so the exit code can key off it', () => {
   assert.equal(worst([]), OK);
   assert.equal(worst([{ status: OK }, { status: NOTE }]), NOTE);
   assert.equal(worst([{ status: NOTE }, { status: FAIL }, { status: OK }]), FAIL);
+});
+
+test('a missing config file is reported as fine, not as absent', () => {
+  const [config, redaction] = checkConfig({ present: false, redactionRules: [] });
+  assert.equal(config.status, OK);
+  assert.match(config.detail, /using flags and defaults/);
+  assert.equal(redaction.status, OK);
+});
+
+test('config problems are surfaced one per line', () => {
+  const checks = checkConfig({
+    present: true,
+    path: '/home/.orangebox/config.json',
+    errors: ['config: unknown setting "prot" — ignored', 'config: "port" must be a port number'],
+    redactionRules: []
+  });
+  assert.equal(checks[0].status, 'warn');
+  assert.match(checks[0].detail, /2 problems/);
+  assert.equal(checks.filter((c) => c.name === 'config problem').length, 2);
+});
+
+test('active redaction is always stated, even when nothing is wrong', () => {
+  // A database recorded through filters is a different artifact from one
+  // recorded without them. Whoever reads it later needs to know which.
+  const checks = checkConfig({
+    present: true,
+    path: '/c.json',
+    errors: [],
+    redactionRules: [{ label: 'accounts' }, { label: 'hostnames' }]
+  });
+  const redaction = checks.find((c) => c.name === 'redaction');
+  assert.equal(redaction.status, NOTE);
+  assert.match(redaction.detail, /accounts, hostnames/);
 });

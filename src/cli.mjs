@@ -466,6 +466,17 @@ async function assertRun(args) {
 
 // --------------------------------------------------------------- doctor
 
+/** doctor reports the same config the server would actually run with. */
+function configChecks(loaded, compileRedactionRules, checkConfig) {
+  const { rules, errors: ruleErrors } = compileRedactionRules(loaded.config.redact ?? []);
+  return checkConfig({
+    present: loaded.present,
+    path: loaded.path,
+    errors: [...loaded.errors, ...ruleErrors],
+    redactionRules: rules
+  });
+}
+
 const STATUS_MARK = { ok: "ok  ", note: "note", warn: "warn", fail: "FAIL" };
 
 /**
@@ -490,8 +501,9 @@ async function doctor(args) {
 
   const { openStore } = await import('./store.mjs');
   const { loadPricing } = await import('./pricing.mjs');
+  const { loadConfig, compileRedactionRules } = await import('./config.mjs');
   const {
-    checkRuntime, checkDatabase, checkProviders, checkPricing, worst, OK
+    checkRuntime, checkDatabase, checkProviders, checkPricing, checkConfig, worst, OK
   } = await import('./doctor.mjs');
 
   const store = openStore(dbPath ?? defaultDbPath());
@@ -503,7 +515,8 @@ async function doctor(args) {
         openaiUpstream: PROVIDERS.openai,
         anthropicUpstream: PROVIDERS.anthropic
       }), { routable: ROUTABLE_PROVIDERS }),
-      ...checkPricing(store, loadPricing())
+      ...checkPricing(store, loadPricing()),
+      ...configChecks(loadConfig(), compileRedactionRules, checkConfig)
     ];
 
     if (format === 'json') {
