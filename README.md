@@ -162,6 +162,7 @@ Recording happens **after** your client's response is finished — never in the 
 | `orangebox export <run-id> [-o file]` | Write a self-contained JSON file of the run — commit it to a bug report. |
 | `orangebox assert <run-id> [limits]` | Exit non-zero when cost, latency, errors, call count, or unknown costs exceed a CI threshold. |
 | `orangebox spend [--group <k>]` | What your agents have cost, by model, provider, run, or day — with an explicit count of what it could not price. |
+| `orangebox tools [--sort]` | Which tools your agent leans on, which fail, and which never got an answer. |
 | `orangebox doctor` | Show what orangebox actually resolved: providers, upstreams, credentials, database, pricing coverage. Exits non-zero on a failure. |
 | `orangebox clear [--yes]` | Delete all recorded data. |
 
@@ -249,6 +250,33 @@ A **no usage** call never reported token counts at all (it errored, the client
 hung up, or it streamed without `include_usage`), so its cost is unknowable and
 no edit to that file will help. Meanwhile `llama3.2` at a true `$0` stays
 visibly distinct from both.
+
+## Tools
+
+`/tools` in the UI, or `orangebox tools`:
+
+```
+  tool           uses   errors        avg    slowest
+
+  read_logs         3        0     153 ms     163 ms  (3 unanswered, timed on 2/3)
+
+  3 tool call(s), 0 errored, 3 never answered
+```
+
+Two columns need explaining, and both are about not overstating what a proxy
+can see.
+
+**Unanswered** is a tool call the model made that never got a result back — a
+broken agent loop, a crash, or a run that ended mid-turn. It is invisible on a
+timeline unless you go hunting for the missing half, and it is usually the
+interesting thing.
+
+**Timing** is the wall-clock hole between two consecutive calls, because
+orangebox never watches a tool execute — it sees the request go out and the
+result come back. When one call requests three tools, that hole covers all
+three and cannot honestly be split, so only single-tool calls contribute to the
+average. `timed on 2/3` says how much of the number is real. A tool only ever
+used alongside others reports an em-dash rather than a plausible figure.
 
 ## Checking your setup
 

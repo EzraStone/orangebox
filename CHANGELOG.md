@@ -6,6 +6,7 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Added
 
+- Tool analytics (§19.8) at `/tools` and as `orangebox tools`: uses, error rate, unanswered calls, and timing per tool, with `--json` and `--csv`. Served at `GET /api/tools`.
 - `orangebox doctor`: reports the resolved version, database, every routable provider with its upstream and credential status, and pricing coverage against calls actually recorded. Exits non-zero on a failure; `--json` for tooling.
 - Integration tests that run the CLI as a real subprocess, covering provider routing, `spend`, `export`, `assert`, and `doctor`. The 1.2.0 provider bug survived a full release because every test built the server in-process, skipping the code that turns flags into configuration.
 
@@ -20,6 +21,8 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 - `spend` reports `unrated_calls` and `no_usage_calls` alongside `unpriced_calls`, in the API, the UI, and `--csv`.
 
 ### Fixed
+
+- A failure during UI startup rendered "Recorder unavailable" with the underlying error discarded, making it indistinguishable from the server being down. The reason is now logged.
 
 - **Gemini, Ollama and Bedrock were unreachable from the CLI.** They shipped in 1.2.0 routable, parsed, priced and covered by end-to-end tests, but `providersFrom()` named only openai and anthropic, so every real invocation proxied the other three to `undefined/v1/...`. The test suite passed throughout because the harness injects a providers map directly — the one path no user takes. Provider routes are now derived from the upstream table, so nothing can be routable without somewhere to route it.
 - Replay sent no credential for Gemini or Bedrock, producing an upstream 401 with no indication that orangebox had simply never learned about those providers. A missing key is now refused up front, naming the variables to set, and before the replay run is created so no orphan run is left behind.
