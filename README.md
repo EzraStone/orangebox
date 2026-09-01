@@ -430,10 +430,16 @@ Bedrock has one constraint worth knowing before you try it: SigV4 signs the `Hos
 - [x] **Search, filters, rename, and tags** — navigate a large local history
 - [x] **Sanitized HTML sharing** — portable reports with configurable redaction
 - [x] **Cost dashboard** — spend by model, provider, run, or day, in the UI and the CLI, with unpriced calls counted rather than hidden
+- [x] **Tool analytics** — which tools get used, fail, or never get an answer, with timing honest about how few samples it has
+- [x] **Error analytics** — failures grouped by type, each with its share of all calls
+- [x] **Content search** — search inside recorded prompts and responses, not just run names
+- [x] **Import** — read a run somebody exported into your own timeline and diff it against yours
+- [x] **Config file and prompt redaction** — machine-level settings, and your own regexes scrubbing sensitive text before it is stored
+- [x] **Maintenance** — prune by age or size, and vacuum so deleted space actually returns
 - [x] **Assertions** — fail CI when a run exceeds a cost, latency, error, or loop-count threshold
 - [x] **Mobile preview** — responsive installable shell plus read-only LAN pairing, live monitoring, and session revocation
 - [ ] **Encrypted mobile onboarding** — local HTTPS and QR pairing without weakening the local-first security model
-- [ ] **Provider-native replay credentials UI** — choose stored credential aliases without putting secrets in the database
+- [ ] **Provider-native replay credentials UI** — the per-provider credential table and a clear "set this variable" failure exist; choosing between stored aliases in the UI does not
 
 ## Contributing
 
