@@ -27,7 +27,7 @@
     "prepublishOnly": "npm test",
     "bench": "node scripts/bench.mjs",
     "smoke:install": "node scripts/smoke-install.mjs",
-    "test": "node --test test/parse.test.mjs test/eventstream.test.mjs test/bedrock.test.mjs test/store.test.mjs test/proxy.test.mjs test/diff.test.mjs test/spend.test.mjs test/cli.test.mjs test/credentials.test.mjs test/cli-integration.test.mjs test/doctor.test.mjs test/toolstats.test.mjs test/tools-view.test.mjs test/search.test.mjs test/export.test.mjs test/mobile.test.mjs"
+    "test": "node --test test/parse.test.mjs test/eventstream.test.mjs test/bedrock.test.mjs test/store.test.mjs test/proxy.test.mjs test/diff.test.mjs test/spend.test.mjs test/cli.test.mjs test/credentials.test.mjs test/cli-integration.test.mjs test/doctor.test.mjs test/toolstats.test.mjs test/tools-view.test.mjs test/search.test.mjs test/find-view.test.mjs test/export.test.mjs test/mobile.test.mjs"
   },
   "keywords": [
     "llm",
