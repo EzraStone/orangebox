@@ -39,6 +39,8 @@ export async function main(argv) {
       return runWrapped(rest);
     case 'export':
       return exportRun(rest);
+    case 'import':
+      return importFile(rest);
     case 'prune':
       return prune(rest);
     case 'find':
@@ -541,6 +543,61 @@ async function doctor(args) {
 
 
 
+
+// --------------------------------------------------------------- import
+
+/** §10.7 — read a run somebody exported into this database. */
+async function importFile(args) {
+  const positional = [];
+  let dbPath = null;
+  let name = null;
+
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--name': name = next(); break;
+      default:
+        if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
+        positional.push(args[i]);
+    }
+  }
+
+  const file = positional[0];
+  if (!file) fail('usage: orangebox import <export.json> [--name "..."]');
+
+  const nodeFs = await import('node:fs');
+  let payload;
+  try {
+    payload = JSON.parse(nodeFs.readFileSync(file, 'utf8'));
+  } catch (error) {
+    fail(`could not read ${file}: ${error.message}`);
+  }
+
+  const { openStore } = await import('./store.mjs');
+  const { importRun, ImportError } = await import('./import.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+  try {
+    const result = importRun(store, payload, { name });
+    console.log(`imported ${result.calls} call(s) and ${result.tools} tool event(s) as "${result.name}"`);
+    if (result.renamed) {
+      console.log('  a run with that id already existed, so this one was given a new one');
+    }
+    if (result.exported_by && result.exported_by !== VERSION) {
+      console.log(`  exported by orangebox v${result.exported_by}; you are running v${VERSION}`);
+    }
+    console.log(`  ${result.run_id}`);
+  } catch (error) {
+    if (error instanceof ImportError) fail(error.message);
+    throw error;
+  } finally {
+    store.close();
+  }
+}
 // ---------------------------------------------------------------- prune
 
 /**
@@ -1151,6 +1208,7 @@ USAGE
   orangebox find <text>                search your recorded prompts and responses
   orangebox tools                      which tools get used, fail, and take time
   orangebox doctor                     show what orangebox actually resolved
+  orangebox import <file.json>         load a run somebody exported
   orangebox prune [--older-than <d>]   reclaim space; also --max-size, --vacuum
   orangebox clear [--yes]              delete all recorded data
   orangebox --version | --help

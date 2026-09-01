@@ -60,9 +60,13 @@ export function importRun(store, payload, { name = null, now = Date.now() } = {}
     callIds.set(call.id, collision || store.getCall(call.id) ? newId() : call.id);
   }
 
-  const importedName =
+  const baseName =
     name ??
     (run.name ? `${run.name} (imported)` : `imported run ${new Date(exportedAt ?? now).toISOString().slice(0, 10)}`);
+
+  // Importing the same file twice is a reasonable thing to do, and two runs
+  // sharing a name collapse into one row anywhere runs are grouped by name.
+  const importedName = uniqueName(store, baseName);
 
   store.db.transaction(() => {
     store.createRun({
@@ -102,6 +106,17 @@ export function importRun(store, payload, { name = null, now = Date.now() } = {}
     renamed: collision,
     exported_by: version
   };
+}
+
+/** Append a counter only when the name is already taken. */
+function uniqueName(store, base) {
+  const taken = new Set(store.listRuns({ limit: 500 }).runs.map((r) => r.name));
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 1000; n++) {
+    const candidate = `${base} #${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return base;
 }
 
 function isObject(v) {

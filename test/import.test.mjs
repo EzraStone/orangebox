@@ -134,3 +134,22 @@ test('a failed import leaves nothing behind', () => {
   assert.equal(store.countRuns(), 0, 'a partial run survived a failed import');
   store.close();
 });
+
+test('a second import of the same file gets a distinguishable name', () => {
+  // Two runs sharing a name collapse into a single row anywhere runs are
+  // grouped by name — spend --group run, for one — so the copy has to be
+  // tellable apart at a glance, not just by id.
+  const { payload } = exported();
+  const store = new Store(':memory:');
+
+  const first = importRun(store, payload);
+  const second = importRun(store, payload);
+
+  const nameOf = (id) => store.getRun(id).name;
+  assert.notEqual(nameOf(first.run_id), nameOf(second.run_id));
+  assert.match(nameOf(second.run_id), /#2$/);
+
+  const third = importRun(store, payload);
+  assert.match(store.getRun(third.run_id).name, /#3$/);
+  store.close();
+});
