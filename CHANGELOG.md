@@ -2,6 +2,18 @@
 
 All notable changes to orangebox are documented here. Versions follow semantic versioning.
 
+## Unreleased
+
+### Added
+
+- `--https`: serve over TLS with a self-signed certificate generated locally (§22). The certificate covers loopback and the machine's LAN address, is kept in `~/.orangebox/tls/` and reused between runs, and its fingerprint is printed so it can be checked against what the browser shows.
+- QR pairing (§23): the mobile pairing link is drawn as a QR code in the terminal and served at `GET /api/mobile/pair.svg` for the UI. Encoder written from the standard, with no dependency.
+- Mobile mode now states in the banner when LAN traffic is unencrypted.
+
+### Fixed
+
+- Replay posted back through orangebox over a hard-coded `http://`, which would have failed for every replay under `--https`.
+
 ## [1.3.0] - 2026-09-01
 
 ### Added
