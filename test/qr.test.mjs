@@ -241,3 +241,22 @@ test('svg output is one path and scales with the module count', () => {
   assert.equal((svg.match(/<path/g) ?? []).length, 1, 'one path, not a rect per module');
   assert.ok(svg.includes('</svg>'));
 });
+
+test('a real pairing URL fits in a small symbol', () => {
+  // The URL the CLI prints, at its longest: a LAN address, a port, and a
+  // 30-character pairing code. If this needed a large version the terminal
+  // rendering would stop being practical.
+  const url = 'http://192.168.100.100:4100/#pair=7EC0047DD53BA9A6D54703159A4E23';
+  const qr = encode(url, { level: 'L' });
+
+  assert.ok(qr.version <= 5, `pairing URL needed version ${qr.version}`);
+  assert.ok(qr.size <= 37, `symbol is ${qr.size} modules across`);
+  assert.equal(decode(qr).text, url);
+});
+
+test('an https pairing URL also fits', () => {
+  const url = 'https://192.168.100.100:4100/#pair=7EC0047DD53BA9A6D54703159A4E23';
+  const qr = encode(url, { level: 'L' });
+  assert.ok(qr.version <= 5);
+  assert.equal(decode(qr).text, url);
+});

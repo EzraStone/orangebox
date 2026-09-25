@@ -5,6 +5,7 @@ import os from 'node:os';
 import process from 'node:process';
 
 import { createServer, VERSION, PROVIDERS, ROUTABLE_PROVIDERS } from './server.mjs';
+import { encode as qrEncode } from './qr/index.mjs';
 import { defaultDbPath } from './store.mjs';
 import { evaluateRunAssertions } from './assertions.mjs';
 
@@ -212,6 +213,50 @@ async function start(rawOpts) {
   return app;
 }
 
+/**
+ * Draw the pairing URL as a QR code in the terminal.
+ *
+ * Half-height blocks, so two symbol rows share one character cell and the
+ * result is square rather than twice as tall as it is wide — a stretched QR
+ * still scans, but it takes up half a screen for no reason.
+ */
+function printPairingQr(url) {
+  let qr;
+  try {
+    // Level L: the symbol is on a screen a foot from the camera, not printed
+    // on a box, so the redundancy buys nothing and a smaller symbol scans
+    // more reliably on a low-resolution terminal.
+    qr = qrEncode(url, { level: 'L' });
+  } catch {
+    return; // a QR is a convenience; never let it stop the recorder starting
+  }
+
+  const quiet = 2;
+  const width = qr.size + quiet * 2;
+  const at = (row, col) => {
+    const r = row - quiet;
+    const c = col - quiet;
+    return r >= 0 && c >= 0 && r < qr.size && c < qr.size ? qr.modules[r][c] : 0;
+  };
+
+  console.log();
+  for (let row = 0; row < width; row += 2) {
+    let line = "  ";
+    for (let col = 0; col < width; col++) {
+      const top = at(row, col);
+      const bottom = row + 1 < width ? at(row + 1, col) : 0;
+      // Dark modules are drawn as the *background* here: terminals are dark,
+      // and a scanner needs the quiet zone lighter than the symbol.
+      if (top && bottom) line += " ";
+      else if (top) line += String.fromCharCode(0x2584);
+      else if (bottom) line += String.fromCharCode(0x2580);
+      else line += String.fromCharCode(0x2588);
+    }
+    console.log(line);
+  }
+  console.log();
+}
+
 function banner({ origin, store, host, port, willOpen, authToken, mobile, configPath = null, redactionCount = 0, tls = null }) {
   const size = store.sizeBytes();
   const runs = store.countRuns();
@@ -245,6 +290,13 @@ function banner({ origin, store, host, port, willOpen, authToken, mobile, config
     console.log(`  ▮ mobile         ${mobileOrigin}`);
     console.log(`  ▮ pair link      ${mobileOrigin}/#pair=${mobile.pairingCode}`);
     console.log('  ▮ mobile access  read-only, same network, resets when orangebox restarts');
+
+    // §23 — the pairing link as a QR code. Typing a 120-bit pairing code
+    // into a phone by hand is the single worst part of this flow, and the
+    // errors it produces look like a rejected code rather than a typo.
+    if (process.stdout.isTTY) {
+      printPairingQr(`${mobileOrigin}/#pair=${mobile.pairingCode}`);
+    }
     if (!tls) {
       console.log(warn('  ▮ mobile traffic is unencrypted — add --https, or use only a network you trust'));
     }
