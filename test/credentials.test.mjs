@@ -131,3 +131,74 @@ test('a key is only demanded when the provider still points at its own cloud', a
   assert.equal(credentialRequired('anthropic', undefined, defaults), false);
   assert.equal(credentialRequired('anthropic', 'https://api.anthropic.com', undefined), false);
 });
+
+test('GET /api/credentials reports every provider, and no secrets (§19.7)', async () => {
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const { ROUTABLE_PROVIDERS } = await import('../src/server.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const { credentials } = await (await fetch(`${app.origin}/api/credentials`)).json();
+
+    assert.deepEqual(
+      credentials.map((c) => c.provider).sort(),
+      [...ROUTABLE_PROVIDERS].sort(),
+      'every routable provider is reported'
+    );
+
+    const ollama = credentials.find((c) => c.provider === 'ollama');
+    assert.equal(ollama.required, false, 'local inference needs no key');
+    assert.equal(ollama.available, true);
+    assert.equal(ollama.enforced, false);
+
+    const anthropic = credentials.find((c) => c.provider === 'anthropic');
+    assert.deepEqual(anthropic.checked, ['ANTHROPIC_API_KEY'], 'names the variable to set');
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});
+
+test('a credential value never reaches the credentials endpoint', async () => {
+  // The whole point of the endpoint is to describe credentials without
+  // exposing them, so this is the assertion that matters.
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const previous = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'sk-ant-ENDPOINT-CANARY';
+
+  const app = await startOrangebox({});
+  try {
+    const body = await (await fetch(`${app.origin}/api/credentials`)).text();
+    assert.doesNotMatch(body, /ENDPOINT-CANARY/, 'a key value reached the browser');
+
+    const { credentials } = JSON.parse(body);
+    const anthropic = credentials.find((c) => c.provider === 'anthropic');
+    assert.equal(anthropic.available, true, 'but it is reported as present');
+    assert.equal(anthropic.source, 'ANTHROPIC_API_KEY', 'credited by variable name');
+  } finally {
+    if (previous === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previous;
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});
+
+test('a provider pointed at a local gateway is not reported as blocking', async () => {
+  // Someone running a vLLM on their laptop needs no key, and telling them
+  // replay is unavailable would be wrong.
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({
+    providers: { anthropic: 'http://127.0.0.1:9999', openai: 'https://api.openai.com' }
+  });
+
+  try {
+    const { credentials } = await (await fetch(`${app.origin}/api/credentials`)).json();
+    const anthropic = credentials.find((c) => c.provider === 'anthropic');
+
+    assert.equal(anthropic.enforced, false, 'an overridden upstream is not enforced');
+    assert.match(anthropic.upstream, /127\.0\.0\.1/);
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});

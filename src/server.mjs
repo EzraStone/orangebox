@@ -331,6 +331,31 @@ async function handleApi(req, res, ctx, pathname, url) {
     return sendJson(res, 200, { id: run.id, run });
   }
 
+  // GET /api/credentials  (§19.7)
+  //
+  // Which providers replay could authenticate right now, so the UI can say
+  // so before somebody clicks Replay and waits for a 400.
+  //
+  // Variable names only. The values are the one thing orangebox refuses to
+  // hold, and this response goes to a browser.
+  if (method === 'GET' && pathname === '/api/credentials') {
+    const credentials = ROUTABLE_PROVIDERS.map((provider) => {
+      const resolved = resolveCredential(provider);
+      return {
+        provider,
+        upstream: providers[provider] ?? null,
+        required: resolved.required,
+        available: resolved.ok,
+        source: resolved.source,
+        checked: resolved.checked,
+        // Only enforced when the provider still points at its own cloud;
+        // a local gateway may need nothing at all.
+        enforced: credentialRequired(provider, providers[provider], PROVIDERS)
+      };
+    });
+    return sendJson(res, 200, { credentials });
+  }
+
   // GET /api/mobile/pair.svg  (§23)
   //
   // Rendered here rather than in the browser because the QR has to point at
