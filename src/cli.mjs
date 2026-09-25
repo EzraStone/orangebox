@@ -22,7 +22,8 @@ const DEFAULTS = {
   anthropicUpstream: 'https://api.anthropic.com',
   authToken: null,
   unsafeNoAuth: false,
-  mobile: false
+  mobile: false,
+  https: false
 };
 
 export async function main(argv) {
@@ -99,6 +100,7 @@ function parseFlags(args) {
       case '--bedrock-upstream': out.bedrockUpstream = next(); explicit.add('bedrockUpstream'); break;
       case '--auth-token': out.authToken = next(); explicit.add('authToken'); break;
       case '--mobile': out.mobile = true; explicit.add('mobile'); break;
+      case '--https': out.https = true; explicit.add('https'); break;
       case '--unsafe-no-auth': out.unsafeNoAuth = true; explicit.add('unsafeNoAuth'); break;
       case '--no-open': out.open = false; explicit.add('open'); break;
       case '--help': case '-h': printHelp(); process.exit(0);
@@ -151,6 +153,22 @@ async function start(rawOpts) {
   const { opts, redactionRules, configPath } = await applyConfig(rawOpts);
   requireRemoteSafety(opts);
   const dbPath = opts.db ?? defaultDbPath();
+
+  // §22.4 — the certificate has to cover every address anything will browse
+  // to: loopback for this machine, and the LAN address for a paired phone.
+  // Leaving the LAN address out produces a certificate that works perfectly
+  // on the laptop and is rejected by the device it exists for.
+  let tls = null;
+  if (opts.https) {
+    const { ensureCertificate } = await import('./tls/index.mjs');
+    const lan = lanAddress();
+    try {
+      tls = ensureCertificate({ hosts: ['localhost'], ips: ['127.0.0.1', ...(lan ? [lan] : [])] });
+    } catch (error) {
+      fail(`could not prepare a certificate: ${error.message}`);
+    }
+  }
+
   let app;
   try {
     app = createServer({
@@ -159,7 +177,8 @@ async function start(rawOpts) {
       providers: providersFrom(opts),
       authToken: opts.authToken,
       mobileAccess: opts.mobile,
-      redactionRules
+      redactionRules,
+      tls
     });
   } catch (err) {
     fail(err.message);
@@ -179,8 +198,8 @@ async function start(rawOpts) {
     fail(err.message);
   }
 
-  const origin = `http://${displayHost(opts.host)}:${opts.port}`;
-  banner({ origin, store: app.store, host: opts.host, port: opts.port, willOpen: opts.open, authToken: opts.authToken, mobile: app.mobile, configPath, redactionCount: redactionRules.length });
+  const origin = `${opts.https ? 'https' : 'http'}://${displayHost(opts.host)}:${opts.port}`;
+  banner({ origin, store: app.store, host: opts.host, port: opts.port, willOpen: opts.open, authToken: opts.authToken, mobile: app.mobile, configPath, redactionCount: redactionRules.length, tls });
 
   if (opts.open) openBrowser(opts.authToken ? `${origin}?token=${encodeURIComponent(opts.authToken)}` : origin);
 
@@ -193,7 +212,7 @@ async function start(rawOpts) {
   return app;
 }
 
-function banner({ origin, store, host, port, willOpen, authToken, mobile, configPath = null, redactionCount = 0 }) {
+function banner({ origin, store, host, port, willOpen, authToken, mobile, configPath = null, redactionCount = 0, tls = null }) {
   const size = store.sizeBytes();
   const runs = store.countRuns();
   console.log('');
@@ -207,15 +226,28 @@ function banner({ origin, store, host, port, willOpen, authToken, mobile, config
   if (authToken) console.log('  ▮ authentication x-orangebox-auth is required');
   // Both of these change what ends up recorded, so running with them
   // silently would be the wrong kind of quiet.
+  if (tls) {
+    console.log(`  ▮ https         on, certificate at ${tls.path}`);
+    // The fingerprint is the only way to tell the certificate your browser is
+    // complaining about from one somebody else put in front of you. Print it
+    // short — nobody compares 64 hex characters, but four groups they will.
+    console.log(`  ▮ fingerprint   ${tls.fingerprint.split(':').slice(0, 8).join(':')}…`);
+    if (tls.generated) {
+      console.log('  ▮ this certificate is new, so your browser will warn once. Check the fingerprint above.');
+    }
+  }
   if (configPath) console.log(`  ▮ config         ${configPath}`);
   if (redactionCount > 0) {
     console.log(`  ▮ redaction      ${redactionCount} rule${redactionCount === 1 ? '' : 's'} applied to recorded prompts`);
   }
   if (mobile?.enabled) {
-    const mobileOrigin = lanOrigin(port);
+    const mobileOrigin = lanOrigin(port, tls ? 'https' : 'http');
     console.log(`  ▮ mobile         ${mobileOrigin}`);
     console.log(`  ▮ pair link      ${mobileOrigin}/#pair=${mobile.pairingCode}`);
     console.log('  ▮ mobile access  read-only, same network, resets when orangebox restarts');
+    if (!tls) {
+      console.log(warn('  ▮ mobile traffic is unencrypted — add --https, or use only a network you trust'));
+    }
   }
   console.log('');
 
@@ -1198,13 +1230,19 @@ function requireRemoteSafety(opts) {
   }
 }
 
-function lanOrigin(port) {
+/** The first non-internal IPv4 address, or null if there is none. */
+function lanAddress() {
   for (const addresses of Object.values(os.networkInterfaces())) {
     for (const address of addresses ?? []) {
-      if (address.family === 'IPv4' && !address.internal) return `http://${address.address}:${port}`;
+      if (address.family === 'IPv4' && !address.internal) return address.address;
     }
   }
-  return `http://localhost:${port}`;
+  return null;
+}
+
+function lanOrigin(port, scheme = 'http') {
+  const address = lanAddress();
+  return `${scheme}://${address ?? 'localhost'}:${port}`;
 }
 
 /**
@@ -1336,6 +1374,7 @@ OPTIONS (start)
   --bedrock-upstream <url>    Bedrock runtime endpoint (or set AWS_REGION)
   --auth-token <token>        require x-orangebox-auth (required for safe remote use)
   --mobile                    bind to the LAN with read-only device pairing
+  --https                     serve over TLS with a self-signed certificate
   --unsafe-no-auth            allow a non-loopback host without authentication
   --no-open        don't open the browser on start
 
