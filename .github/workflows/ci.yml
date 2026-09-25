@@ -54,7 +54,8 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
       # The suite must not touch the network: every "upstream" is a local
       # node:http server (§17.1 check 10).
@@ -65,7 +66,10 @@ jobs:
           npm test 2>&1 | tee test-output.txt
 
       - name: Test a fresh packed install
-        run: npm run smoke:install
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run smoke:install 2>&1 | tee smoke-output.txt
 
       # Job logs and artifacts both need a token to read through the API, and
       # job summaries do not appear in check-run output — which leaves a red run
@@ -77,18 +81,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Any step above can be the one that failed, and until now a failure
+          # before npm test produced output left nothing published at all: jq
+          # --rawfile aborts on a missing file, so the check run was never
+          # created and the run could not be diagnosed without a browser.
+          touch test-output.txt smoke-output.txt
           {
-            echo "### \`npm test\` failed on ${{ matrix.os }} / node ${{ matrix.node }}"
+            echo "## Failure on ${{ matrix.os }} / node ${{ matrix.node }}"
             echo
+            echo "### npm test"
             echo '```'
-            tail -c 8000 test-output.txt || echo "(no test output captured)"
+            tail -c 6000 test-output.txt
+            echo '```'
+            echo "### smoke install"
+            echo '```'
+            tail -c 2000 smoke-output.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+          cat test-output.txt smoke-output.txt > combined-output.txt
 
           jq -n \
             --arg name "test output · ${{ matrix.os }} · node ${{ matrix.node }}" \
             --arg sha "$GITHUB_SHA" \
-            --rawfile body test-output.txt \
+            --rawfile body combined-output.txt \
             '{name: $name, head_sha: $sha, status: "completed", conclusion: "neutral",
               output: {title: "npm test output", summary: ("```\n" + $body + "\n```")}}' \
             > check-payload.json
@@ -100,5 +116,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-output-${{ matrix.os }}-node${{ matrix.node }}
-          path: test-output.txt
+          path: |
+            test-output.txt
+            smoke-output.txt
+          if-no-files-found: ignore
           retention-days: 7
