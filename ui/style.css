@@ -999,3 +999,17 @@ kbd {
   border-radius: 6px;
   pointer-events: none;
 }
+
+/* ------------------------------------------------------ §23 pairing QR */
+
+.pair-qr {
+  display: block;
+  width: 180px;
+  height: 180px;
+  margin: 12px auto 4px;
+  border-radius: 4px;
+  /* The symbol is generated on a white ground: a scanner needs the quiet zone
+     lighter than the modules, and this card is dark. */
+  background: #fff;
+}
+.pair-qr-note { text-align: center; margin-top: 0; }

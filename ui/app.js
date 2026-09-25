@@ -198,6 +198,28 @@ function formatPairingCode(code) {
   return String(code ?? '').match(/.{1,5}/g)?.join('-') ?? '';
 }
 
+/**
+ * Load the pairing QR, if this machine has a LAN address to pair over.
+ *
+ * The cache-buster matters: the image URL never changes but its contents do,
+ * every time the code is rotated, and a cached QR would silently pair nothing.
+ */
+async function showPairingQr(image, note) {
+  try {
+    const res = await fetch(`/api/mobile/pair.svg?t=${Date.now()}`, {
+      headers: authToken ? { 'x-orangebox-auth': authToken } : undefined
+    });
+    if (!res.ok) return; // no LAN address, or mobile is off: the code still works
+
+    const svg = await res.text();
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    image.hidden = false;
+    note.hidden = false;
+  } catch {
+    // A missing QR is not worth an error: the pairing code is right there.
+  }
+}
+
 async function manageMobileDevices() {
   const card = el('section', { class: 'modal-card' }, [
     el('h2', { text: 'Paired mobile devices' }),
@@ -205,10 +227,20 @@ async function manageMobileDevices() {
   ]);
   const list = el('div', { class: 'device-list' });
   const code = el('div', { class: 'pairing-code', hidden: true });
+
+  // §23 — the pairing link as a QR. Rendered by the recorder, because it has
+  // to encode the LAN address the phone can reach rather than the 127.0.0.1
+  // this browser is sitting on.
+  const qr = el('img', {
+    class: 'pair-qr',
+    alt: 'QR code containing the pairing link for this recorder',
+    hidden: true
+  });
+  const qrNote = el('p', { class: 'note pair-qr-note', hidden: true, text: 'Scan this with the phone you want to pair.' });
   const rotate = el('button', { class: 'btn', type: 'button', text: 'Rotate pairing code' });
   const close = el('button', { class: 'btn primary', type: 'button', text: 'Done' });
   const actions = el('div', { class: 'modal-actions' }, [rotate, close]);
-  card.append(list, code, actions);
+  card.append(list, qr, qrNote, code, actions);
   const layer = el('div', { class: 'modal-layer' }, [card]);
 
   const load = async () => {
@@ -229,6 +261,7 @@ async function manageMobileDevices() {
           on: { click: async () => {
             await api.send('DELETE', `/api/mobile/sessions/${encodeURIComponent(session.id)}`);
             await load();
+    await showPairingQr(qr, qrNote);
           } }
         })
       ]));
@@ -244,6 +277,7 @@ async function manageMobileDevices() {
     code.textContent = formatPairingCode(result.code);
     rotate.textContent = 'Pairing code rotated';
     rotate.disabled = true;
+    showPairingQr(qr, qrNote);
   });
   document.body.append(layer);
   try {

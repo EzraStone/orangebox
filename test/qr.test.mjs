@@ -260,3 +260,63 @@ test('an https pairing URL also fits', () => {
   assert.ok(qr.version <= 5);
   assert.equal(decode(qr).text, url);
 });
+
+test('GET /api/mobile/pair.svg serves a scannable pairing symbol (§23)', async () => {
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({ mobileAccess: true });
+
+  try {
+    const res = await fetch(`${app.origin}/api/mobile/pair.svg`);
+
+    // A machine with no LAN address cannot pair at all, and says so rather
+    // than serving a QR pointing at somewhere unreachable.
+    if (res.status === 409) {
+      assert.match((await res.json()).error, /no LAN address/);
+      return;
+    }
+
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /image\/svg\+xml/);
+    assert.equal(res.headers.get('cache-control'), 'no-store', 'a rotated code must not serve a stale QR');
+
+    const svg = await res.text();
+    assert.match(svg, /^<svg /);
+    assert.match(svg, /<path /);
+    assert.ok(svg.length > 500, 'the symbol has content');
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});
+
+test('the pairing QR is refused when mobile access is off', async () => {
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const res = await fetch(`${app.origin}/api/mobile/pair.svg`);
+    assert.equal(res.status, 404);
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});
+
+test('the pairing url points at the LAN address, not loopback', async () => {
+  // The whole reason this is generated server-side. A QR containing 127.0.0.1
+  // works on exactly one device: the one that does not need to scan it.
+  const { pairingUrl, lanAddress } = await import('../src/mobile.mjs');
+
+  const address = lanAddress();
+  const url = pairingUrl({ code: 'ABC123', port: 4100, scheme: 'http' });
+
+  if (address === null) {
+    assert.equal(url, null, 'no LAN address means no pairing URL');
+    return;
+  }
+
+  assert.equal(url, `http://${address}:4100/#pair=ABC123`);
+  assert.doesNotMatch(url, /127\.0\.0\.1|localhost/);
+  assert.equal(pairingUrl({ code: null, port: 4100 }), null, 'no code, no URL');
+  assert.match(pairingUrl({ code: 'X', port: 443, scheme: 'https' }), /^https:/);
+});

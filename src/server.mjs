@@ -13,7 +13,7 @@ import { createLiveHub } from './live.mjs';
 import { loadPricing } from './pricing.mjs';
 import { createProxy } from './proxy.mjs';
 import { compareRuns, sanitizeExport, buildHtmlReport, buildOtelExport } from './export.mjs';
-import { createMobileAccess, mobileSessionCanAccess, MOBILE_SESSION_TTL_SECONDS } from './mobile.mjs';
+import { createMobileAccess, mobileSessionCanAccess, MOBILE_SESSION_TTL_SECONDS, pairingUrl } from './mobile.mjs';
 import { resolveCredential, missingCredentialMessage, credentialRequired } from './credentials.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -253,7 +253,7 @@ async function handle(req, res, ctx) {
 // ================================================================= §10 API
 
 async function handleApi(req, res, ctx, pathname, url) {
-  const { store, live, security, providers, tls } = ctx;
+  const { store, live, security, providers, tls, mobile } = ctx;
   const method = req.method;
   const seg = pathname.split('/').filter(Boolean); // ['api', ...]
 
@@ -329,6 +329,32 @@ async function handleApi(req, res, ctx, pathname, url) {
     const run = store.createRun({ name: body?.name ?? null, source: 'explicit' });
     live.publish('run.created', { run });
     return sendJson(res, 200, { id: run.id, run });
+  }
+
+  // GET /api/mobile/pair.svg  (§23)
+  //
+  // Rendered here rather than in the browser because the QR has to point at
+  // the address the phone can reach. The browser asking for it is sitting on
+  // 127.0.0.1, which would encode a URL that works on exactly one device —
+  // the one that does not need to scan anything.
+  if (method === 'GET' && pathname === '/api/mobile/pair.svg') {
+    if (!mobile?.enabled) return sendJson(res, 404, { error: 'mobile access is disabled' });
+
+    const url = pairingUrl({
+      code: mobile.pairingCode,
+      port: req.socket.localPort,
+      scheme: tls?.cert ? 'https' : 'http'
+    });
+    if (!url) return sendJson(res, 409, { error: 'this machine has no LAN address to pair over' });
+
+    const { encode, toSvg } = await import('./qr/index.mjs');
+    const svg = toSvg(encode(url, { level: 'L' }), { scale: 5, quiet: 3 });
+
+    res.writeHead(200, {
+      'content-type': 'image/svg+xml; charset=utf-8',
+      'cache-control': 'no-store'
+    });
+    return res.end(req.method === 'HEAD' ? undefined : svg);
   }
 
   // POST /api/import  (§10.7)

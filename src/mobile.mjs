@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import os from 'node:os';
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PAIR_WINDOW_MS = 60 * 1000;
@@ -116,4 +117,28 @@ export const MOBILE_SESSION_TTL_SECONDS = Math.floor(SESSION_TTL_MS / 1000);
 
 export function mobileSessionCanAccess(method, pathname) {
   return ['GET', 'HEAD'].includes(method) && String(pathname).startsWith('/api/');
+}
+
+/**
+ * The first non-internal IPv4 address of this machine, or null.
+ *
+ * Lives here rather than in the CLI because the pairing QR is generated
+ * server-side and must point at the address the *phone* can reach — the
+ * browser asking for it is on 127.0.0.1, which would be useless.
+ */
+export function lanAddress() {
+  for (const addresses of Object.values(os.networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family === 'IPv4' && !address.internal) return address.address;
+    }
+  }
+  return null;
+}
+
+/** The URL a phone should open, or null when there is nothing to pair with. */
+export function pairingUrl({ code, port, scheme = 'http' }) {
+  if (!code) return null;
+  const address = lanAddress();
+  if (!address) return null;
+  return `${scheme}://${address}:${port}/#pair=${code}`;
 }
