@@ -2,6 +2,7 @@
 // proxied provider calls, the internal JSON API, the SSE live feed, and the
 // static UI. Routing is by path prefix, first match wins.
 import http from 'node:http';
+import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -90,7 +91,8 @@ export function createServer({
   redactionRules = [],
   authToken = null,
   mobileAccess = false,
-  maxPendingCapture
+  maxPendingCapture,
+  tls = null
 } = {}) {
   const store = openStore(dbPath);
   const live = createLiveHub();
@@ -103,13 +105,21 @@ export function createServer({
     allowRemote: false
   };
 
-  const server = http.createServer((req, res) => {
-    handle(req, res, { store, live, proxy, security, mobile, providers }).catch((err) => {
+  // §22.4 — HTTPS when a certificate is supplied, plain HTTP otherwise.
+  // The request handling is identical either way: nothing below the socket
+  // knows or cares, which is why this is one line rather than a second
+  // server implementation.
+  const listener = (req, res) => {
+    handle(req, res, { store, live, proxy, security, mobile, providers, tls }).catch((err) => {
       // Nothing below should throw, but a 500 beats a hung socket.
       if (!res.headersSent) sendJson(res, 500, { error: String(err?.message ?? err) });
       else res.end();
     });
-  });
+  };
+
+  const server = tls?.cert && tls?.key
+    ? https.createServer({ cert: tls.cert, key: tls.key }, listener)
+    : http.createServer(listener);
 
   // Provider streams can be long; don't let Node's default timeouts cut them off.
   server.requestTimeout = 0;
@@ -243,7 +253,7 @@ async function handle(req, res, ctx) {
 // ================================================================= §10 API
 
 async function handleApi(req, res, ctx, pathname, url) {
-  const { store, live, security, providers } = ctx;
+  const { store, live, security, providers, tls } = ctx;
   const method = req.method;
   const seg = pathname.split('/').filter(Boolean); // ['api', ...]
 
@@ -432,16 +442,19 @@ async function handleApi(req, res, ctx, pathname, url) {
       ...(security.authToken ? { 'x-orangebox-auth': security.authToken } : {}),
       ...credential.headers
     };
-    const replayUrl = `http://${req.headers.host}/r/${encodeURIComponent(run.id)}/${original.provider}${original.endpoint}`;
+    // Replay goes back through orangebox so the call is recorded on the way
+    // past, which means talking to ourselves over whatever scheme we are
+    // actually serving. Hard-coding http broke the moment --https existed,
+    // and the failure looked like the provider being unreachable.
+    const scheme = tls?.cert ? 'https' : 'http';
+    const replayUrl = `${scheme}://${req.headers.host}/r/${encodeURIComponent(run.id)}/${original.provider}${original.endpoint}`;
     let upstreamResponse;
     try {
-      upstreamResponse = await fetch(replayUrl, {
-        method: 'POST',
+      upstreamResponse = await selfRequest(replayUrl, {
         headers,
         body: JSON.stringify(replayRequest),
-        signal: AbortSignal.timeout(10 * 60 * 1000)
+        ca: tls?.cert ?? null
       });
-      await upstreamResponse.text();
     } catch (error) {
       return sendJson(res, 502, { error: 'replay failed', detail: String(error?.message ?? error), run_id: run.id });
     }
@@ -694,6 +707,42 @@ function parseJson(value) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * POST to orangebox itself.
+ *
+ * Not fetch(): over HTTPS the certificate is one orangebox generated and
+ * nothing trusts, and fetch offers no way to hand it a CA. Passing our own
+ * certificate is proper verification rather than a bypass — we know exactly
+ * which certificate to expect, because we wrote it.
+ */
+function selfRequest(target, { headers, body, ca }) {
+  const url = new URL(target);
+  const isHttps = url.protocol === 'https:';
+
+  return new Promise((resolve, reject) => {
+    const request = (isHttps ? https : http).request(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname + url.search,
+        method: 'POST',
+        headers: { ...headers, 'content-length': Buffer.byteLength(body) },
+        agent: false,
+        ...(isHttps && ca ? { ca, servername: url.hostname } : {})
+      },
+      (response) => {
+        // Drain it: the reply is recorded on the way through, not read here.
+        response.resume();
+        response.on('end', () => resolve({ status: response.statusCode }));
+      }
+    );
+
+    request.on('error', reject);
+    request.setTimeout(10 * 60 * 1000, () => request.destroy(new Error('replay timed out')));
+    request.end(body);
+  });
 }
 
 async function waitForCall(store, runId, timeoutMs = 5000) {
