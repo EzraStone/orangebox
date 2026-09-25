@@ -190,8 +190,12 @@ async function start(rawOpts) {
     if (removed > 0) console.log(`  ▮ retention     removed ${removed} run(s) older than ${opts.retain}d`);
   }
 
+  // The bound port, not the requested one. They differ when --port 0 asks
+  // the OS to choose, and printing the request would then advertise :0.
+  let boundPort = opts.port;
   try {
-    await app.listen(opts.port, opts.host);
+    const address = await app.listen(opts.port, opts.host);
+    boundPort = address?.port ?? opts.port;
   } catch (err) {
     if (err.code === 'EADDRINUSE') {
       fail(`port ${opts.port} is already in use — try: orangebox --port ${opts.port + 1}`);
@@ -199,8 +203,8 @@ async function start(rawOpts) {
     fail(err.message);
   }
 
-  const origin = `${opts.https ? 'https' : 'http'}://${displayHost(opts.host)}:${opts.port}`;
-  banner({ origin, store: app.store, host: opts.host, port: opts.port, willOpen: opts.open, authToken: opts.authToken, mobile: app.mobile, configPath, redactionCount: redactionRules.length, tls });
+  const origin = `${opts.https ? 'https' : 'http'}://${displayHost(opts.host)}:${boundPort}`;
+  banner({ origin, store: app.store, host: opts.host, port: boundPort, willOpen: opts.open, authToken: opts.authToken, mobile: app.mobile, configPath, redactionCount: redactionRules.length, tls });
 
   if (opts.open) openBrowser(opts.authToken ? `${origin}?token=${encodeURIComponent(opts.authToken)}` : origin);
 

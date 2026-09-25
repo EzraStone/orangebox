@@ -217,11 +217,13 @@ export function runCli(args, { env = {}, cwd, timeoutMs = 30_000 } = {}) {
 export async function startCliServer(args = [], { env = {}, timeoutMs = 30_000 } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orangebox-cli-'));
   const dbPath = path.join(dir, 'cli.db');
-  const port = 0;
 
   const child = spawn(
     process.execPath,
-    [CLI, '--db', dbPath, '--port', String(pickPort()), '--no-open', ...args],
+    // Port 0 asks the OS for a free one. Picking a random port made test
+    // files collide, because node --test runs them concurrently — which is
+    // a flaky failure that looks like the CLI being broken.
+    [CLI, '--db', dbPath, '--port', '0', '--no-open', ...args],
     { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] }
   );
 
@@ -275,7 +277,3 @@ export async function startCliServer(args = [], { env = {}, timeoutMs = 30_000 }
   };
 }
 
-/** An ephemeral port the CLI can bind. It takes a number, not a zero. */
-function pickPort() {
-  return 20000 + Math.floor(Math.random() * 20000);
-}

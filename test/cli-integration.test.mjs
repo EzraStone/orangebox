@@ -406,3 +406,20 @@ test('`assert --json` reports what passed as well as what failed', async () => {
     removeTempDir(server.dbPath);
   }
 });
+
+test('--port 0 reports the port it actually bound', async () => {
+  // The banner used to print the port that was asked for. With 0 that meant
+  // advertising http://127.0.0.1:0, which is not an address.
+  const server = await startCliServer();
+  try {
+    const port = new URL(server.origin).port;
+    assert.notEqual(port, '0');
+    assert.ok(Number(port) > 0, `printed port was ${port}`);
+
+    const res = await fetch(`${server.origin}/api/health`);
+    assert.equal(res.status, 200, 'the printed origin is reachable');
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});
