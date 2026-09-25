@@ -122,6 +122,7 @@ const state = {
   mobileAccess: false,
   filters: { search: '', model: '', provider: '', tool: '', error: '', min_latency: '', min_cost: '', from: '', to: '' },
   view: 'runs', // 'runs' | 'spend' | 'tools' | 'find' | 'errors'
+  credentials: null, // §19.7 — which providers replay could authenticate
   runId: null,
   run: null,
   calls: [],
@@ -1027,7 +1028,8 @@ function renderDetail() {
           class: 'btn replay',
           type: 'button',
           text: 'Replay & edit',
-          on: { click: () => replayCall(state.call) }
+          on: { click: () => replayCall(state.call) },
+          dataset: { provider: call.provider ?? '' }
         })
       : null,
     el('button', { class: 'btn', type: 'button', text: 'Close  esc', on: { click: closeDetail } })
@@ -1069,6 +1071,54 @@ function renderDetail() {
   else if (state.tab === 'response') panel.append(payloadView(call.response_json));
   else if (state.tab === 'diff') panel.append(...diffView(call));
   else panel.append(...timingView(call, summary));
+
+  // The button exists now; find out whether its provider has a key.
+  void markReplayAvailability();
+}
+
+/**
+ * §19.7 — can replay authenticate this provider?
+ *
+ * Loaded once: credentials come from the recorder process environment and
+ * cannot change without a restart, which would drop this page anyway.
+ */
+async function credentialFor(provider) {
+  if (!state.credentials) {
+    try {
+      state.credentials = (await api.get('/api/credentials')).credentials;
+    } catch {
+      state.credentials = [];
+    }
+  }
+  return state.credentials.find((entry) => entry.provider === provider) ?? null;
+}
+
+/** A sentence for the replay button when a key is missing, or null. */
+export function missingKeyHint(credential) {
+  if (!credential) return null;
+  if (!credential.enforced || credential.available) return null;
+  const names = credential.checked ?? [];
+  if (names.length === 0) return null;
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} or ${names.at(-1)}`;
+  return `Replay needs ${list} in the environment orangebox runs in.`;
+}
+
+/**
+ * Mark the replay button when its provider has no key.
+ *
+ * Marked, not disabled. Somebody may have a gateway that needs no key, or be
+ * about to set the variable — a button that refuses to be pressed and will
+ * not say why is worse than one that explains itself when pressed.
+ */
+async function markReplayAvailability() {
+  const button = document.querySelector('.btn.replay[data-provider]');
+  if (!button) return;
+
+  const hint = missingKeyHint(await credentialFor(button.dataset.provider));
+  if (!hint) return;
+
+  button.classList.add('needs-key');
+  button.title = hint;
 }
 
 async function replayCall(call) {

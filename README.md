@@ -128,7 +128,7 @@ Replay reads the key from the environment orangebox itself runs in, per provider
 | `bedrock` | `AWS_BEARER_TOKEN_BEDROCK`, `BEDROCK_API_KEY` |
 | `ollama` | none — local inference has nothing to authenticate against |
 
-Credentials are never recovered from a recording, because orangebox deliberately
+The UI marks the Replay button when its provider has no key and names the variable in the tooltip, so you find out before pressing it rather than after. Credentials are never recovered from a recording, because orangebox deliberately
 does not store them. If the variable is unset, replay refuses up front and names
 the one to set rather than sending an unauthenticated request and handing you the
 provider's 401. That check applies only when the provider still points at its own
@@ -461,7 +461,7 @@ Bedrock has one constraint worth knowing before you try it: SigV4 signs the `Hos
 - [x] **Assertions** — fail CI when a run exceeds a cost, latency, error, or loop-count threshold
 - [x] **Mobile preview** — responsive installable shell plus read-only LAN pairing, live monitoring, and session revocation
 - [x] **Encrypted mobile onboarding** — `--https` with a self-signed certificate generated locally, plus QR pairing in the terminal and the UI
-- [ ] **Provider-native replay credentials UI** — the per-provider credential table and a clear "set this variable" failure exist; choosing between stored aliases in the UI does not
+- [x] **Replay credential status** — the UI marks a Replay button whose provider has no key and names the variable to set, without the key ever leaving the recorder process
 
 ## Contributing
 

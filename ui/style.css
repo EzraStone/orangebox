@@ -1013,3 +1013,16 @@ kbd {
   background: #fff;
 }
 .pair-qr-note { text-align: center; margin-top: 0; }
+
+/* --------------------------------------- §19.7 replay credential status */
+
+/* Marked, not disabled: the user may have a gateway that needs no key, or be
+   about to set the variable. The tooltip says which one. */
+.btn.replay.needs-key {
+  border-color: #5a4318;
+  color: var(--amber);
+}
+.btn.replay.needs-key::after {
+  content: " ▲";
+  font-size: 10px;
+}
