@@ -6,7 +6,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 
-export const SCHEMA_VERSION = '2';
+export const SCHEMA_VERSION = '3';
 
 /** Max size of a single stored JSON blob before string leaves get trimmed (§14.2). */
 export const MAX_BLOB_BYTES = 2 * 1024 * 1024;
@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS runs (
   cost_usd      REAL    NOT NULL DEFAULT 0,
   error_count   INTEGER NOT NULL DEFAULT 0,
   unknown_cost_count INTEGER NOT NULL DEFAULT 0,
+  -- §24 — what you worked out about this run, in your own words.
+  note               TEXT,
   tags_json     TEXT    NOT NULL DEFAULT '[]'
 );
 
@@ -67,7 +69,9 @@ CREATE TABLE IF NOT EXISTS calls (
   cost_usd         REAL,
   request_json     TEXT NOT NULL,
   response_json    TEXT,
-  truncated        INTEGER NOT NULL DEFAULT 0
+  truncated        INTEGER NOT NULL DEFAULT 0,
+  -- §24 — what you worked out about this call, in your own words.
+  note             TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_calls_run ON calls(run_id, seq);
 CREATE INDEX IF NOT EXISTS idx_calls_started ON calls(started_at);
@@ -101,6 +105,16 @@ const MIGRATIONS = new Map([
         UPDATE runs SET unknown_cost_count = (
           SELECT COUNT(*) FROM calls WHERE calls.run_id = runs.id AND calls.cost_usd IS NULL
         );
+      `
+    }
+  ],
+  [
+    '2',
+    {
+      to: '3',
+      sql: `
+        ALTER TABLE runs ADD COLUMN note TEXT;
+        ALTER TABLE calls ADD COLUMN note TEXT;
       `
     }
   ]
@@ -161,9 +175,22 @@ export class Store {
       throw err;
     }
 
-    this.#migrate();
-
-    this.#prepare();
+    // Anything that throws from here on has already opened the file, and on
+    // Windows an open handle makes the database undeletable — a failed open
+    // that leaks one turns "orangebox refused to start" into "and now you
+    // cannot remove the file either".
+    try {
+      this.#migrate();
+      this.#prepare();
+    } catch (err) {
+      try {
+        this.db.close();
+      } catch {
+        // Already closed, or never fully opened. The original error is the
+        // one worth reporting.
+      }
+      throw err;
+    }
   }
 
   #migrate() {
@@ -784,6 +811,47 @@ export class Store {
     };
   }
 
+  /**
+   * §24 — leave yourself a note on a run or a call.
+   *
+   * One note each, replaced rather than appended. A debugging note is a
+   * conclusion ("the retry storm starts here"), not a log, and a growing list
+   * of half-thoughts is worse than one sentence you keep correcting.
+   *
+   * An empty note clears it, so there is no separate delete to remember.
+   */
+  setRunNote(runId, note) {
+    const text = normaliseNote(note);
+    const result = this.db.prepare('UPDATE runs SET note = ? WHERE id = ?').run(text, runId);
+    return result.changes > 0 ? { id: runId, note: text } : null;
+  }
+
+  setCallNote(callId, note) {
+    const text = normaliseNote(note);
+    const result = this.db.prepare('UPDATE calls SET note = ? WHERE id = ?').run(text, callId);
+    return result.changes > 0 ? { id: callId, note: text } : null;
+  }
+
+  /** Every note in the database, newest run first — the index of what you learned. */
+  notes({ limit = 200 } = {}) {
+    const rows = this.db.prepare(`
+      SELECT 'run' AS kind, r.id, r.id AS run_id, NULL AS seq,
+             COALESCE(r.name, r.id) AS run_name, r.note, r.started_at AS at
+        FROM runs r
+       WHERE r.note IS NOT NULL AND r.note <> ''
+       UNION ALL
+      SELECT 'call' AS kind, c.id, c.run_id, c.seq,
+             COALESCE(r.name, c.run_id) AS run_name, c.note, c.started_at AS at
+        FROM calls c
+        JOIN runs r ON r.id = c.run_id
+       WHERE c.note IS NOT NULL AND c.note <> ''
+       ORDER BY at DESC
+       LIMIT ?
+    `).all(Math.max(1, Math.min(limit, 1000)));
+
+    return { total: rows.length, notes: rows };
+  }
+
   toolStats({ since = null, until = null } = {}) {
     const rows = this.q.toolStats.all({
       since: since ?? 0,
@@ -968,6 +1036,17 @@ export function autoRunName(ts = Date.now()) {
  * the two have to agree.
  */
 export const LIKE_ESCAPE = String.fromCharCode(92);
+
+/**
+ * A note is one field of plain text. Trimmed, capped, and stored as null when
+ * empty so "no note" is one value rather than two.
+ */
+export function normaliseNote(note, limit = 2000) {
+  if (note === null || note === undefined) return null;
+  const text = String(note).trim();
+  if (text === '') return null;
+  return text.length > limit ? text.slice(0, limit) : text;
+}
 
 export function likeLiteral(text) {
   return String(text ?? '')
