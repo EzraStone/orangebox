@@ -139,6 +139,8 @@ that endpoint decide what it wants.
 
 **Whole-run comparison.** Compare any two runs call by call. Missing calls and regressions are explicit instead of being buried in two timelines.
 
+**Write down what you worked out.** Notes attach to a run or a call — "the retry storm starts here", "this is the call that returned nothing". A noted call is marked in the timeline, because a note you can only see by opening the call is one you will not find again, and finding it again is the whole point.
+
 **Find old evidence.** Search *inside* recorded prompts and responses at `/find` (or `orangebox find`), so "the run where the model mentioned the migration lock" is one query rather than an afternoon. Search run names and tags; filter by model, provider, tool, error state, minimum latency, minimum cost, or date; rename and tag runs; and page through the complete history.
 
 **Share without shipping the database.** **Share** previews a self-contained sanitized HTML report that redacts system prompts, tool payloads, emails, IDs, credential-shaped values, and secrets; save that page to share it. JSON and OpenTelemetry exports remain available for machine workflows.
@@ -190,6 +192,7 @@ four times budget — a regression rather than a noisy neighbour.
 | `orangebox spend [--group <k>]` | What your agents have cost, by model, provider, run, or day — with an explicit count of what it could not price. |
 | `orangebox import <file.json>` | Load a run somebody exported. Additive — never overwrites what you already have. |
 | `orangebox prune [--older-than <d>]` | Reclaim space by age or size (`--max-size 500MB`), or rebuild the file (`--vacuum`). |
+| `orangebox note [<id> "text"]` | Leave or read a note on a run or call; with no arguments, lists every note. |
 | `orangebox find <text>` | Search recorded prompts and responses. Prints the run, call, model, and a snippet. |
 | `orangebox errors` | Which failures keep happening, with each one's share of all calls. |
 | `orangebox tools [--sort]` | Which tools your agent leans on, which fail, and which never got an answer. |

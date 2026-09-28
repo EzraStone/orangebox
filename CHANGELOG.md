@@ -7,12 +7,16 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 ### Added
 
 - `--https`: serve over TLS with a self-signed certificate generated locally (§22). The certificate covers loopback and the machine's LAN address, is kept in `~/.orangebox/tls/` and reused between runs, and its fingerprint is printed so it can be checked against what the browser shows.
+- Notes on runs and calls (§24), in the UI, the CLI (`orangebox note`), and at `PUT /api/{runs,calls}/:id/note`. Noted calls are marked in the timeline. Schema 3 adds the columns and migrates existing databases in place.
 - QR pairing (§23): the mobile pairing link is drawn as a QR code in the terminal and served at `GET /api/mobile/pair.svg` for the UI. Encoder written from the standard, with no dependency.
 - Mobile mode now states in the banner when LAN traffic is unencrypted.
 - `GET /api/credentials` reports which providers replay could authenticate, by variable name and never by value. The UI marks a Replay button whose provider has no key.
 
 ### Fixed
 
+- The Store constructor left the database handle open when it rejected a newer schema, which on Windows makes the file undeletable.
+- Column migrations failed with "duplicate column name" against a database missing a table, because the schema is applied with CREATE TABLE IF NOT EXISTS before migrations run. They check first now.
+- `--port 0` advertised `http://127.0.0.1:0` instead of the port actually bound.
 - Replay posted back through orangebox over a hard-coded `http://`, which would have failed for every replay under `--https`.
 
 ## [1.3.0] - 2026-09-01
