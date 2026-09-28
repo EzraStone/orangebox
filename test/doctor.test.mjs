@@ -1,7 +1,7 @@
 // `orangebox doctor` — the command that would have caught the 1.2.0 provider bug.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Store, newId } from '../src/store.mjs';
+import { Store, newId, SCHEMA_VERSION } from '../src/store.mjs';
 import { loadPricing } from '../src/pricing.mjs';
 import {
   checkProviders, checkRuntime, checkDatabase, checkWritable, checkPricing, checkConfig, worst,
@@ -90,7 +90,7 @@ test('database and pricing checks describe a real store', () => {
   const db = checkDatabase(store);
   assert.equal(db[0].status, OK);
   assert.match(db[0].detail, /1 run\(s\)/);
-  assert.match(db[0].detail, /schema v2/);
+  assert.ok(db[0].detail.includes(`schema v${SCHEMA_VERSION}`), db[0].detail);
 
   const pricing = checkPricing(store, loadPricing({ userFile: '/nonexistent' }));
   assert.match(pricing[0].detail, /model rates/);

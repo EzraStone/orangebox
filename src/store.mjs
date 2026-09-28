@@ -94,6 +94,21 @@ CREATE INDEX IF NOT EXISTS idx_tools_use ON tool_events(tool_use_id);
 CREATE INDEX IF NOT EXISTS idx_tools_call ON tool_events(call_id);
 `;
 
+/**
+ * Add a column only if it is missing.
+ *
+ * The schema is applied with CREATE TABLE IF NOT EXISTS before migrations
+ * run, so any table that did not exist is created at the *current* shape —
+ * and a migration that then ALTERs it fails with "duplicate column name".
+ * That is not hypothetical: it is exactly what happened opening a schema 1
+ * database, which had runs but no calls table.
+ */
+function addColumn(db, table, column, definition) {
+  const existing = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (existing.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
 const MIGRATIONS = new Map([
   [
     '1',
@@ -112,10 +127,10 @@ const MIGRATIONS = new Map([
     '2',
     {
       to: '3',
-      sql: `
-        ALTER TABLE runs ADD COLUMN note TEXT;
-        ALTER TABLE calls ADD COLUMN note TEXT;
-      `
+      run(db) {
+        addColumn(db, 'runs', 'note', 'TEXT');
+        addColumn(db, 'calls', 'note', 'TEXT');
+      }
     }
   ]
 ]);
@@ -217,7 +232,8 @@ export class Store {
         throw new Error(`no database migration from schema ${version} to ${SCHEMA_VERSION}`);
       }
       this.db.transaction(() => {
-        this.db.exec(migration.sql);
+        if (migration.sql) this.db.exec(migration.sql);
+        if (migration.run) migration.run(this.db);
         setVersion.run(migration.to);
       })();
       version = migration.to;

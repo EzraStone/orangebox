@@ -150,3 +150,46 @@ test('a database from a newer orangebox is refused rather than corrupted', () =>
     cleanup();
   }
 });
+
+test('a migration can run twice without failing (§09)', () => {
+  // The schema is applied with CREATE TABLE IF NOT EXISTS before migrations,
+  // so a table that did not exist is created at the current shape — and a
+  // migration that then ALTERs it would hit "duplicate column name". Opening a
+  // schema 1 database, which has runs but no calls table, did exactly that.
+  const { file, cleanup } = tempFile();
+  try {
+    const raw = new Database(file);
+    raw.exec(`
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE runs (
+        id TEXT PRIMARY KEY, name TEXT, source TEXT NOT NULL, started_at INTEGER NOT NULL,
+        ended_at INTEGER, call_count INTEGER NOT NULL DEFAULT 0,
+        input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
+        cost_usd REAL NOT NULL DEFAULT 0, error_count INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO meta VALUES ('schema_version', '1');
+      INSERT INTO runs (id, name, source, started_at) VALUES ('ancient', 'from v1', 'explicit', 1);
+    `);
+    raw.close();
+
+    // v1 -> v2 -> v3 in one open, with calls created fresh in between.
+    const store = new Store(file);
+    assert.equal(store.getRun('ancient').name, 'from v1');
+    assert.equal(store.getRun('ancient').note, null);
+    assert.equal(
+      store.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value,
+      SCHEMA_VERSION
+    );
+
+    // And the note column is usable on both tables afterwards.
+    assert.equal(store.setRunNote('ancient', 'still here').note, 'still here');
+    store.close();
+
+    // Re-opening an already-migrated database must be a no-op.
+    const again = new Store(file);
+    assert.equal(again.getRun('ancient').note, 'still here');
+    again.close();
+  } finally {
+    cleanup();
+  }
+});

@@ -13,7 +13,8 @@ import {
   serializeForStorage,
   autoRunName,
   newId,
-  MAX_BLOB_BYTES
+  MAX_BLOB_BYTES,
+  SCHEMA_VERSION
 } from '../src/store.mjs';
 
 function memStore() {
@@ -36,7 +37,9 @@ function call(store, runId, overrides = {}) {
 test('schema bootstraps and records its version', () => {
   const store = memStore();
   const version = store.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
-  assert.equal(version.value, '2');
+  // Against the constant, not a literal: a hard-coded version here is one
+  // more list that drifts every time the schema moves.
+  assert.equal(version.value, SCHEMA_VERSION);
 
   const tables = store.db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -71,7 +74,7 @@ test('schema 1 databases migrate in place without losing runs', () => {
   assert.deepEqual(store.getRun('legacy-run').tags, []);
   assert.equal(
     store.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value,
-    '2'
+    SCHEMA_VERSION
   );
   store.close();
   fs.rmSync(dir, { recursive: true, force: true });
