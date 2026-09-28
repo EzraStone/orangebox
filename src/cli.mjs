@@ -585,6 +585,23 @@ async function assertRun(args) {
 
 // --------------------------------------------------------------- doctor
 
+/**
+ * Read the stored TLS manifest, if there is one, without generating anything.
+ *
+ * Deliberately not ensureCertificate(): doctor reports, it does not change
+ * things. Generating a certificate as a side effect of asking what the state
+ * is would be a surprising thing for a diagnostic to do.
+ */
+function tlsChecks(checkTls, { dir, fs: nodeFs, path: nodePath }) {
+  const lan = lanAddress();
+  return checkTls({
+    dir,
+    hosts: ['localhost'],
+    ips: ['127.0.0.1', ...(lan ? [lan] : [])],
+    read: () => JSON.parse(nodeFs.readFileSync(nodePath.join(dir, 'meta.json'), 'utf8'))
+  });
+}
+
 /** doctor reports the same config the server would actually run with. */
 function configChecks(loaded, compileRedactionRules, checkConfig) {
   const { rules, errors: ruleErrors } = compileRedactionRules(loaded.config.redact ?? []);
@@ -621,8 +638,11 @@ async function doctor(args) {
   const { openStore } = await import('./store.mjs');
   const { loadPricing } = await import('./pricing.mjs');
   const { loadConfig, compileRedactionRules } = await import('./config.mjs');
+  const { defaultTlsDir } = await import('./tls/index.mjs');
+  const nodeFs = await import('node:fs');
+  const nodePath = await import('node:path');
   const {
-    checkRuntime, checkDatabase, checkWritable, checkProviders, checkPricing, checkConfig, worst, OK
+    checkRuntime, checkDatabase, checkWritable, checkProviders, checkPricing, checkConfig, checkTls, worst, OK
   } = await import('./doctor.mjs');
 
   const store = openStore(dbPath ?? defaultDbPath());
@@ -636,7 +656,8 @@ async function doctor(args) {
         anthropicUpstream: PROVIDERS.anthropic
       }), { routable: ROUTABLE_PROVIDERS }),
       ...checkPricing(store, loadPricing()),
-      ...configChecks(loadConfig(), compileRedactionRules, checkConfig)
+      ...configChecks(loadConfig(), compileRedactionRules, checkConfig),
+      ...tlsChecks(checkTls, { dir: defaultTlsDir(), fs: nodeFs, path: nodePath })
     ];
 
     if (format === 'json') {

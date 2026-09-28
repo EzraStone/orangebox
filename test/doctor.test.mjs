@@ -195,3 +195,70 @@ test('a database that cannot be written to fails loudly', async () => {
   assert.match(check.detail, /readonly/);
   assert.match(check.detail, /fail silently/, 'says what the consequence is');
 });
+
+test('TLS is reported as off when no certificate has been made', async () => {
+  const { checkTls } = await import('../src/doctor.mjs');
+  const [check] = checkTls({ dir: '/nowhere', read: () => { throw new Error('ENOENT'); } });
+  assert.equal(check.status, OK, 'not having HTTPS is a choice, not a problem');
+  assert.match(check.detail, /--https/);
+});
+
+test('a certificate close to expiry is flagged before it bites', async () => {
+  // Expiring mid-session takes the mobile connection down with an error that
+  // points at the network rather than at a date.
+  const { checkTls } = await import('../src/doctor.mjs');
+  const now = Date.UTC(2026, 0, 1);
+  const manifest = (days) => ({
+    hosts: ['localhost'], ips: ['127.0.0.1'],
+    notAfter: new Date(now + days * 86_400_000).toISOString(),
+    fingerprint: 'AA:BB:CC:DD:EE:FF:00:11:22:33'
+  });
+
+  const healthy = checkTls({ dir: '/x', hosts: ['localhost'], ips: ['127.0.0.1'], now, read: () => manifest(200) });
+  assert.equal(healthy[0].status, OK);
+  assert.match(healthy[0].detail, /200 more day/);
+
+  const soon = checkTls({ dir: '/x', hosts: ['localhost'], ips: ['127.0.0.1'], now, read: () => manifest(5) });
+  assert.equal(soon[0].status, NOTE);
+  assert.match(soon[0].detail, /expires in 5 day/);
+
+  const expired = checkTls({ dir: '/x', hosts: ['localhost'], ips: ['127.0.0.1'], now, read: () => manifest(-3) });
+  assert.equal(expired[0].status, 'warn');
+  assert.match(expired[0].detail, /expired 3 day\(s\) ago/);
+});
+
+test('a certificate that does not cover this machine says which address', async () => {
+  // The common case: the laptop moved network since it was generated.
+  const { checkTls } = await import('../src/doctor.mjs');
+  const now = Date.UTC(2026, 0, 1);
+  const checks = checkTls({
+    dir: '/x',
+    hosts: ['localhost'],
+    ips: ['127.0.0.1', '10.0.0.7'],
+    now,
+    read: () => ({
+      hosts: ['localhost'], ips: ['127.0.0.1', '192.168.1.42'],
+      notAfter: new Date(now + 200 * 86_400_000).toISOString()
+    })
+  });
+
+  const coverage = checks.find((c) => c.name === 'https coverage');
+  assert.ok(coverage, 'a coverage gap is reported');
+  assert.match(coverage.detail, /10\.0\.0\.7/);
+  assert.match(coverage.detail, /regenerates on next start/, 'and says it fixes itself');
+});
+
+test('the fingerprint is shown short enough to compare by eye', async () => {
+  const { checkTls } = await import('../src/doctor.mjs');
+  const now = Date.UTC(2026, 0, 1);
+  const checks = checkTls({
+    dir: '/x', hosts: [], ips: [], now,
+    read: () => ({
+      hosts: [], ips: [],
+      notAfter: new Date(now + 200 * 86_400_000).toISOString(),
+      fingerprint: 'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55'
+    })
+  });
+  const fingerprint = checks.find((c) => c.name === 'fingerprint');
+  assert.equal(fingerprint.detail, 'AA:BB:CC:DD:EE:FF:00:11…');
+});

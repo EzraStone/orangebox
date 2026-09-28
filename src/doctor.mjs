@@ -266,3 +266,63 @@ export function checkConfig({ present, path: file, errors = [], redactionRules =
 
   return checks;
 }
+
+/**
+ * TLS: whether local HTTPS is set up, and how long the certificate has left.
+ *
+ * A certificate that expires while you are not looking takes the mobile
+ * connection down with an error that points at the network rather than at a
+ * date, so the expiry is reported before it becomes a problem rather than
+ * after.
+ */
+export function checkTls({ dir, hosts = [], ips = [], now = Date.now(), read } = {}) {
+  let manifest = null;
+  try {
+    manifest = read ? read() : null;
+  } catch {
+    manifest = null;
+  }
+
+  if (!manifest) {
+    return [{
+      name: 'https',
+      status: OK,
+      detail: 'off — start with --https to encrypt LAN traffic and get a secure context'
+    }];
+  }
+
+  const checks = [];
+  const notAfter = Date.parse(manifest.notAfter);
+  const days = Math.floor((notAfter - now) / 86_400_000);
+
+  if (!Number.isFinite(notAfter)) {
+    checks.push({ name: 'https', status: WARN, detail: `${dir} — certificate has no usable expiry` });
+  } else if (days < 0) {
+    checks.push({ name: 'https', status: WARN, detail: `certificate expired ${-days} day(s) ago; it regenerates on next start` });
+  } else if (days < 14) {
+    checks.push({ name: 'https', status: NOTE, detail: `certificate expires in ${days} day(s); it regenerates on next start` });
+  } else {
+    checks.push({ name: 'https', status: OK, detail: `certificate valid for ${days} more day(s)` });
+  }
+
+  const covered = new Set([...(manifest.hosts ?? []), ...(manifest.ips ?? [])]);
+  const missing = [...hosts, ...ips].filter((name) => !covered.has(name));
+  if (missing.length > 0) {
+    // Almost always: the machine moved network since the certificate was made.
+    checks.push({
+      name: 'https coverage',
+      status: NOTE,
+      detail: `certificate does not cover ${missing.join(', ')} — it regenerates on next start`
+    });
+  }
+
+  if (manifest.fingerprint) {
+    checks.push({
+      name: 'fingerprint',
+      status: OK,
+      detail: manifest.fingerprint.split(':').slice(0, 8).join(':') + '…'
+    });
+  }
+
+  return checks;
+}
