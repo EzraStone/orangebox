@@ -47,6 +47,8 @@ export async function main(argv) {
       return prune(rest);
     case 'find':
       return findCalls(rest);
+    case 'tail':
+      return tail(rest);
     case 'note':
       return noteCommand(rest);
     case 'errors':
@@ -921,6 +923,102 @@ function highlight(text, query) {
 }
 
 
+
+// ----------------------------------------------------------------- tail
+
+/**
+ * §25 — watch calls arrive, without leaving the terminal.
+ *
+ * Polls the database rather than subscribing to the live feed, so it works
+ * whether or not a recorder is running and needs no port, no token and no
+ * network. SQLite in WAL mode is built for exactly this: one writer, many
+ * readers, no coordination.
+ */
+async function tail(args) {
+  let dbPath = null;
+  let runFilter = null;
+  let follow = true;
+  let backfill = 10;
+  let format = 'text';
+
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--run': runFilter = next(); break;
+      case '-n': case '--lines': backfill = int(next(), '--lines'); break;
+      case '--no-follow': follow = false; break;
+      case '--json': format = 'json'; break;
+      default: fail(`unknown flag "${args[i]}"`);
+    }
+  }
+
+  const { openStore } = await import('./store.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+
+  // Start from the last few calls so the screen is not empty while waiting.
+  const recent = store.callsSince({}).slice(-Math.max(0, backfill));
+  let cursor = recent.at(-1) ?? null;
+
+  const show = (call) => {
+    if (runFilter && call.run_id !== runFilter && call.run_name !== runFilter) return;
+    if (format === 'json') return void console.log(JSON.stringify(call));
+    console.log(formatTailLine(call));
+  };
+
+  for (const call of recent) show(call);
+
+  if (!follow) {
+    store.close();
+    return;
+  }
+
+  if (process.stdout.isTTY) {
+    console.error(warn(`  watching ${store.path} — ctrl-c to stop`));
+  }
+
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    store.close();
+    process.exit(0);
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+
+  // 400ms: fast enough to feel live beside an agent, slow enough that it
+  // costs nothing measurable against a local file.
+  while (!stopped) {
+    const fresh = store.callsSince({ after: cursor?.started_at ?? 0, afterId: cursor?.id ?? null });
+    for (const call of fresh) {
+      show(call);
+      cursor = call;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+}
+
+/** One call on one line, in the order you read it: when, what, how it went. */
+export function formatTailLine(call) {
+  const time = new Date(call.started_at).toISOString().slice(11, 19);
+  const model = truncate(call.model ?? '(no model)', 26).padEnd(26);
+  const latency = call.latency_ms === null ? '—' : `${call.latency_ms} ms`;
+
+  const bits = [`${call.input_tokens ?? 0}→${call.output_tokens ?? 0}`];
+  if (call.cost_usd !== null && call.cost_usd !== undefined) bits.push(usd(call.cost_usd));
+  if (call.streamed) bits.push('stream');
+  if (call.note) bits.push('noted');
+
+  const outcome = call.error_type
+    ? warn(`▲ ${call.error_type}`)
+    : call.stop_reason ?? '';
+
+  return `${time}  ${truncate(call.run_name, 18).padEnd(18)}  ${model}  ${latency.padStart(9)}  ${bits.join(' · ').padEnd(28)}  ${outcome}`;
+}
 // ----------------------------------------------------------------- note
 
 /**
@@ -1514,6 +1612,7 @@ USAGE
   orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
   orangebox spend [--group <k>]        what your agents have cost so far
   orangebox find <text>                search your recorded prompts and responses
+  orangebox tail [--run <id>]          watch calls as they are recorded
   orangebox note [<id> "text"]         leave or read a note on a run or call
   orangebox errors                     which failures keep happening, across runs
   orangebox tools                      which tools get used, fail, and take time

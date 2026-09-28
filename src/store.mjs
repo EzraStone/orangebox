@@ -868,6 +868,32 @@ export class Store {
     return { total: rows.length, notes: rows };
   }
 
+  /**
+   * §25 — calls recorded since a point in time, oldest first.
+   *
+   * Keyed on started_at plus id rather than a row counter, because calls are
+   * written in completion order and a run that finishes while another is still
+   * streaming would otherwise be skipped entirely.
+   */
+  callsSince({ after = 0, afterId = null, limit = 200 } = {}) {
+    return this.db.prepare(`
+      SELECT c.id, c.run_id, c.seq, c.provider, c.model, c.status, c.error_type,
+             c.streamed, c.started_at, c.ended_at, c.latency_ms, c.ttft_ms,
+             c.input_tokens, c.output_tokens, c.cost_usd, c.stop_reason, c.note,
+             COALESCE(r.name, c.run_id) AS run_name
+        FROM calls c
+        JOIN runs r ON r.id = c.run_id
+       WHERE c.started_at > @after
+          -- Only break a timestamp tie when we actually have an id to break
+          -- it against. With no cursor, @afterId IS NULL made this branch
+          -- match every call at exactly @after — returning the boundary call
+          -- a second time on the very next poll.
+          OR (@afterId IS NOT NULL AND c.started_at = @after AND c.id > @afterId)
+       ORDER BY c.started_at ASC, c.id ASC
+       LIMIT @limit
+    `).all({ after, afterId, limit: Math.max(1, Math.min(limit, 1000)) });
+  }
+
   toolStats({ since = null, until = null } = {}) {
     const rows = this.q.toolStats.all({
       since: since ?? 0,
