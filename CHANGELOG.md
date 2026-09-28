@@ -2,7 +2,7 @@
 
 All notable changes to orangebox are documented here. Versions follow semantic versioning.
 
-## Unreleased
+## [1.4.0] - 2026-09-28
 
 ### Added
 
