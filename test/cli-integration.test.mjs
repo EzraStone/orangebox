@@ -423,3 +423,45 @@ test('--port 0 reports the port it actually bound', async () => {
     removeTempDir(server.dbPath);
   }
 });
+
+test('`note` writes, reads, lists and clears (§24)', async () => {
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const run = store.createRun({ id: 'noted-run', name: 'noted', source: 'explicit' });
+    store.close();
+
+    const write = await runCli(['note', run.id, 'the retry storm starts here', '--db', server.dbPath]);
+    assert.equal(write.code, 0, write.output);
+    assert.match(write.stdout, /noted on noted-run/);
+
+    // No text reads the note rather than clearing it: an empty argument list is
+    // far more often a forgotten quote than an intent to delete.
+    const read = await runCli(['note', run.id, '--db', server.dbPath]);
+    assert.equal(read.stdout.trim(), 'the retry storm starts here');
+
+    const list = await runCli(['note', '--db', server.dbPath]);
+    assert.match(list.stdout, /the retry storm starts here/);
+    assert.match(list.stdout, /1 note/);
+
+    const cleared = await runCli(['note', run.id, '--clear', '--db', server.dbPath]);
+    assert.match(cleared.stdout, /cleared the note/);
+    assert.match((await runCli(['note', '--db', server.dbPath])).stdout, /No notes yet/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});
+
+test('`note` on an unknown id fails rather than inventing one', async () => {
+  const server = await startCliServer();
+  try {
+    const result = await runCli(['note', 'no-such-thing', 'text', '--db', server.dbPath]);
+    assert.equal(result.code, 1);
+    assert.match(result.output, /no run or call with id/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});

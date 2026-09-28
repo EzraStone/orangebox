@@ -47,6 +47,8 @@ export async function main(argv) {
       return prune(rest);
     case 'find':
       return findCalls(rest);
+    case 'note':
+      return noteCommand(rest);
     case 'errors':
       return errorReport(rest);
     case 'tools':
@@ -918,6 +920,88 @@ function highlight(text, query) {
     text.slice(at + query.length);
 }
 
+
+// ----------------------------------------------------------------- note
+
+/**
+ * §24 — leave yourself a note on a run or a call, or list what you have left.
+ *
+ * One id argument, and orangebox works out which it is. Runs and calls have
+ * distinct ids, so making the user say which kind they are holding would be
+ * asking them to look something up that is already knowable.
+ */
+async function noteCommand(args) {
+  const positional = [];
+  let dbPath = null;
+  let clear = false;
+  let format = 'text';
+
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--clear': clear = true; break;
+      case '--json': format = 'json'; break;
+      default:
+        if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
+        positional.push(args[i]);
+    }
+  }
+
+  const { openStore } = await import('./store.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+
+  try {
+    // No id: show what has been noted so far.
+    if (positional.length === 0) {
+      const listed = store.notes();
+      if (format === 'json') return void console.log(JSON.stringify(listed, null, 2));
+
+      if (listed.total === 0) {
+        console.log('No notes yet. Add one with: orangebox note <run-or-call-id> "what you found"');
+        return;
+      }
+
+      console.log();
+      for (const note of listed.notes) {
+        const where = note.kind === 'run' ? note.run_name : `${note.run_name} · call ${String(note.seq).padStart(2, '0')}`;
+        console.log(`  ${where}`);
+        console.log(`    ${note.note}`);
+        console.log(`    ${note.id}`);
+        console.log();
+      }
+      console.log(`  ${listed.total} note(s)`);
+      console.log();
+      return;
+    }
+
+    const [id, ...rest] = positional;
+    const text = clear ? '' : rest.join(' ');
+    if (!clear && text === '') {
+      // Show the existing note rather than clearing it by accident: an empty
+      // argument list is far more often a forgotten quote than an intent to
+      // delete, and --clear says the other thing unambiguously.
+      const run = store.getRun(id);
+      const call = run ? null : store.getCall(id);
+      const existing = run?.note ?? call?.note ?? null;
+      if (!run && !call) fail(`no run or call with id "${id}"`);
+      console.log(existing ?? '(no note)');
+      return;
+    }
+
+    const updated = store.setRunNote(id, text) ?? store.setCallNote(id, text);
+    if (!updated) fail(`no run or call with id "${id}"`);
+
+    if (format === 'json') return void console.log(JSON.stringify(updated, null, 2));
+    console.log(updated.note === null ? `cleared the note on ${id}` : `noted on ${id}`);
+  } finally {
+    store.close();
+  }
+}
 // --------------------------------------------------------------- errors
 
 /** §19.10 — which failures keep happening, across every run. */
@@ -1430,6 +1514,7 @@ USAGE
   orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
   orangebox spend [--group <k>]        what your agents have cost so far
   orangebox find <text>                search your recorded prompts and responses
+  orangebox note [<id> "text"]         leave or read a note on a run or call
   orangebox errors                     which failures keep happening, across runs
   orangebox tools                      which tools get used, fail, and take time
   orangebox doctor                     show what orangebox actually resolved
