@@ -1026,3 +1026,13 @@ kbd {
   content: " ▲";
   font-size: 10px;
 }
+
+/* ------------------------------------------------------------ §24 notes */
+
+/* A note that exists should be visible as existing without being opened —
+   the dot is the whole point of the button. */
+.btn.has-note {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+.chip.noted { background: var(--orange-dim); color: var(--text); cursor: help; }

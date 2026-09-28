@@ -163,7 +163,7 @@ const CALL_SUMMARY_COLUMNS = `
   id, run_id, seq, provider, endpoint, model, status, error_type, streamed,
   started_at, first_token_at, ended_at, latency_ms, ttft_ms,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-  stop_reason, cost_usd, truncated
+  stop_reason, cost_usd, truncated, note
 `;
 
 export class Store {

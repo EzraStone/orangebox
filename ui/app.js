@@ -627,6 +627,16 @@ function renderRunHeader() {
       text: 'Edit',
       on: { click: () => editRun(run) }
     }) : null,
+    !state.readOnly ? noteButton({
+      kind: 'runs',
+      id: run.id,
+      label: run.name ?? run.id,
+      current: run.note,
+      afterSave: async () => {
+        await loadRun(run.id);
+        renderTimeline();
+      }
+    }) : null,
     el('button', {
       class: 'btn',
       type: 'button',
@@ -900,6 +910,11 @@ function callNode(call) {
 
   const chips = [];
   if (call.streamed) chips.push(el('span', { class: 'chip streaming', text: '▮ stream' }));
+  // §24 — a note you left is worth seeing while scanning, not only after
+  // opening the call. That is the entire reason for writing one down.
+  if (call.note) {
+    chips.push(el('span', { class: 'chip noted', title: call.note, text: '✎ noted' }));
+  }
   if (isError) {
     chips.push(el('span', { class: 'chip stop-error', text: `▲ ${call.error_type}` }));
   } else if (call.stop_reason) {
@@ -1032,6 +1047,21 @@ function renderDetail() {
           dataset: { provider: call.provider ?? '' }
         })
       : null,
+    !state.readOnly ? noteButton({
+      kind: 'calls',
+      id: call.id,
+      label: `call ${String(call.seq).padStart(2, '0')}`,
+      current: call.note,
+      afterSave: async () => {
+        // Reload the call so the button reflects what was just saved.
+        try {
+          state.call = (await api.get(`/api/calls/${encodeURIComponent(call.id)}`)).call;
+        } catch {
+          // Keep whatever we had; the note is saved either way.
+        }
+        renderDetail();
+      }
+    }) : null,
     el('button', { class: 'btn', type: 'button', text: 'Close  esc', on: { click: closeDetail } })
   );
 
@@ -1119,6 +1149,46 @@ async function markReplayAvailability() {
 
   button.classList.add('needs-key');
   button.title = hint;
+}
+
+/**
+ * §24 — edit the note on a run or a call.
+ *
+ * The same dialog for both, because they are the same thing: a sentence you
+ * leave for yourself. Saving an empty note clears it.
+ */
+async function editNote({ kind, id, label, current }) {
+  const result = await openModal({
+    title: `Note on ${label}`,
+    message: 'What you worked out. Saved with the recording; cleared if you empty it.',
+    confirmText: 'Save note',
+    fields: [{ name: 'note', label: 'Note', type: 'textarea', rows: 5, value: current ?? '' }]
+  });
+  if (result === null) return false;
+
+  try {
+    await api.send('PUT', `/api/${kind}/${encodeURIComponent(id)}/note`, { note: result.note });
+    return true;
+  } catch (error) {
+    await showNotice('Could not save the note', error.message);
+    return false;
+  }
+}
+
+/** A button that reads as "has a note" or "add one", at a glance. */
+function noteButton({ kind, id, label, current, afterSave }) {
+  const has = Boolean(current);
+  return el('button', {
+    class: has ? 'btn has-note' : 'btn',
+    type: 'button',
+    text: has ? 'Note ●' : 'Note',
+    title: has ? current : 'Leave yourself a note',
+    on: {
+      click: async () => {
+        if (await editNote({ kind, id, label, current })) await afterSave();
+      }
+    }
+  });
 }
 
 async function replayCall(call) {
