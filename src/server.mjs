@@ -331,6 +331,23 @@ async function handleApi(req, res, ctx, pathname, url) {
     return sendJson(res, 200, { id: run.id, run });
   }
 
+  // GET /api/notes  (§24)
+  if (method === 'GET' && pathname === '/api/notes') {
+    return sendJson(res, 200, store.notes({ limit: clampInt(url.searchParams.get('limit'), 200, 1, 1000) }));
+  }
+
+  // PUT /api/runs/:id/note  and  PUT /api/calls/:id/note  (§24)
+  if (method === 'PUT' && seg.length === 4 && seg[3] === 'note' && ['runs', 'calls'].includes(seg[1])) {
+    const body = await readJsonBody(req);
+    const note = body?.note ?? '';
+    const updated = seg[1] === 'runs' ? store.setRunNote(seg[2], note) : store.setCallNote(seg[2], note);
+
+    // A note on something that does not exist is a 404, not a silent success:
+    // the usual cause is a stale tab pointing at a deleted run.
+    if (!updated) return sendJson(res, 404, { error: `no such ${seg[1] === 'runs' ? 'run' : 'call'}` });
+    return sendJson(res, 200, updated);
+  }
+
   // GET /api/credentials  (§19.7)
   //
   // Which providers replay could authenticate right now, so the UI can say

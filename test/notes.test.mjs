@@ -193,3 +193,62 @@ test('a migration can run twice without failing (§09)', () => {
     cleanup();
   }
 });
+
+test('notes can be set and listed over the API (§24)', async () => {
+  const { startOrangebox, getJson, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const run = app.store.createRun({ name: 'api run', source: 'gap' });
+    const csrf = (await getJson(`${app.origin}/api/health`)).body.csrf_token;
+
+    const put = (path, note) =>
+      fetch(`${app.origin}${path}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'x-orangebox-csrf': csrf },
+        body: JSON.stringify({ note })
+      });
+
+    const set = await put(`/api/runs/${run.id}/note`, 'the retry storm starts here');
+    assert.equal(set.status, 200);
+    assert.equal((await set.json()).note, 'the retry storm starts here');
+
+    const listed = await (await fetch(`${app.origin}/api/notes`)).json();
+    assert.equal(listed.total, 1);
+    assert.equal(listed.notes[0].note, 'the retry storm starts here');
+    assert.equal(listed.notes[0].kind, 'run');
+
+    // Clearing works through the same route, so there is no delete to find.
+    await put(`/api/runs/${run.id}/note`, '');
+    assert.equal((await (await fetch(`${app.origin}/api/notes`)).json()).total, 0);
+
+    // A note on something that is gone is a 404, not a silent success — the
+    // usual cause is a stale tab pointing at a deleted run.
+    const missing = await put('/api/runs/no-such-run/note', 'x');
+    assert.equal(missing.status, 404);
+    assert.match((await missing.json()).error, /no such run/);
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});
+
+test('writing a note is a mutation, so it needs the CSRF token', async () => {
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const run = app.store.createRun({ name: 'guarded', source: 'gap' });
+    const res = await fetch(`${app.origin}/api/runs/${run.id}/note`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ note: 'should not stick' })
+    });
+
+    assert.equal(res.status, 403);
+    assert.equal(app.store.getRun(run.id).note, null, 'and nothing was written');
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});
