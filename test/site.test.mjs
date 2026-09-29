@@ -49,3 +49,19 @@ test('every image on the site has alt text a screen reader can use', () => {
     assert.ok(alt[1].length > 12, `alt text is too thin to be useful: "${alt[1]}"`);
   }
 });
+
+test('the spec states one revision, not two', () => {
+  // The header said REV B while the footer said REV A, for two releases.
+  const spec = read('docs/spec.html');
+  const revisions = new Set([...spec.matchAll(/OB-SPEC-001 · REV ([A-Z])/g)].map((m) => m[1]));
+  assert.equal(revisions.size, 1, `the spec claims to be revisions ${[...revisions].join(' and ')}`);
+});
+
+test('every spec section id matches the section it heads', () => {
+  const spec = read('docs/spec.html');
+  const pairs = [...spec.matchAll(/id="s(\d+)"[\s\S]{0,160}?§(\d+) ·/g)];
+  assert.ok(pairs.length >= 15, `only found ${pairs.length} sections to check`);
+  for (const [, id, number] of pairs) {
+    assert.equal(Number(id), Number(number), `#s${id} is headed §${number}`);
+  }
+});
