@@ -745,3 +745,74 @@ test('`loops` and `context` take the same window as every other report', async (
     removeTempDir(server.dbPath);
   }
 });
+
+test('every CI gate the CLI parses actually gates something', async () => {
+  // Only --max-cost had ever been driven through a real subprocess. The rest
+  // were unit-tested at evaluateRunAssertions and taken on trust from there to
+  // the flag parser — which is the half that broke for three providers once.
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const run = store.createRun({ name: 'gated', source: 'explicit' });
+
+    // A run that repeats one prompt and grows its context sharply.
+    for (let i = 0; i < 8; i++) {
+      store.insertCall({
+        id: `gate-${i}`, run_id: run.id, seq: store.nextSeq(run.id),
+        provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+        started_at: Date.now() + i, latency_ms: 100,
+        input_tokens: 1000 * (i + 1), output_tokens: 20, cost_usd: 0.01,
+        request_json: JSON.stringify({ messages: [{ role: 'user', content: 'check the deploy' }] })
+      });
+    }
+    store.close();
+
+    const at = (...flags) => runCli(['assert', run.id, '--db', server.dbPath, ...flags]);
+
+    const growth = await at('--max-context-growth', '4');
+    assert.equal(growth.code, 1, growth.output);
+    assert.match(growth.output, /prompt grew 8\.0×/);
+    assert.equal((await at('--max-context-growth', '20')).code, 0);
+
+    const repeats = await at('--max-repeats', '2');
+    assert.equal(repeats.code, 1, repeats.output);
+    assert.match(repeats.output, /repeated 7 time/);
+    assert.equal((await at('--max-repeats', '20')).code, 0);
+
+    // Both measurements are reported even when they pass, so a build can graph
+    // them rather than only learn that nothing tripped.
+    const json = JSON.parse((await at('--max-context-growth', '20', '--max-repeats', '20', '--json')).stdout);
+    assert.equal(json.ok, true);
+    assert.equal(json.measured.repeats, 7);
+    assert.ok(Math.abs(json.measured.context_growth - 8) < 1e-9);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});
+
+test('a gate that is not asked for is not measured', async () => {
+  // Every gate costs a query. Passing no thresholds should cost none of them.
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const run = store.createRun({ name: 'ungated', source: 'explicit' });
+    store.insertCall({
+      id: 'ug-0', run_id: run.id, seq: store.nextSeq(run.id),
+      provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+      started_at: Date.now(), input_tokens: 100, output_tokens: 10, cost_usd: 0.01,
+      request_json: '{}'
+    });
+    store.close();
+
+    const json = JSON.parse((await runCli(['assert', run.id, '--db', server.dbPath, '--json'])).stdout);
+    assert.equal(json.ok, true);
+    assert.equal(json.measured.repeats, null);
+    assert.equal(json.measured.context_growth, null);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});

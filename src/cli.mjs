@@ -1897,7 +1897,8 @@ orangebox v${VERSION} — flight recorder for AI agents
 USAGE
   orangebox [start] [options]          start recording (default command)
   orangebox run [--name "..."] -- CMD  run CMD with its calls grouped into one run
-  orangebox export <run-id> [-o file]  write a run out; --format json|html|otel
+  orangebox export <run-id> [-o file]  write a run out; --format json|html|otel,
+                                       --sanitize or --sanitize-full to redact it
   orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
   orangebox spend [--group <k>]        what your agents have cost so far
   orangebox find <text>                search your recorded prompts and responses
