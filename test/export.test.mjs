@@ -150,3 +150,46 @@ test('CI assertions report every breached threshold', () => {
   assert.equal(result.failures.length, 5);
   assert.equal(evaluateRunAssertions(run, calls, { maxErrors: 2, maxCalls: 4 }).ok, true);
 });
+
+test('the HTML report answers the obvious questions above the calls', () => {
+  // A bug report is read by somebody who was not there. Making them add up
+  // fifteen per-call costs to learn what the run cost is how a report gets
+  // skimmed once and never opened again.
+  const html = buildHtmlReport(sanitizeExport(payload));
+  assert.match(html, /<dl class="summary">/);
+  assert.match(html, /Estimated cost/);
+  assert.match(html, /Input tokens/);
+  assert.match(html, /Largest prompt/);
+});
+
+test('a report of a looping run says so at the top', () => {
+  const ask = JSON.stringify({ messages: [{ role: 'user', content: 'check the deploy' }] });
+  const looping = {
+    orangebox_export: 1,
+    orangebox_version: '0.0.0',
+    exported_at: Date.now(),
+    run: { id: 'r', name: 'stuck', cost_usd: 0.12, unknown_cost_count: 0 },
+    calls: [1, 2, 3, 4].map((seq) => ({
+      seq, id: `c${seq}`, provider: 'anthropic', endpoint: '/v1/messages',
+      cost_usd: 0.03, request_json: ask, input_tokens: 100
+    })),
+    tools: []
+  };
+
+  const html = buildHtmlReport(looping);
+  assert.match(html, /4 calls asked the same thing/);
+});
+
+test('a report of a healthy run carries no warning strip', () => {
+  const html = buildHtmlReport(sanitizeExport(payload));
+  assert.equal(html.includes('class="flag"'), false);
+});
+
+test('report markup is still inert once the summary is in it', () => {
+  // The summary interpolates recorded values too; every one of them has to go
+  // through the same escaping as the call bodies.
+  const nasty = structuredClone(payload);
+  nasty.run.name = '<script>alert(1)</script>';
+  const html = buildHtmlReport(sanitizeExport(nasty));
+  assert.equal(html.includes('<script>alert(1)</script>'), false);
+});

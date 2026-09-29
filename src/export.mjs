@@ -82,16 +82,77 @@ export function buildHtmlReport(payload) {
   const calls = payload.calls ?? [];
   const rows = calls.map((call) => `
     <article>
-      <h2>Call ${escapeHtml(String(call.seq).padStart(2, '0'))} · ${escapeHtml(call.model ?? call.endpoint)}</h2>
-      <p>${escapeHtml(call.provider)} · ${escapeHtml(formatMs(call.latency_ms))} · ${escapeHtml(formatTokens(call))} · ${escapeHtml(formatCost(call.cost_usd))}</p>
+      <h2>Call ${escapeHtml(String(call.seq).padStart(2, '0'))} &middot; ${escapeHtml(call.model ?? call.endpoint)}</h2>
+      <p>${escapeHtml(call.provider)} &middot; ${escapeHtml(formatMs(call.latency_ms))} &middot; ${escapeHtml(formatTokens(call))} &middot; ${escapeHtml(formatCost(call.cost_usd))}</p>
       <details><summary>Request</summary><pre>${escapeHtml(prettyJson(call.request_json))}</pre></details>
       <details><summary>Response</summary><pre>${escapeHtml(prettyJson(call.response_json))}</pre></details>
     </article>`).join('');
+
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escapeHtml(run.name ?? run.id)} · orangebox report</title>
-<style>body{max-width:980px;margin:40px auto;padding:0 20px;background:#111318;color:#e7e9ed;font:14px system-ui}h1{color:#ff6b35}article{border:1px solid #30343b;border-radius:8px;padding:16px;margin:18px 0;background:#191c22}h2{font-size:16px}p,summary{color:#9da3ad}pre{white-space:pre-wrap;word-break:break-word;background:#0d0f12;padding:14px;border-radius:6px;max-height:520px;overflow:auto}footer{margin-top:32px;color:#777}</style></head>
-<body><h1>${escapeHtml(run.name ?? run.id)}</h1><p>${calls.length} calls · ${escapeHtml(formatCost(run.cost_usd))}${run.unknown_cost_count ? '+' : ''} estimated</p>${rows}<footer>Sanitized orangebox report · generated ${escapeHtml(new Date(payload.exported_at).toISOString())}</footer></body></html>`;
+<title>${escapeHtml(run.name ?? run.id)} &middot; orangebox report</title>
+<style>${REPORT_CSS}</style></head>
+<body>
+<h1>${escapeHtml(run.name ?? run.id)}</h1>
+${summarySection(run, calls)}
+${rows}
+<footer>Sanitized orangebox report &middot; generated ${escapeHtml(new Date(payload.exported_at).toISOString())}</footer>
+</body></html>`;
+}
+
+const REPORT_CSS = 'body{max-width:980px;margin:40px auto;padding:0 20px;background:#111318;color:#e7e9ed;font:14px system-ui}'
+  + 'h1{color:#ff6b35}article{border:1px solid #30343b;border-radius:8px;padding:16px;margin:18px 0;background:#191c22}'
+  + 'h2{font-size:16px}p,summary{color:#9da3ad}'
+  + 'pre{white-space:pre-wrap;word-break:break-word;background:#0d0f12;padding:14px;border-radius:6px;max-height:520px;overflow:auto}'
+  + 'footer{margin-top:32px;color:#777}'
+  + 'dl.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px 20px;margin:0;'
+  + 'border:1px solid #30343b;border-radius:8px;padding:16px;background:#191c22}'
+  + 'dl.summary dt{color:#9da3ad;font-size:12px;margin:0 0 3px}dl.summary dd{margin:0;font-size:18px}'
+  + 'dl.summary dd small{display:block;font-size:11px;color:#777;margin-top:3px}'
+  + '.flag{margin:14px 0 0;padding:10px 12px;border-radius:6px;border:1px solid #5a4318;background:rgba(232,163,61,.1);color:#e8a33d}';
+
+/**
+ * The numbers somebody opens the report to find, above the calls.
+ *
+ * A bug report is read by someone who was not there. Making them add up
+ * fifteen per-call costs to answer "what did this cost" is how a report gets
+ * skimmed and then ignored.
+ */
+function summarySection(run, calls) {
+  const growth = contextGrowth(calls);
+  const loops = findLoops(calls);
+  const errors = calls.filter((call) => call.error_type).length;
+
+  const items = [
+    ['Calls', String(calls.length), errors > 0 ? `${errors} failed` : null],
+    ['Estimated cost', `${formatCost(run.cost_usd)}${run.unknown_cost_count ? '+' : ''}`,
+      run.unknown_cost_count ? `${run.unknown_cost_count} could not be priced` : null],
+    ['Input tokens', formatTokenCount(growth.total_input_tokens),
+      growth.cached_share ? `${Math.round(growth.cached_share * 100)}% served from cache` : null],
+    ['Largest prompt', formatTokenCount(growth.peak_tokens),
+      growth.growth ? `${growth.growth.toFixed(1)}x the first` : null]
+  ];
+
+  const flags = [];
+  if (loops.loops.length > 0) {
+    const worst = loops.loops[0];
+    flags.push(`${worst.count} calls asked the same thing, costing ${formatCost(loops.wasted_usd)} in repeats.`);
+  }
+  if (growth.growth >= 5 && (growth.cached_share ?? 0) < 0.25 && growth.calls >= 4) {
+    flags.push(`The prompt grew ${growth.growth.toFixed(1)}x and almost none of it was cached.`);
+  }
+
+  return `<dl class="summary">${items.map(([label, value, note]) => `
+  <div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}${note ? `<small>${escapeHtml(note)}</small>` : ''}</dd></div>`).join('')}
+</dl>${flags.map((text) => `
+<p class="flag">${escapeHtml(text)}</p>`).join('')}`;
+}
+
+function formatTokenCount(value) {
+  if (value === null || value === undefined) return '—';
+  if (value < 10000) return String(value);
+  if (value < 1000000) return `${(value / 1000).toFixed(value < 100000 ? 1 : 0)}k`;
+  return `${(value / 1000000).toFixed(1)}M`;
 }
 
 export function buildOtelExport(payload) {
