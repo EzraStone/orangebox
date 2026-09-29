@@ -1035,6 +1035,37 @@ const TABS = [
   ['timing', 'Timing']
 ];
 
+/** Open a tab, and load whatever it needs the moment it is shown. */
+function selectTab(id) {
+  state.tab = id;
+  renderDetail();
+  if (id === 'diff') void prepareDiff();
+}
+
+/**
+ * Arrow-key movement inside the tablist, per the WAI-ARIA tabs pattern.
+ *
+ * Focus follows selection here because every tab is already loaded and
+ * switching costs nothing — the alternative, where arrows move focus and
+ * Enter commits, exists for tabs that are expensive to open.
+ */
+function onTabKey(event, id) {
+  const ids = TABS.map(([tabId]) => tabId);
+  const at = ids.indexOf(id);
+  let next = null;
+
+  if (event.key === 'ArrowRight') next = ids[(at + 1) % ids.length];
+  else if (event.key === 'ArrowLeft') next = ids[(at - 1 + ids.length) % ids.length];
+  else if (event.key === 'Home') next = ids[0];
+  else if (event.key === 'End') next = ids.at(-1);
+  else return;
+
+  event.preventDefault();
+  event.stopPropagation(); // the app's own arrow shortcuts are not wanted here
+  selectTab(next);
+  document.getElementById(`tab-${next}`)?.focus();
+}
+
 function renderDetail() {
   const head = $('detail-head');
   const tabs = $('tabs');
@@ -1083,23 +1114,28 @@ function renderDetail() {
   );
 
   for (const [id, label] of TABS) {
+    const selected = state.tab === id;
     tabs.append(
       el('button', {
         class: 'tab',
         type: 'button',
         role: 'tab',
-        'aria-selected': String(state.tab === id),
+        id: `tab-${id}`,
+        'aria-selected': String(selected),
+        'aria-controls': 'tabpanel',
+        // A tablist is one stop, not seven: Tab moves past the whole set and
+        // the arrow keys move within it. Seven stops between the tabs and
+        // their contents is how a keyboard user learns to avoid a widget.
+        tabindex: selected ? '0' : '-1',
         text: label,
         on: {
-          click: () => {
-            state.tab = id;
-            renderDetail();
-            if (id === 'diff') void prepareDiff();
-          }
+          click: () => selectTab(id),
+          keydown: (event) => onTabKey(event, id)
         }
       })
     );
   }
+  panel.setAttribute('aria-labelledby', `tab-${state.tab}`);
 
   if (!call) return void panel.append(el('p', { class: 'note', text: 'Loading…' }));
 
