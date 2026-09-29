@@ -176,6 +176,11 @@ export function checkPricing(store, pricing) {
         detail: `${spend.no_usage_calls} call(s) reported no token counts, so their cost is unknowable`
       });
     }
+
+    // §28 — a cached call whose model has no cache rate is priced as if the
+    // cache were free, which is the one pricing gap that makes the bill look
+    // *better* than it was. Worth naming separately from a missing rate.
+    for (const check of checkCacheRates(store, pricing)) checks.push(check);
   } catch {
     // A spend query failing is not a reason for doctor itself to fall over.
   }
@@ -183,6 +188,39 @@ export function checkPricing(store, pricing) {
   return checks;
 }
 
+
+/**
+ * §28 — models that cache but have no cache rate in the table.
+ *
+ * Every other pricing gap makes a run look cheaper than it was by leaving the
+ * call out. This one leaves it in and quietly discounts it, which is worse: a
+ * total that is wrong reads as a total that is right.
+ */
+export function checkCacheRates(store, pricing) {
+  const rows = store.cacheUsage({}).filter((row) => (row.cache_read_tokens ?? 0) > 0);
+  if (rows.length === 0) return [];
+
+  const missing = rows.filter((row) => {
+    const rate = pricing.rateFor(row.model);
+    return rate && typeof rate.cache_read !== 'number';
+  });
+
+  if (missing.length === 0) {
+    const cached = rows.reduce((sum, row) => sum + row.cache_read_tokens, 0);
+    return [{
+      name: 'cache rates',
+      status: OK,
+      detail: `${cached.toLocaleString('en-US')} cached token(s) across ${rows.length} model(s), all priced`
+    }];
+  }
+
+  return [{
+    name: 'cache rates',
+    status: NOTE,
+    detail: `${missing.map((row) => row.model).slice(0, 5).join(', ')} read from cache but have no cache_read rate`
+      + ' — those tokens are priced at the full input rate, so the estimate is high'
+  }];
+}
 
 /**
  * Can orangebox actually write here?

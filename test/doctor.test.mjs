@@ -262,3 +262,70 @@ test('the fingerprint is shown short enough to compare by eye', async () => {
   const fingerprint = checks.find((c) => c.name === 'fingerprint');
   assert.equal(fingerprint.detail, 'AA:BB:CC:DD:EE:FF:00:11…');
 });
+
+test('doctor names a model that caches but has no cache rate (§28)', async () => {
+  const { checkCacheRates } = await import('../src/doctor.mjs');
+  const { Store, newId } = await import('../src/store.mjs');
+
+  const store = new Store(':memory:');
+  const run = store.createRun({ name: 'cached', source: 'gap' });
+  const add = (model, read) => store.insertCall({
+    id: newId(), run_id: run.id, seq: store.nextSeq(run.id),
+    provider: 'anthropic', endpoint: '/v1/messages', model,
+    started_at: Date.now(), input_tokens: 100, cache_read_tokens: read, request_json: '{}'
+  });
+
+  try {
+    add('priced-model', 4000);
+    add('input-only-model', 9000);
+
+    const pricing = {
+      rateFor: (model) => (model === 'priced-model'
+        ? { in: 5, out: 25, cache_read: 0.5 }
+        : model === 'input-only-model' ? { in: 3, out: 12 } : null)
+    };
+
+    const [check] = checkCacheRates(store, pricing);
+    // This gap makes the bill look better than it was, which is the one
+    // direction a cost estimate must never be wrong in silently.
+    assert.equal(check.status, 'note');
+    assert.match(check.detail, /input-only-model/);
+    assert.equal(check.detail.includes('priced-model'), false);
+  } finally {
+    store.close();
+  }
+});
+
+test('doctor says so when every cached model is priced', async () => {
+  const { checkCacheRates } = await import('../src/doctor.mjs');
+  const { Store, newId } = await import('../src/store.mjs');
+
+  const store = new Store(':memory:');
+  const run = store.createRun({ name: 'cached', source: 'gap' });
+  try {
+    store.insertCall({
+      id: newId(), run_id: run.id, seq: store.nextSeq(run.id),
+      provider: 'anthropic', endpoint: '/v1/messages', model: 'priced-model',
+      started_at: Date.now(), input_tokens: 100, cache_read_tokens: 4000, request_json: '{}'
+    });
+
+    const pricing = { rateFor: () => ({ in: 5, out: 25, cache_read: 0.5 }) };
+    const [check] = checkCacheRates(store, pricing);
+    assert.equal(check.status, 'ok');
+    assert.match(check.detail, /4,000 cached token/);
+  } finally {
+    store.close();
+  }
+});
+
+test('a database with no caching at all produces no cache check', async () => {
+  // Silence beats a green tick for something that never happened.
+  const { checkCacheRates } = await import('../src/doctor.mjs');
+  const { Store } = await import('../src/store.mjs');
+  const store = new Store(':memory:');
+  try {
+    assert.deepEqual(checkCacheRates(store, { rateFor: () => null }), []);
+  } finally {
+    store.close();
+  }
+});
