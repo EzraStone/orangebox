@@ -807,6 +807,12 @@ function renderTimeline() {
   root.append(loopSlot);
   void renderLoopBanner(loopSlot, state.run.id);
 
+  // §27 — the same treatment for context growth, in its own slot so neither
+  // check has to wait for the other to come back.
+  const contextSlot = el('div', { class: 'context-slot' });
+  root.append(contextSlot);
+  void renderContextStrip(contextSlot, state.run.id);
+
   const resultsByUseId = new Map();
   for (const t of state.tools) {
     if (t.kind === 'tool_result' && t.tool_use_id) resultsByUseId.set(t.tool_use_id, t);
@@ -1236,6 +1242,70 @@ async function renderLoopBanner(slot, runId) {
   }
 
   slot.replaceChildren(el('div', { class: 'banner loop-banner', role: 'status' }, parts));
+}
+
+/**
+ * §27 — how far the prompt grew, shown only when there is something to say.
+ *
+ * A run whose context stayed flat gets no strip at all. Every panel that
+ * always renders trains people to stop looking at it, and "your prompt did
+ * not grow" is not news anybody needs delivered.
+ */
+export function contextSummary(data) {
+  if (!data || !data.calls || data.calls < 4 || !data.growth) return null;
+  if (data.growth < 2) return null;
+
+  const share = data.cached_share ?? 0;
+  return {
+    headline: `The prompt grew ${data.growth.toFixed(1)}× over ${data.calls} calls.`,
+    detail: `${fmt.tokens(data.first_tokens)} to ${fmt.tokens(data.peak_tokens)}, ${fmt.tokens(data.total_input_tokens)} sent in total`,
+    cached: share > 0 ? `${Math.round(share * 100)}% served from cache` : 'none of it served from cache',
+    // Worth a nudge only when caching would actually change the bill.
+    actionable: data.growth >= 5 && share < 0.25,
+    series: data.series ?? []
+  };
+}
+
+/** The series as a filled area, 100×24 and scaled from zero like the CLI. */
+export function contextChart(series, { width = 100, height = 24 } = {}) {
+  const peak = Math.max(...series, 0);
+  if (series.length < 2 || peak === 0) return null;
+
+  const step = width / (series.length - 1);
+  const y = (v) => Number((height - (v / peak) * (height - 1)).toFixed(2));
+  const line = series.map((v, i) => `${Number((i * step).toFixed(2))},${y(v)}`).join(' ');
+
+  return el('svg', {
+    class: 'context-chart', viewBox: `0 0 ${width} ${height}`,
+    width, height, 'aria-hidden': 'true', focusable: 'false', preserveAspectRatio: 'none'
+  }, [
+    el('polygon', { class: 'context-area', points: `0,${height} ${line} ${width},${height}` }),
+    el('polyline', { class: 'context-line', points: line })
+  ]);
+}
+
+async function renderContextStrip(slot, runId) {
+  const summary = contextSummary(await loadContext(runId));
+  if (!summary || state.run?.id !== runId || !slot.isConnected) return;
+
+  slot.replaceChildren(el('div', {
+    class: `banner context-banner${summary.actionable ? ' context-actionable' : ''}`, role: 'status'
+  }, [
+    contextChart(summary.series),
+    el('div', { class: 'context-text' }, [
+      el('span', { class: 'context-headline', text: summary.headline }),
+      el('span', { class: 'context-detail', text: summary.detail }),
+      el('span', { class: 'context-cached', text: summary.cached })
+    ])
+  ]));
+}
+
+async function loadContext(runId) {
+  try {
+    return await api.get(`/api/runs/${encodeURIComponent(runId)}/context`);
+  } catch {
+    return null; // same rule as loops: an extra never breaks the timeline
+  }
 }
 
 async function loadLoops(runId) {

@@ -1053,3 +1053,34 @@ kbd {
   text-overflow: ellipsis;
 }
 .loop-cost, .loop-more { font-size: 11px; color: var(--muted); }
+
+/* §27 — the context strip. Informational by default: growth is normal, and a
+   run that merely grew should not wear the same alarm colour as one that is
+   going in circles. Only .context-actionable turns amber. */
+.context-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--text);
+}
+.context-actionable { border-color: #5a4318; background: rgba(232, 163, 61, 0.1); }
+.context-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.context-headline { font-weight: 500; }
+.context-actionable .context-headline { color: var(--amber); }
+.context-detail, .context-cached { font-size: 11px; color: var(--muted); }
+
+/* The chart is decoration around a number that is also written out beside it,
+   so it carries aria-hidden and never has to be read aloud. */
+.context-chart { flex: none; overflow: visible; }
+.context-area { fill: rgba(91, 141, 239, 0.16); stroke: none; }
+.context-line { fill: none; stroke: var(--blue); stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+.context-actionable .context-area { fill: rgba(232, 163, 61, 0.18); }
+.context-actionable .context-line { stroke: var(--amber); }
+
+@media (max-width: 720px) {
+  /* The chart is the first thing to go: the sentence is the content. */
+  .context-chart { display: none; }
+}
