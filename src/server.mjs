@@ -339,6 +339,12 @@ async function handleApi(req, res, ctx, pathname, url) {
     }));
   }
 
+  // GET /api/runs/:id/context  (§27)
+  if (method === 'GET' && seg.length === 4 && seg[1] === 'runs' && seg[3] === 'context') {
+    if (!store.getRun(seg[2])) return sendJson(res, 404, { error: 'no such run' });
+    return sendJson(res, 200, store.contextGrowth(seg[2]));
+  }
+
   // GET /api/notes  (§24)
   if (method === 'GET' && pathname === '/api/notes') {
     return sendJson(res, 200, store.notes({ limit: clampInt(url.searchParams.get('limit'), 200, 1, 1000) }));

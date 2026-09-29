@@ -86,3 +86,31 @@ test('contextGrowth reads a real run out of the store', () => {
   assert.equal(result.growth, 6);
   store.close();
 });
+
+test('GET /api/runs/:id/context answers with the same shape as the store', async () => {
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const run = app.store.createRun({ name: 'growing', source: 'gap' });
+    for (let i = 0; i < 8; i++) {
+      app.store.insertCall({
+        id: newId(), run_id: run.id, seq: app.store.nextSeq(run.id),
+        provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+        started_at: Date.now() + i, input_tokens: 1500 * (i + 1), output_tokens: 40,
+        request_json: '{}'
+      });
+    }
+
+    const body = await (await fetch(`${app.origin}/api/runs/${run.id}/context`)).json();
+    assert.deepEqual(body, app.store.contextGrowth(run.id));
+    assert.equal(body.calls, 8);
+    assert.equal(body.growth, 8);
+
+    const missing = await fetch(`${app.origin}/api/runs/no-such-run/context`);
+    assert.equal(missing.status, 404);
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});
