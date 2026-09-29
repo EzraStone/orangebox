@@ -231,3 +231,33 @@ test('drilldown refuses input it cannot honestly turn into a filter', () => {
   // A day key that is not a date would produce a range filter meaning nothing.
   assert.equal(drilldownFor('day', group('sometime', 1)), null);
 });
+
+test('every field on a spend group reaches the CSV', async () => {
+  // The header string and the row array were kept in step by hand, and the
+  // moment the store grew cached-token columns they stopped agreeing: the
+  // numbers were in the JSON, in the API and on the terminal report, and
+  // missing from the one output people load into a spreadsheet to add up.
+  const { SPEND_CSV_COLUMNS } = await import('../src/cli.mjs');
+  const { Store, newId } = await import('../src/store.mjs');
+
+  const store = new Store(':memory:');
+  try {
+    const run = store.createRun({ name: 'csv', source: 'gap' });
+    store.insertCall({
+      id: newId(), run_id: run.id, seq: store.nextSeq(run.id),
+      provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+      started_at: Date.now(), input_tokens: 100, output_tokens: 10,
+      cache_read_tokens: 900, cache_write_tokens: 50, cost_usd: 0.01, request_json: '{}'
+    });
+
+    const [group] = store.spend({ groupBy: 'model' }).groups;
+    const missing = Object.keys(group).filter((field) => !SPEND_CSV_COLUMNS.includes(field));
+    assert.deepEqual(missing, [], `the CSV leaves out: ${missing.join(', ')}`);
+
+    // And nothing in the header that a group cannot supply.
+    const unknown = SPEND_CSV_COLUMNS.filter((column) => !(column in group));
+    assert.deepEqual(unknown, [], `the CSV names columns no group has: ${unknown.join(', ')}`);
+  } finally {
+    store.close();
+  }
+});

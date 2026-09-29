@@ -1658,20 +1658,24 @@ function printCacheLine(cache) {
 }
 
 /** Machine-readable, for a spreadsheet or a chart someone else draws. */
+/**
+ * The spend CSV's columns, in order.
+ *
+ * One list rather than a header string beside a row array. Those two drifted
+ * the moment the store grew a field — cached tokens were in the JSON, in the
+ * API and on the terminal report, and silently missing from the one output
+ * people load into a spreadsheet to add up.
+ */
+export const SPEND_CSV_COLUMNS = [
+  'key', 'calls', 'input_tokens', 'output_tokens',
+  'cache_read_tokens', 'cache_write_tokens', 'cost_usd',
+  'unpriced_calls', 'unrated_calls', 'no_usage_calls', 'error_calls'
+];
+
 function printSpendCsv(data) {
-  console.log('key,calls,input_tokens,output_tokens,cost_usd,unpriced_calls,unrated_calls,no_usage_calls,error_calls');
-  for (const g of data.groups) {
-    console.log([
-      csvCell(g.key),
-      g.calls,
-      g.input_tokens,
-      g.output_tokens,
-      g.cost_usd,
-      g.unpriced_calls,
-      g.unrated_calls,
-      g.no_usage_calls,
-      g.error_calls
-    ].join(','));
+  console.log(SPEND_CSV_COLUMNS.join(','));
+  for (const group of data.groups) {
+    console.log(SPEND_CSV_COLUMNS.map((column) => csvCell(group[column])).join(','));
   }
 }
 
