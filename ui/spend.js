@@ -33,23 +33,20 @@ export function topGroups(groups, limit = CHART_ROWS) {
 
   const head = groups.slice(0, limit - 1);
   const tail = groups.slice(limit - 1);
-  const sum = (key) => tail.reduce((acc, g) => acc + (Number(g[key]) || 0), 0);
 
-  return [
-    ...head,
-    {
-      key: `${tail.length} more`,
-      calls: sum('calls'),
-      input_tokens: sum('input_tokens'),
-      output_tokens: sum('output_tokens'),
-      cost_usd: sum('cost_usd'),
-      unpriced_calls: sum('unpriced_calls'),
-      unrated_calls: sum('unrated_calls'),
-      no_usage_calls: sum('no_usage_calls'),
-      error_calls: sum('error_calls'),
-      rollup: true
+  // Sum whatever numeric fields the rows actually have, rather than a list of
+  // field names written out here. That list was one of two that had to agree
+  // with the store, and when the store grew cached-token columns this row
+  // would have carried undefined for them while every other row had a number.
+  const rollup = { key: `${tail.length} more`, rollup: true };
+  for (const group of tail) {
+    for (const [field, value] of Object.entries(group)) {
+      if (typeof value !== 'number') continue;
+      rollup[field] = (rollup[field] ?? 0) + value;
     }
-  ];
+  }
+
+  return [...head, rollup];
 }
 
 /**

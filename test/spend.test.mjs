@@ -261,3 +261,47 @@ test('every field on a spend group reaches the CSV', async () => {
     store.close();
   }
 });
+
+test('the collapsed row carries every number the rows it replaces had', async () => {
+  // The rollup listed the fields to sum by name, so a field the store grew
+  // later would be a number on every visible row and undefined on this one —
+  // which renders as an em-dash in a row whose whole job is to add up.
+  const { topGroups } = await import('../ui/spend.js');
+
+  const rows = Array.from({ length: 20 }, (_, i) => ({
+    key: `model-${i}`,
+    calls: 2,
+    input_tokens: 100,
+    output_tokens: 10,
+    cache_read_tokens: 500,
+    cache_write_tokens: 25,
+    cost_usd: 0.5,
+    unpriced_calls: 0,
+    unrated_calls: 0,
+    no_usage_calls: 0,
+    error_calls: 1,
+    // A field nobody has written yet, standing in for the next one.
+    some_future_count: 3
+  }));
+
+  const rollup = topGroups(rows, 5).at(-1);
+  assert.equal(rollup.rollup, true);
+
+  const collapsed = rows.length - 4;
+  assert.equal(rollup.calls, collapsed * 2);
+  assert.equal(rollup.cache_read_tokens, collapsed * 500);
+  assert.equal(rollup.cache_write_tokens, collapsed * 25);
+  assert.equal(rollup.some_future_count, collapsed * 3);
+
+  for (const [field, value] of Object.entries(rows[0])) {
+    if (typeof value !== 'number') continue;
+    assert.equal(typeof rollup[field], 'number', `${field} is missing from the collapsed row`);
+  }
+});
+
+test('the collapsed row does not invent a key out of the rows it replaces', () => {
+  // `key` is a string on every row; summing it would produce NaN or "0m0m0m".
+  const rows = Array.from({ length: 20 }, (_, i) => ({ key: `model-${i}`, calls: 1, cost_usd: 0.1 }));
+  const rollup = topGroups(rows, 5).at(-1);
+  assert.equal(rollup.key, '16 more');
+});
