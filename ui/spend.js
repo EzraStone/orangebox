@@ -93,6 +93,37 @@ export function chartHeight(rows, rowHeight = 26) {
  * rate is fixed by editing pricing.json, and a call that never reported tokens
  * is not fixed by anything you can type into that file.
  */
+/**
+ * §28 — one sentence about prompt caching, or nothing.
+ *
+ * Nothing is the right answer for a database with no cached calls in it:
+ * "caching saved $0" reads as a failure when it only means the feature was
+ * never used, and a line that shows up on every window is a line people learn
+ * to skip past.
+ */
+export function cacheNote(cache) {
+  if (!cache) return null;
+  const read = Number(cache.cached_tokens) || 0;
+  const written = Number(cache.written_tokens) || 0;
+  if (read === 0 && written === 0) return null;
+
+  const net = Number(cache.net_usd) || 0;
+  const detail = `${fmt.tokens(read)} tokens were read from cache`
+    + (written > 0 ? `, ${fmt.tokens(written)} written to it` : '');
+
+  const lead = net > 0
+    ? `Prompt caching saved ${fmt.usd(net)}.`
+    : net < 0
+      ? `Prompt caching cost ${fmt.usd(-net)} more than it saved.`
+      : 'Prompt caching broke even.';
+
+  const tail = cache.unrated_calls > 0
+    ? ` ${cache.unrated_calls} cached call${cache.unrated_calls === 1 ? '' : 's'} had no rate and are left out.`
+    : '';
+
+  return `${lead} ${detail}.${tail}`;
+}
+
 export function coverageNote(data) {
   if (!data || !data.total_calls) return null;
 
@@ -377,6 +408,10 @@ export function renderSpend(host, onChange, onDrill) {
     // The honest bit, in the same breath as the number it qualifies.
     const warning = coverageNote(data);
     if (warning) body.append(el('div', { class: 'banner spend-banner', role: 'status', text: warning }));
+
+    // §28 — and the money caching did not cost, under the money it did.
+    const caching = cacheNote(data.cache);
+    if (caching) body.append(el('p', { class: 'spend-cache', text: caching }));
 
     const groups = topGroups(data.groups ?? []);
     body.append(chart(groups), table(groups, onDrill));

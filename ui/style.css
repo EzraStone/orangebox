@@ -1054,6 +1054,10 @@ kbd {
 }
 .loop-cost, .loop-more { font-size: 11px; color: var(--muted); }
 
+/* §28 — the caching line sits under the total, in the muted voice of a
+   footnote. It qualifies the number above it rather than competing with it. */
+.spend-cache { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+
 /* §27 — the context strip. Informational by default: growth is normal, and a
    run that merely grew should not wear the same alarm colour as one that is
    going in circles. Only .context-actionable turns amber. */
