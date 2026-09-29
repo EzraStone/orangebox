@@ -465,3 +465,38 @@ test('`note` on an unknown id fails rather than inventing one', async () => {
     removeTempDir(server.dbPath);
   }
 });
+
+test('`loops` finds a repeated prompt and says what it cost (§26)', async () => {
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const run = store.createRun({ name: 'stuck', source: 'explicit' });
+    for (let i = 0; i < 4; i++) {
+      store.insertCall({
+        id: `loop-${i}`, run_id: run.id, seq: store.nextSeq(run.id),
+        provider: 'anthropic', endpoint: '/v1/messages',
+        started_at: Date.now() + i, cost_usd: 0.05,
+        request_json: JSON.stringify({ messages: [{ role: 'user', content: 'check the deploy' }] })
+      });
+    }
+    store.close();
+
+    const report = await runCli(['loops', '--db', server.dbPath]);
+    assert.equal(report.code, 0, report.output);
+    assert.match(report.stdout, /stuck/);
+    assert.match(report.stdout, /check the deploy/);
+    assert.match(report.stdout, /4 in a row/);
+
+    const json = await runCli(['loops', '--db', server.dbPath, '--json']);
+    const parsed = JSON.parse(json.stdout);
+    assert.equal(parsed.runs[0].loops[0].repeats, 3);
+
+    // A threshold above the repeat count reports nothing found.
+    const strict = await runCli(['loops', '--db', server.dbPath, '--min', '9']);
+    assert.match(strict.stdout, /No repeated prompts/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});

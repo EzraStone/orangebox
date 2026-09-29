@@ -130,3 +130,62 @@ test('loopsIn reads a real run out of the store', () => {
   assert.equal(result.loops[0].call_ids.length, 3);
   store.close();
 });
+
+test('GET /api/runs/:id/loops answers with the same shape as the store', async () => {
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const run = app.store.createRun({ name: 'circling', source: 'gap' });
+    for (let i = 0; i < 3; i++) {
+      app.store.insertCall({
+        id: newId(), run_id: run.id, seq: app.store.nextSeq(run.id),
+        provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+        started_at: Date.now() + i, cost_usd: 0.03,
+        request_json: ask('are we there yet')
+      });
+    }
+
+    const body = await (await fetch(`${app.origin}/api/runs/${run.id}/loops`)).json();
+    assert.equal(body.loops.length, 1);
+    assert.equal(body.loops[0].repeats, 2);
+    assert.equal(body.wasted_usd, 0.06);
+
+    // A higher threshold reports nothing rather than erroring.
+    const strict = await (await fetch(`${app.origin}/api/runs/${run.id}/loops?min=5`)).json();
+    assert.equal(strict.loops.length, 0);
+
+    const missing = await fetch(`${app.origin}/api/runs/no-such-run/loops`);
+    assert.equal(missing.status, 404);
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});
+
+test('a healthy run is reported as having no loops, explicitly', async () => {
+  // Saying "no repeated prompts" is the useful answer. An empty list reads as
+  // a feature that did not run.
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const run = app.store.createRun({ name: 'healthy', source: 'gap' });
+    for (let i = 0; i < 4; i++) {
+      app.store.insertCall({
+        id: newId(), run_id: run.id, seq: app.store.nextSeq(run.id),
+        provider: 'anthropic', endpoint: '/v1/messages',
+        started_at: Date.now() + i, cost_usd: 0.01,
+        request_json: ask(`step ${i}`)
+      });
+    }
+
+    const body = await (await fetch(`${app.origin}/api/runs/${run.id}/loops`)).json();
+    assert.equal(body.loops.length, 0);
+    assert.equal(body.wasted_usd, 0);
+    assert.equal(body.total_calls, 4, 'but it did look at every call');
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});

@@ -47,6 +47,8 @@ export async function main(argv) {
       return prune(rest);
     case 'find':
       return findCalls(rest);
+    case 'loops':
+      return loopReport(rest);
     case 'tail':
       return tail(rest);
     case 'note':
@@ -924,6 +926,72 @@ function highlight(text, query) {
 
 
 
+
+// ---------------------------------------------------------------- loops
+
+/** §26 — which runs are going in circles, and what it cost. */
+async function loopReport(args) {
+  const positional = [];
+  let dbPath = null;
+  let minRepeats = 2;
+  let format = 'text';
+
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--min': minRepeats = int(next(), '--min'); break;
+      case '--json': format = 'json'; break;
+      default:
+        if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
+        positional.push(args[i]);
+    }
+  }
+
+  const { openStore } = await import('./store.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+
+  try {
+    // No run named: scan them all, because "which of my runs looped" is the
+    // question you have before you know which run to look at.
+    const runs = positional.length > 0
+      ? positional.map((id) => store.getRun(id) ?? fail(`no run with id "${id}"`))
+      : store.listRuns({ limit: 200 }).runs;
+
+    const found = [];
+    for (const run of runs) {
+      const result = store.loopsIn(run.id, { minRepeats });
+      if (result.loops.length > 0) found.push({ run, ...result });
+    }
+
+    if (format === 'json') return void console.log(JSON.stringify({ runs: found }, null, 2));
+
+    if (found.length === 0) {
+      console.log(`No repeated prompts in ${runs.length} run(s).`);
+      return;
+    }
+
+    console.log();
+    for (const entry of found) {
+      console.log(`  ${entry.run.name ?? entry.run.id}  ·  ${entry.total_calls} call(s), ${warn(usd(entry.wasted_usd) + ' wasted')}`);
+      for (const loop of entry.loops) {
+        const tight = loop.consecutive > 1 ? `${loop.consecutive} in a row` : 'scattered';
+        console.log(`    ${String(loop.count).padStart(3)}× ${tight.padEnd(12)} ${usd(loop.wasted_usd).padStart(9)}  ${loop.prompt ?? '(no prompt text)'}`);
+      }
+      console.log();
+    }
+
+    const total = found.reduce((sum, entry) => sum + entry.wasted_usd, 0);
+    console.log(`  ${found.length} run(s) with repeats, ${usd(total)} spent asking the same things twice`);
+    console.log();
+  } finally {
+    store.close();
+  }
+}
 // ----------------------------------------------------------------- tail
 
 /**
@@ -1612,6 +1680,7 @@ USAGE
   orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
   orangebox spend [--group <k>]        what your agents have cost so far
   orangebox find <text>                search your recorded prompts and responses
+  orangebox loops [<run-id>]           find prompts your agent sent more than once
   orangebox tail [--run <id>]          watch calls as they are recorded
   orangebox note [<id> "text"]         leave or read a note on a run or call
   orangebox errors                     which failures keep happening, across runs
