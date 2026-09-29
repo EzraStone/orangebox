@@ -51,7 +51,7 @@ Section references in code comments (`§06.3`, `§14.2`) point into it.
 
 ## Adding a provider
 
-One file in `src/parse/`, exporting six functions — **and six other places**.
+One file in `src/parse/`, exporting six functions — **and seven other places**.
 That list is not padding: Gemini, Ollama and Bedrock each shipped a release
 having missed at least one of them.
 
@@ -65,9 +65,18 @@ having missed at least one of them.
 6. `PROVIDER_CREDENTIALS` in `src/credentials.mjs` — how replay authenticates
 7. `src/pricing.json` — or the provider records as unpriced, which is honest
    but unhelpful
+8. `test/usage-convention.test.mjs` — state, in that provider's own spelling,
+   whether its reported prompt total already includes cached tokens
 
-Three tests already fail if you miss 3, 4, 5 or 6. Run `npm test` and believe
+Four tests already fail if you miss 3, 4, 5, 6 or 8. Run `npm test` and believe
 it over this list.
+
+Number 8 is the newest and cost the most. Providers disagree about what a
+prompt total means: Anthropic and Bedrock report cache reads outside it, Gemini
+and OpenAI fold them in. orangebox normalises — `input_tokens` is the part
+billed at the full input rate — and getting that wrong is invisible, because
+the number still looks like a number. Two providers were billing cached tokens
+twice for months.
  `ollama.mjs` is the shortest example
 and the least like the others — it speaks newline-delimited JSON rather than
 SSE, which is the point: nothing outside the parser should know that.
@@ -119,6 +128,25 @@ So: if you add a thing that must appear in two places, add a test that derives
 one from the other. `test/cli.test.mjs` and `test/shell.test.mjs` have several
 to copy. Confirm it fails before you make it pass — a drift test that never
 bites is worse than none, because it reads like coverage.
+
+## Run it, not only the tests
+
+The suite is large and it is not the product. Two of the worst bugs here were
+found by opening the app and clicking something:
+
+- The call detail pane threw a `ReferenceError` on every click for several
+  commits — the entire right-hand side of the UI, dead — because a `const` was
+  declared below its first use. Every test passed. Nothing in the suite
+  executes `app.js` against a DOM, and nothing can without a dependency.
+- The export sanitizer was replacing every token count with
+  `[redacted-secret]`, which was obvious the first time anyone read a generated
+  HTML report and not before.
+
+Before a release, and after anything that touches `ui/`: start the recorder,
+open a run, click a call, walk the five tabs, open the spend view, and export
+an HTML report. It takes two minutes. `test/ui-wiring.test.mjs` catches the
+mechanical half of this — a renamed id, a missing import — but it cannot tell
+you the page is blank.
 
 ## Manual probes
 
