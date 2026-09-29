@@ -42,7 +42,11 @@ export function parseResponse(json) {
     model: str(json.modelVersion),
     // STOP | MAX_TOKENS | SAFETY | RECITATION | OTHER, stored verbatim per §7.1.
     stop_reason: str(candidate.finishReason),
-    input_tokens: int(usage.promptTokenCount),
+    // promptTokenCount is "the total effective prompt size", cached content
+    // included. orangebox records input_tokens as the part billed at the full
+    // rate, so the cached share comes out — otherwise §08 charges those tokens
+    // twice, once at the input rate and again at the cache rate.
+    input_tokens: uncachedInput(usage.promptTokenCount, usage.cachedContentTokenCount),
     output_tokens: int(usage.candidatesTokenCount),
     cache_read_tokens: int(usage.cachedContentTokenCount),
     // Gemini bills cache creation separately rather than reporting it per call.
@@ -186,4 +190,17 @@ function str(v) {
 
 function int(v) {
   return typeof v === 'number' && Number.isFinite(v) ? Math.trunc(v) : null;
+}
+
+/**
+ * The part of a reported prompt that is billed at the full input rate.
+ *
+ * Clamped at zero: the two counts come from the same usage object and should
+ * never disagree, but a negative token count on a dashboard is worse than a
+ * slightly optimistic one, and it would be inherited by every total above it.
+ */
+function uncachedInput(prompt, cached) {
+  const total = int(prompt);
+  if (total === null) return null;
+  return Math.max(0, total - (int(cached) ?? 0));
 }

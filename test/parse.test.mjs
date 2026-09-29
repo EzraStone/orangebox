@@ -439,6 +439,7 @@ test('gemini: usageMetadata maps onto the normalized token fields (§7.1)', () =
   const parsed = gemini.parseResponse(response);
   assert.equal(parsed.model, 'gemini-2.5-pro');
   assert.equal(parsed.stop_reason, 'STOP', 'stored verbatim, not translated');
+  // 2191 reported, 2048 of it cached — 143 is the part billed at full rate.
   assert.equal(parsed.input_tokens, 143);
   assert.equal(parsed.output_tokens, 57);
   assert.equal(parsed.cache_read_tokens, 2048);
@@ -625,4 +626,34 @@ test('stripping a region prefix never invents a match', () => {
   assert.equal(pricing.rateFor('us.'), null);
   assert.equal(pricing.rateFor(''), null);
   assert.equal(pricing.rateFor(null), null);
+});
+
+test('gemini: cached prompt tokens are not billed twice (§08)', () => {
+  // promptTokenCount is documented as "the total effective prompt size ...
+  // this includes the number of tokens in the cached content". Recording it
+  // whole alongside cache_read_tokens charged the cached share at the input
+  // rate and again at the cache rate.
+  const usage = { promptTokenCount: 10000, candidatesTokenCount: 200, cachedContentTokenCount: 8000 };
+  const parsed = gemini.parseResponse({ modelVersion: 'gemini-2.5-pro', usageMetadata: usage });
+
+  assert.equal(parsed.input_tokens, 2000, 'only the uncached part is billed at the input rate');
+  assert.equal(parsed.cache_read_tokens, 8000);
+  assert.equal(parsed.input_tokens + parsed.cache_read_tokens, usage.promptTokenCount);
+});
+
+test('gemini: an uncached call still reports its whole prompt', () => {
+  const parsed = gemini.parseResponse({
+    modelVersion: 'gemini-2.5-pro',
+    usageMetadata: { promptTokenCount: 1200, candidatesTokenCount: 30 }
+  });
+  assert.equal(parsed.input_tokens, 1200);
+  assert.equal(parsed.cache_read_tokens, null);
+});
+
+test('gemini: a prompt count that disagrees with the cache count never goes negative', () => {
+  const parsed = gemini.parseResponse({
+    modelVersion: 'gemini-2.5-pro',
+    usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 5, cachedContentTokenCount: 900 }
+  });
+  assert.equal(parsed.input_tokens, 0);
 });
