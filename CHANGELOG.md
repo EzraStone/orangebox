@@ -6,6 +6,7 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Added
 
+- Context growth (§27): `orangebox context`, `GET /api/runs/:id/context`, a strip on the timeline, and `orangebox assert --max-context-growth`. Reports how far a run's prompt grew and how much of it the provider served from cache — only suggesting prompt caching when the cache is not already doing the work.
 - Loop detection (§26): `orangebox loops`, `GET /api/runs/:id/loops`, a banner on the timeline, and `orangebox assert --max-repeats`. Finds prompts an agent sent more than once and reports what the repeats cost.
 - `orangebox tail` (§25): watch calls as they are recorded, one line each. Polls the database, so it needs no running recorder.
 

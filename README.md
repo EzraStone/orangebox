@@ -188,11 +188,12 @@ four times budget — a regression rather than a noisy neighbour.
 | `orangebox` | Start recording (default command). |
 | `orangebox run [--name "…"] -- CMD` | Run `CMD` with `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` pointed at a run-scoped prefix, so its calls group exactly. Exits with the child's exit code. |
 | `orangebox export <run-id> [-o file]` | Write a self-contained JSON file of the run — commit it to a bug report. |
-| `orangebox assert <run-id> [limits]` | Exit non-zero when cost, latency, errors, call count, or unknown costs exceed a CI threshold. |
+| `orangebox assert <run-id> [limits]` | Exit non-zero when cost, latency, errors, call count, repeats, context growth, or unknown costs exceed a CI threshold. |
 | `orangebox spend [--group <k>]` | What your agents have cost, by model, provider, run, or day — with an explicit count of what it could not price. |
 | `orangebox import <file.json>` | Load a run somebody exported. Additive — never overwrites what you already have. |
 | `orangebox prune [--older-than <d>]` | Reclaim space by age or size (`--max-size 500MB`), or rebuild the file (`--vacuum`). |
 | `orangebox loops [<run-id>]` | Find prompts your agent sent more than once, and what the repeats cost. |
+| `orangebox context [<run-id>]` | How far the prompt grew over a run, and how much of it the provider cached. |
 | `orangebox tail [--run <id>]` | Watch calls as they are recorded, one line each. Works without a running recorder. |
 | `orangebox note [<id> "text"]` | Leave or read a note on a run or call; with no arguments, lists every note. |
 | `orangebox find <text>` | Search recorded prompts and responses. Prints the run, call, model, and a snippet. |
@@ -232,7 +233,7 @@ calls never come back finishes the run, costs almost nothing, and reports zero
 errors — every other threshold passes while nothing worked.
 
 ```bash
-orangebox assert "$RUN_ID" --max-cost 0.25 --max-latency 5000 --max-errors 0 --max-calls 12 --max-unanswered-tools 0 --max-repeats 3 --require-known-cost
+orangebox assert "$RUN_ID" --max-cost 0.25 --max-latency 5000 --max-errors 0 --max-calls 12 --max-unanswered-tools 0 --max-repeats 3 --max-context-growth 8 --require-known-cost
 ```
 
 ## Configuration file
@@ -391,6 +392,44 @@ asking twice.
 A run with repeats shows a banner on its timeline, and `--max-repeats` fails CI
 on it — the one gate that cost, latency and error thresholds all pass straight
 through.
+
+## Context growth
+
+A loop is the agent repeating itself. The sibling question is whether the agent
+is carrying more and more with it, and that is the largest line on most agent
+bills — every turn re-sends the whole conversation, and every token of it is
+charged again.
+
+```bash
+orangebox context
+```
+
+```
+  refactor-auth  ·  15 call(s) with token counts
+    ▁▁▁▁▂▂▂▃▃▄▅▅▆▇█
+    first prompt   900
+    largest        31.0k  (34.4× the first)
+    sent in total  172k
+    served cached  0  (0%)
+    the prompt grew sharply and almost none of it was cached — prompt caching would pay here
+```
+
+Growth is measured against the **largest** prompt in the run, not the last one.
+An agent that grows and then starts a fresh sub-task ends small; measuring the
+final call would report no growth on a run that plainly had some.
+
+The cached share is what stops this being a scold. Growth is normal — it is how
+the APIs work — and a run that grew forty-fold with most of it served from cache
+has nothing wrong with it. orangebox only suggests prompt caching when the
+growth is steep *and* the cache is not already doing the work.
+
+The share is capped at 100%, because providers disagree about whether cache
+reads are counted inside input tokens, and a "137% cached" figure would rightly
+destroy trust in every other number on the page.
+
+`--max-context-growth 8` fails CI on a run whose prompt grew more than eightfold.
+The cost gate catches this too, eventually — but only once the bill is large
+enough to notice, and it reports the symptom rather than the cause.
 
 ## Watching from a terminal
 
