@@ -383,6 +383,9 @@ button {
   z-index: 5;
 }
 .drag:hover { background: var(--orange-dim); }
+/* A 6px target is fine for a pointer and invisible to a keyboard, so the focus
+   ring is drawn outside it rather than inset. */
+.drag:focus-visible { background: var(--orange-dim); outline: 2px solid var(--orange); outline-offset: 1px; }
 
 .tabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
 .tab {

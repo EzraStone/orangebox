@@ -2239,11 +2239,30 @@ setupImportDrop();
   const shell = $('shell');
   let dragging = false;
 
-  const move = (e) => {
-    if (!dragging) return;
-    const fromRight = window.innerWidth - e.clientX;
-    const width = Math.min(Math.max(fromRight, 320), window.innerWidth - 420);
+  const MIN = 320;
+  const KEY_STEP = 24;
+  const max = () => Math.max(MIN, window.innerWidth - 420);
+
+  // The separator announced itself to assistive technology and then only
+  // responded to a pointer, which is the worst of both: it says it is a
+  // control and is not operable as one.
+  const setWidth = (px) => {
+    const width = Math.round(Math.min(Math.max(px, MIN), max()));
     shell.style.setProperty('--detail-w', `${width}px`);
+    handle.setAttribute('aria-valuenow', String(width));
+    handle.setAttribute('aria-valuetext', `${width} pixels`);
+    return width;
+  };
+
+  const currentWidth = () => {
+    const declared = Number.parseFloat(shell.style.getPropertyValue('--detail-w'));
+    return Number.isFinite(declared) ? declared : $('pane-detail').getBoundingClientRect().width;
+  };
+
+  const sync = () => {
+    handle.setAttribute('aria-valuemin', String(MIN));
+    handle.setAttribute('aria-valuemax', String(max()));
+    setWidth(currentWidth());
   };
 
   handle.addEventListener('pointerdown', (e) => {
@@ -2251,9 +2270,32 @@ setupImportDrop();
     handle.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
-  handle.addEventListener('pointermove', move);
+  handle.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    setWidth(window.innerWidth - e.clientX);
+  });
   handle.addEventListener('pointerup', () => (dragging = false));
   handle.addEventListener('pointercancel', () => (dragging = false));
+
+  handle.addEventListener('keydown', (e) => {
+    // Left grows the pane because the pane is on the right: the key moves the
+    // separator, not the edge it belongs to.
+    const step = e.shiftKey ? KEY_STEP * 4 : KEY_STEP;
+    const width = currentWidth();
+    let next = null;
+
+    if (e.key === 'ArrowLeft') next = width + step;
+    else if (e.key === 'ArrowRight') next = width - step;
+    else if (e.key === 'Home') next = max();
+    else if (e.key === 'End') next = MIN;
+    else return;
+
+    e.preventDefault();
+    setWidth(next);
+  });
+
+  window.addEventListener('resize', sync);
+  sync();
 })();
 
 // ============================================================ installable app
