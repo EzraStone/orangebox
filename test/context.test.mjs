@@ -1,7 +1,7 @@
 // §27 — context growth across a run.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { contextGrowth } from '../src/context.mjs';
+import { contextGrowth, sampleSeries, SERIES_WIDTH } from '../src/context.mjs';
 import { Store, newId } from '../src/store.mjs';
 
 const call = (seq, input, cached = 0) => ({ seq, input_tokens: input, cache_read_tokens: cached });
@@ -113,4 +113,36 @@ test('GET /api/runs/:id/context answers with the same shape as the store', async
     await app.close();
     removeTempDir(app.dbPath);
   }
+});
+
+test('a short run is drawn from every call it had', () => {
+  assert.deepEqual(sampleSeries([5, 9, 2]), [5, 9, 2]);
+  assert.deepEqual(sampleSeries([]), []);
+});
+
+test('a long run is sampled down to something drawable', () => {
+  const values = Array.from({ length: 5000 }, (_, i) => i);
+  assert.equal(sampleSeries(values).length, SERIES_WIDTH);
+});
+
+test('buckets keep their peak rather than their average', () => {
+  // Averaging is precisely the operation that hides the spike you opened the
+  // report to find.
+  const values = [1, 1, 1, 400, 1, 1, 1, 1];
+  assert.ok(sampleSeries(values, 2).includes(400));
+});
+
+test('every bucket is drawn from at least one call', () => {
+  // Off-by-one here produces an undefined in the middle of the chart, which
+  // renders as a gap and reads as missing data.
+  const sampled = sampleSeries([3, 1, 4, 1, 5], 5);
+  assert.equal(sampled.length, 5);
+  assert.ok(sampled.every(Number.isFinite));
+});
+
+test('the growth report carries a drawable series', () => {
+  const calls = Array.from({ length: 200 }, (_, i) => call(i + 1, 10 * (i + 1)));
+  const result = contextGrowth(calls);
+  assert.equal(result.series.length, SERIES_WIDTH);
+  assert.equal(Math.max(...result.series), result.peak_tokens);
 });

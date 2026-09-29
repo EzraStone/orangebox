@@ -24,7 +24,7 @@ export function contextGrowth(calls) {
     return {
       calls: 0, first_tokens: null, last_tokens: null, peak_tokens: null,
       total_input_tokens: 0, cached_tokens: 0, cached_share: null,
-      growth: null, verdict: 'no token counts recorded'
+      growth: null, series: [], verdict: 'no token counts recorded'
     };
   }
 
@@ -49,6 +49,7 @@ export function contextGrowth(calls) {
     cached_tokens: cached,
     cached_share: share,
     growth,
+    series: sampleSeries(sized.map((c) => c.input_tokens)),
     verdict: verdictFor({ growth, share, calls: sized.length })
   };
 }
@@ -71,3 +72,28 @@ function verdictFor({ growth, share, calls }) {
   if (growth >= 2) return 'the prompt roughly doubled over the run, which is normal for a multi-turn agent';
   return 'the prompt stayed about the same size';
 }
+
+/**
+ * The shape of the growth, small enough to draw.
+ *
+ * A thousand-call run cannot be plotted in a terminal line or a card, and
+ * sending a thousand numbers to draw forty pixels is waste on every request.
+ * Buckets are reduced by max rather than by mean: the question this answers is
+ * "how big did it get", and averaging is exactly the operation that hides a
+ * spike.
+ */
+export function sampleSeries(values, width = SERIES_WIDTH) {
+  if (values.length <= width) return values;
+
+  const out = [];
+  for (let i = 0; i < width; i++) {
+    const from = Math.floor((i * values.length) / width);
+    const to = Math.max(from + 1, Math.floor(((i + 1) * values.length) / width));
+    let peak = values[from];
+    for (let j = from + 1; j < to; j++) if (values[j] > peak) peak = values[j];
+    out.push(peak);
+  }
+  return out;
+}
+
+export const SERIES_WIDTH = 48;
