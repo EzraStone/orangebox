@@ -4,6 +4,8 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ## Unreleased
 
+## [1.5.0] - 2026-09-29
+
 ### Added
 
 - Cache accounting (§28): `orangebox spend` and `GET /api/spend` report what prompt caching saved, netting cache writes off against reads and naming any cached calls whose model has no rate.

@@ -6,6 +6,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
+const NEWLINE = String.fromCharCode(10);
+
 const read = (name) => fs.readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
 
 /** The commands `main()` actually dispatches, less the two nobody documents. */
@@ -126,4 +128,26 @@ test('the README does not document routes the server does not answer', () => {
       );
     }
   }
+});
+
+test('package.json and package-lock.json agree on the version', () => {
+  // The lock said 1.1.0 while the package said 1.4.0 — three releases apart.
+  // RELEASING.md step 1 says to update both; nothing checked that it happened.
+  const pkg = JSON.parse(read('package.json'));
+  const lock = JSON.parse(read('package-lock.json'));
+
+  assert.equal(lock.version, pkg.version, 'package-lock.json is stale');
+  assert.equal(lock.packages?.['']?.version, pkg.version, 'the lock root package is stale');
+});
+
+test('the changelog has an entry for the version being shipped', () => {
+  // Compared line by line rather than with a built regex: a version string is
+  // all dots and the heading is all brackets, and every escape in that
+  // expression is one more thing to get wrong than the check is worth.
+  const { version } = JSON.parse(read('package.json'));
+  const heading = `## [${version}] - `;
+  const lines = read('CHANGELOG.md').split(NEWLINE);
+
+  assert.ok(lines.some((line) => line.startsWith(heading)),
+    `CHANGELOG.md has no dated heading for ${version}`);
 });
