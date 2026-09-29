@@ -443,6 +443,8 @@ export class Store {
                    COUNT(*)                        AS calls,
                    SUM(COALESCE(c.input_tokens, 0))  AS input_tokens,
                    SUM(COALESCE(c.output_tokens, 0)) AS output_tokens,
+                   SUM(COALESCE(c.cache_read_tokens, 0))  AS cache_read_tokens,
+                   SUM(COALESCE(c.cache_write_tokens, 0)) AS cache_write_tokens,
                    SUM(COALESCE(c.cost_usd, 0))      AS cost_usd,
                    SUM(CASE WHEN c.cost_usd IS NULL THEN 1 ELSE 0 END) AS unpriced_calls,
                    -- Two quite different reasons a cost is null, and they need
@@ -469,6 +471,18 @@ export class Store {
       }
       return spendCache.get(cacheKey);
     };
+
+    this.q.cacheByModel = db.prepare(`
+      SELECT COALESCE(model, '(no model recorded)') AS model,
+             COUNT(*)                                AS calls,
+             SUM(COALESCE(input_tokens, 0))          AS input_tokens,
+             SUM(COALESCE(cache_read_tokens, 0))     AS cache_read_tokens,
+             SUM(COALESCE(cache_write_tokens, 0))    AS cache_write_tokens
+        FROM calls
+       WHERE started_at BETWEEN @since AND @until
+         AND (cache_read_tokens IS NOT NULL OR cache_write_tokens IS NOT NULL)
+       GROUP BY model
+       ORDER BY cache_read_tokens DESC`);
 
     // One transaction per call: call row + tool events + run aggregate bump (§09).
     this.txInsertCall = this.db.transaction((call, toolEvents) => {
@@ -714,6 +728,8 @@ export class Store {
         calls: row.calls,
         input_tokens: row.input_tokens ?? 0,
         output_tokens: row.output_tokens ?? 0,
+        cache_read_tokens: row.cache_read_tokens ?? 0,
+        cache_write_tokens: row.cache_write_tokens ?? 0,
         cost_usd: row.cost_usd ?? 0,
         unpriced_calls: row.unpriced_calls,
         unrated_calls: row.unrated_calls,
@@ -738,6 +754,21 @@ export class Store {
       priced_share: totalCalls === 0 ? 1 : (totalCalls - unpricedCalls) / totalCalls,
       groups
     };
+  }
+
+  /**
+   * §28 — cached tokens per model, which is the grain the rates are known at.
+   *
+   * Separate from spend() because savings can only be worked out where the
+   * model is: a row grouped by day or by run covers several models with
+   * different rates, and one blended number would be a guess wearing a
+   * decimal point.
+   */
+  cacheUsage({ since = null, until = null } = {}) {
+    return this.q.cacheByModel.all({
+      since: since ?? 0,
+      until: until ?? Number.MAX_SAFE_INTEGER
+    });
   }
 
   /**

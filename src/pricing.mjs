@@ -108,3 +108,49 @@ function deepMerge(base, override) {
 function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
+
+/**
+ * §28 — what prompt caching did to the bill.
+ *
+ * Reads are a saving: those tokens would otherwise have been charged at the
+ * full input rate. Writes are a cost on most providers — 1.25x input — paid
+ * once in the hope of reads later. Reporting only the saving would make every
+ * cache look free, which is exactly the claim somebody would check.
+ *
+ * Models with no rate are counted separately rather than assumed free, the
+ * same rule the rest of §08 follows: an unknown is not a zero.
+ */
+export function cacheSavings(rows, pricing) {
+  let cachedTokens = 0;
+  let writtenTokens = 0;
+  let saved = 0;
+  let writeCost = 0;
+  let unratedCalls = 0;
+
+  for (const row of rows) {
+    const read = row.cache_read_tokens ?? 0;
+    const written = row.cache_write_tokens ?? 0;
+    if (read === 0 && written === 0) continue;
+
+    const rate = pricing.rateFor(row.model);
+    if (!rate || typeof rate.in !== 'number') {
+      unratedCalls += row.calls ?? 0;
+      continue;
+    }
+
+    cachedTokens += read;
+    writtenTokens += written;
+    saved += (read / 1e6) * (rate.in - (rate.cache_read ?? rate.in));
+    writeCost += (written / 1e6) * ((rate.cache_write ?? rate.in) - rate.in);
+  }
+
+  const round = (v) => Math.round(v * 1e8) / 1e8;
+  return {
+    cached_tokens: cachedTokens,
+    written_tokens: writtenTokens,
+    saved_usd: round(saved),
+    write_premium_usd: round(writeCost),
+    net_usd: round(saved - writeCost),
+    unrated_calls: unratedCalls
+  };
+}
