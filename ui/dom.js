@@ -158,3 +158,44 @@ export function segmented({ options, current, onPick, label }) {
   }
   return wrap;
 }
+
+/**
+ * Call `fn` at most once every `ms`, and never drop the last call.
+ *
+ * The timeline re-renders on every completed call, which is right for the
+ * calls themselves and wrong for the two banners above them: each one asks the
+ * server to re-analyse the entire run. On a two-hundred-call run that is four
+ * hundred requests, each doing more work than the last, to redraw a sentence
+ * that barely changes.
+ *
+ * Leading edge so the first render is immediate, trailing edge so the banner
+ * ends up describing the run as it finally was rather than as it was three
+ * seconds before the end.
+ */
+export function throttled(ms, fn) {
+  let last = -Infinity;
+  let timer = null;
+  let queued = null;
+
+  return (...args) => {
+    const now = Date.now();
+    const wait = ms - (now - last);
+
+    if (wait <= 0) {
+      last = now;
+      queued = null;
+      return void fn(...args);
+    }
+
+    // Only the most recent arguments matter; this is a redraw, not a queue.
+    queued = args;
+    if (timer !== null) return;
+    timer = setTimeout(() => {
+      timer = null;
+      last = Date.now();
+      const next = queued;
+      queued = null;
+      if (next) fn(...next);
+    }, wait);
+  };
+}

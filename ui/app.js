@@ -2,7 +2,7 @@
 // third-party anything. Every piece of recorded content is inserted with
 // textContent; a prompt containing markup renders inert (§12.3).
 import { diffLines, collapseUnchanged, diffStats } from '/diff.js';
-import { el, $, fmt, SHORTCUTS } from '/dom.js';
+import { el, $, fmt, SHORTCUTS, throttled } from '/dom.js';
 import { renderSpend, loadSpend } from '/spend.js';
 import { renderTools, loadTools } from '/tools.js';
 import { renderFind, loadFind, state as findState } from '/find.js';
@@ -764,6 +764,29 @@ async function deleteRun(run) {
   navigate(state.runs[0]?.id ?? null, { replace: true });
 }
 
+/**
+ * Both banners ask the server to re-analyse the whole run, and the timeline
+ * redraws on every completed call. Unthrottled, a two-hundred-call run makes
+ * four hundred requests — each doing more work than the last — to redraw two
+ * sentences that barely move. Three seconds is well inside how long anybody
+ * takes to read one.
+ *
+ * The slots are held here rather than passed in, because a redraw replaces
+ * them: a throttled call that closed over the slot it was asked about would
+ * arrive holding a detached node and paint nothing. Reading the current pair
+ * at paint time means the trailing call — the one that describes the run as it
+ * finally was — lands where it can be seen.
+ */
+const ANALYSIS_INTERVAL_MS = 3000;
+const analysis = { loopSlot: null, contextSlot: null, runId: null };
+
+const refreshAnalysis = throttled(ANALYSIS_INTERVAL_MS, () => {
+  const { loopSlot, contextSlot, runId } = analysis;
+  if (!runId) return;
+  if (loopSlot) void renderLoopBanner(loopSlot, runId);
+  if (contextSlot) void renderContextStrip(contextSlot, runId);
+});
+
 function renderTimeline() {
   if (state.view === 'errors') {
     renderAnalyticsHeader('Errors');
@@ -802,16 +825,14 @@ function renderTimeline() {
     return void root.append(el('p', { class: 'note', text: 'No calls recorded in this run yet.' }));
   }
 
-  // §26 — a loop banner, filled in once the check comes back.
-  const loopSlot = el('div', { class: 'loop-slot' });
-  root.append(loopSlot);
-  void renderLoopBanner(loopSlot, state.run.id);
+  // §26/§27 — the loop banner and the context strip, filled in once their
+  // checks come back. Each gets its own slot so neither waits for the other.
+  analysis.loopSlot = el('div', { class: 'loop-slot' });
+  analysis.contextSlot = el('div', { class: 'context-slot' });
+  analysis.runId = state.run.id;
+  root.append(analysis.loopSlot, analysis.contextSlot);
+  refreshAnalysis();
 
-  // §27 — the same treatment for context growth, in its own slot so neither
-  // check has to wait for the other to come back.
-  const contextSlot = el('div', { class: 'context-slot' });
-  root.append(contextSlot);
-  void renderContextStrip(contextSlot, state.run.id);
 
   const resultsByUseId = new Map();
   for (const t of state.tools) {
@@ -1264,6 +1285,7 @@ export function loopSummary(data) {
     others: data.loops.length - 1
   };
 }
+
 
 /** Fill the banner, or leave the slot empty when there is nothing to say. */
 async function renderLoopBanner(slot, runId) {
