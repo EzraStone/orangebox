@@ -350,6 +350,29 @@ hung up, or it streamed without `include_usage`), so its cost is unknowable and
 no edit to that file will help. Meanwhile `llama3.2` at a true `$0` stays
 visibly distinct from both.
 
+### What caching saved
+
+Once cached tokens are counted correctly, the next question is what they were
+worth. `orangebox spend` answers it in one line under the total:
+
+```
+  total $12.40 across 214 call(s)
+  caching saved $31.80 — 6.4M tokens read from cache, 210k written
+```
+
+A cache read is priced at the difference between the input rate and the cache
+rate: money that was not spent. A cache **write** costs more than ordinary input
+— 1.25× on most providers — so it is reported as the cost it is and netted off.
+A report that only ever showed a saving would make every cache look free, which
+is exactly the claim somebody would go and check.
+
+Savings are worked out per model, because that is the grain the rates are known
+at. A cached call whose model has no entry in the price table is named, not
+quietly folded in at zero.
+
+The line is absent when nothing was cached. "Caching saved $0" reads as a
+failure when all it means is that the feature was never switched on.
+
 ## Tools
 
 `/tools` in the UI, or `orangebox tools`:

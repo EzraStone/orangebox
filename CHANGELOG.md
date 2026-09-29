@@ -6,6 +6,7 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Added
 
+- Cache accounting (§28): `orangebox spend` and `GET /api/spend` report what prompt caching saved, netting cache writes off against reads and naming any cached calls whose model has no rate.
 - Context growth (§27): `orangebox context`, `GET /api/runs/:id/context`, a strip on the timeline, and `orangebox assert --max-context-growth`. Reports how far a run's prompt grew and how much of it the provider served from cache — only suggesting prompt caching when the cache is not already doing the work.
 - Loop detection (§26): `orangebox loops`, `GET /api/runs/:id/loops`, a banner on the timeline, and `orangebox assert --max-repeats`. Finds prompts an agent sent more than once and reports what the repeats cost.
 - `orangebox tail` (§25): watch calls as they are recorded, one line each. Polls the database, so it needs no running recorder.
@@ -22,6 +23,10 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Fixed
 
+- Gemini and OpenAI cached tokens were billed twice. Both providers include cached tokens in the reported prompt total; orangebox recorded that total whole and the cached count beside it, so §08 charged the cached share at the input rate and again at the cache rate. OpenAI Chat Completions had the opposite bug — it discarded the cached count, pricing those tokens at the full rate. `input_tokens` now means the part billed at the full input rate for all five providers, with a test that checks they agree.
+- OpenAI cache writes (`input_tokens_details.cache_write_tokens`, 1.25x input on gpt-5.6 and later) were neither extracted nor priced.
+- The export sanitizer redacted every field whose name contains "token", which included `input_tokens`, `output_tokens` and `max_tokens` — so a shared run carried no usage data and no record of what the request asked for.
+- The OpenTelemetry export had no span for the run, so a trace viewer drew each call as an unrelated root.
 - The Store constructor left the database handle open when it rejected a newer schema, which on Windows makes the file undeletable.
 - Column migrations failed with "duplicate column name" against a database missing a table, because the schema is applied with CREATE TABLE IF NOT EXISTS before migrations run. They check first now.
 - `--port 0` advertised `http://127.0.0.1:0` instead of the port actually bound.
