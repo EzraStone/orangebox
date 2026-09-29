@@ -6,6 +6,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 import { findLoops } from './loops.mjs';
+import { contextGrowth } from './context.mjs';
 
 export const SCHEMA_VERSION = '3';
 
@@ -901,6 +902,11 @@ export class Store {
    * Reads the full calls because the prompts are the evidence, and a run is
    * bounded — this is a question you ask about one run, not the whole history.
    */
+  /** §27 — how much of this run was the same conversation, resent. */
+  contextGrowth(runId) {
+    return contextGrowth(this.callSummaries(runId));
+  }
+
   loopsIn(runId, options = {}) {
     return findLoops(this.fullCalls(runId), options);
   }
