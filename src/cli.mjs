@@ -49,6 +49,8 @@ export async function main(argv) {
       return findCalls(rest);
     case 'loops':
       return loopReport(rest);
+    case 'context':
+      return contextReport(rest);
     case 'tail':
       return tail(rest);
     case 'note':
@@ -997,6 +999,78 @@ async function loopReport(args) {
     store.close();
   }
 }
+// --------------------------------------------------------------- context
+
+/** §27 — how much the prompt grew over a run, and how much of it cached. */
+async function contextReport(args) {
+  const positional = [];
+  let dbPath = null;
+  let format = 'text';
+
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--json': format = 'json'; break;
+      default:
+        if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
+        positional.push(args[i]);
+    }
+  }
+
+  const { openStore } = await import('./store.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+
+  try {
+    // Default to the most recent run: "what did my last run cost me in
+    // re-sent context" is the question you have right after a run ends.
+    const runs = positional.length > 0
+      ? positional.map((id) => store.getRun(id) ?? fail(`no run with id "${id}"`))
+      : store.listRuns({ limit: 1 }).runs;
+
+    if (runs.length === 0) {
+      console.log('No runs recorded yet.');
+      return;
+    }
+
+    const reports = runs.map((run) => ({ run, ...store.contextGrowth(run.id) }));
+
+    if (format === 'json') return void console.log(JSON.stringify({ runs: reports }, null, 2));
+
+    console.log();
+    for (const report of reports) {
+      console.log(`  ${report.run.name ?? report.run.id}  ·  ${report.calls} call(s) with token counts`);
+
+      if (report.calls === 0) {
+        console.log(`    ${report.verdict}`);
+        console.log();
+        continue;
+      }
+
+      console.log(`    first prompt   ${tokenCount(report.first_tokens)}`);
+      console.log(`    largest        ${tokenCount(report.peak_tokens)}${report.growth ? `  (${report.growth.toFixed(1)}× the first)` : ''}`);
+      console.log(`    sent in total  ${tokenCount(report.total_input_tokens)}`);
+      console.log(`    served cached  ${tokenCount(report.cached_tokens)}${report.cached_share === null ? '' : `  (${Math.round(report.cached_share * 100)}%)`}`);
+      console.log(`    ${report.growth >= 5 && (report.cached_share ?? 0) < 0.25 ? warn(report.verdict) : report.verdict}`);
+      console.log();
+    }
+  } finally {
+    store.close();
+  }
+}
+
+/** Token counts get long fast; thousands are what people actually compare. */
+export function tokenCount(value) {
+  if (value === null || value === undefined) return '—';
+  if (value < 10000) return String(value);
+  if (value < 1000000) return `${(value / 1000).toFixed(value < 100000 ? 1 : 0)}k`;
+  return `${(value / 1000000).toFixed(1)}M`;
+}
+
 // ----------------------------------------------------------------- tail
 
 /**
@@ -1686,6 +1760,7 @@ USAGE
   orangebox spend [--group <k>]        what your agents have cost so far
   orangebox find <text>                search your recorded prompts and responses
   orangebox loops [<run-id>]           find prompts your agent sent more than once
+  orangebox context [<run-id>]         how far the prompt grew, and what cached
   orangebox tail [--run <id>]          watch calls as they are recorded
   orangebox note [<id> "text"]         leave or read a note on a run or call
   orangebox errors                     which failures keep happening, across runs

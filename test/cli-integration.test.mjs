@@ -500,3 +500,47 @@ test('`loops` finds a repeated prompt and says what it cost (§26)', async () =>
     removeTempDir(server.dbPath);
   }
 });
+
+test('`context` reports how far the prompt grew (§27)', async () => {
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const run = store.createRun({ name: 'ballooning', source: 'explicit' });
+    for (let i = 0; i < 9; i++) {
+      store.insertCall({
+        id: `grow-${i}`, run_id: run.id, seq: store.nextSeq(run.id),
+        provider: 'anthropic', endpoint: '/v1/messages',
+        started_at: Date.now() + i, input_tokens: 4000 * (i + 1), output_tokens: 60,
+        request_json: '{}'
+      });
+    }
+    store.close();
+
+    const report = await runCli(['context', '--db', server.dbPath]);
+    assert.equal(report.code, 0, report.output);
+    assert.match(report.stdout, /ballooning/);
+    assert.match(report.stdout, /9\.0× the first/);
+    assert.match(report.stdout, /prompt caching would pay here/);
+
+    const json = await runCli(['context', '--db', server.dbPath, '--json']);
+    const parsed = JSON.parse(json.stdout);
+    assert.equal(parsed.runs[0].calls, 9);
+    assert.equal(parsed.runs[0].peak_tokens, 36000);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});
+
+test('`context` on an empty database says so instead of crashing', async () => {
+  const server = await startCliServer();
+  try {
+    const result = await runCli(['context', '--db', server.dbPath]);
+    assert.equal(result.code, 0, result.output);
+    assert.match(result.stdout, /No runs recorded yet|call\(s\) with token counts/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});
