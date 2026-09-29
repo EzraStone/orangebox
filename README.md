@@ -187,7 +187,7 @@ four times budget — a regression rather than a noisy neighbour.
 | --- | --- |
 | `orangebox` (or `orangebox start`) | Start recording. This is the default command. |
 | `orangebox run [--name "…"] -- CMD` | Run `CMD` with `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` pointed at a run-scoped prefix, so its calls group exactly. Exits with the child's exit code. |
-| `orangebox export <run-id> [-o file]` | Write a self-contained JSON file of the run — commit it to a bug report. |
+| `orangebox export <run-id> [-o file]` | Write a run out. `--format json` (default), `html` for a self-contained report, or `otel` for OpenTelemetry spans. `--sanitize` redacts prompts; `--sanitize-full` also replaces ids. |
 | `orangebox assert <run-id> [limits]` | Exit non-zero when cost, latency, errors, call count, repeats, context growth, or unknown costs exceed a CI threshold. |
 | `orangebox spend [--group <k>]` | What your agents have cost, by model, provider, run, or day — with an explicit count of what it could not price. |
 | `orangebox import <file.json>` | Load a run somebody exported. Additive — never overwrites what you already have. |
@@ -250,6 +250,25 @@ errors — every other threshold passes while nothing worked.
 ```bash
 orangebox assert "$RUN_ID" --max-cost 0.25 --max-latency 5000 --max-errors 0 --max-calls 12 --max-unanswered-tools 0 --max-repeats 3 --max-context-growth 8 --require-known-cost
 ```
+
+### Sharing a run
+
+```bash
+orangebox export <run-id> --format html -o bug-1284.html
+```
+
+One file, no assets, nothing fetched when it opens. It leads with what the run
+cost, how far the prompt grew and whether it went in circles, then every call
+with its full request and response.
+
+HTML reports are **sanitized whether or not you ask** — prompts, system
+prompts, emails and anything that looks like a key — because a report exists to
+be handed to somebody. Plain JSON is not, because that one is for you; pass
+`--sanitize` when it is not. Either way the CLI says which it did.
+
+`--format otel` writes OpenTelemetry spans instead: one span per call, hanging
+off one span for the run, carrying the GenAI semantic-convention attributes plus
+what the run cost, how far its prompt grew and whether it repeated itself.
 
 ## Configuration file
 

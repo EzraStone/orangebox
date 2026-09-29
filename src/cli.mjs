@@ -488,31 +488,74 @@ async function postJson(url, body, health, authToken = null) {
 
 // --------------------------------------------------------------- export
 
+const EXPORT_FORMATS = {
+  json: { extension: 'json', label: 'JSON' },
+  html: { extension: 'html', label: 'HTML report' },
+  otel: { extension: 'otel.json', label: 'OpenTelemetry spans' }
+};
+
 async function exportRun(args) {
   const positional = [];
   let outFile = null;
   let dbPath = null;
+  let format = 'json';
+  let sanitize = null;
+
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '-o' || args[i] === '--out') outFile = args[++i];
-    else if (args[i] === '--db') dbPath = args[++i];
-    else if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
-    else positional.push(args[i]);
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '-o': case '--out': outFile = next(); break;
+      case '--db': dbPath = next(); break;
+      case '--format': case '-f': format = next(); break;
+      case '--sanitize': sanitize = 'basic'; break;
+      case '--sanitize-full': sanitize = 'full'; break;
+      default:
+        if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
+        positional.push(args[i]);
+    }
+  }
+
+  if (!Object.hasOwn(EXPORT_FORMATS, format)) {
+    fail(`unknown format "${format}" — try one of: ${Object.keys(EXPORT_FORMATS).join(', ')}`);
   }
 
   const runId = positional[0];
-  if (!runId) fail('usage: orangebox export <run-id> [-o file.json]');
+  if (!runId) fail('usage: orangebox export <run-id> [-o file] [--format json|html|otel]');
 
   const { openStore } = await import('./store.mjs');
   const { buildExport } = await import('./server.mjs');
+  const { sanitizeExport, buildHtmlReport, buildOtelExport } = await import('./export.mjs');
   const fs = await import('node:fs');
 
   const store = openStore(dbPath ?? defaultDbPath());
   try {
-    const payload = buildExport(store, runId);
+    let payload = buildExport(store, runId);
     if (!payload) fail(`no run with id "${runId}"`);
-    const target = outFile ?? `orangebox-run-${runId}.json`;
-    fs.writeFileSync(target, JSON.stringify(payload, null, 2));
-    console.log(`wrote ${target}  (${payload.calls.length} calls, ${payload.tools.length} tool events)`);
+    const calls = payload.calls.length;
+    const tools = payload.tools.length;
+
+    // An HTML report is for handing to somebody else, so it is sanitized
+    // whether or not you remembered to ask — the same rule the HTTP route
+    // follows. Say so, because a silently redacted report is a confusing one.
+    const sanitized = sanitize ?? (format === 'html' ? 'basic' : null);
+    if (sanitized) payload = sanitizeExport(payload, { full: sanitized === 'full' });
+
+    let body;
+    if (format === 'html') body = buildHtmlReport(payload);
+    else if (format === 'otel') body = JSON.stringify(buildOtelExport(payload), null, 2);
+    else body = JSON.stringify(payload, null, 2);
+
+    const target = outFile ?? `orangebox-run-${runId}.${EXPORT_FORMATS[format].extension}`;
+    fs.writeFileSync(target, body);
+
+    const note = sanitized
+      ? `, ${sanitized === 'full' ? 'sanitized and ids replaced' : 'sanitized'}${sanitize ? '' : ' by default'}`
+      : '';
+    console.log(`wrote ${target}  (${EXPORT_FORMATS[format].label}, ${calls} calls, ${tools} tool events${note})`);
   } finally {
     store.close();
   }
@@ -1822,7 +1865,7 @@ orangebox v${VERSION} — flight recorder for AI agents
 USAGE
   orangebox [start] [options]          start recording (default command)
   orangebox run [--name "..."] -- CMD  run CMD with its calls grouped into one run
-  orangebox export <run-id> [-o file]  write a run to a self-contained JSON file
+  orangebox export <run-id> [-o file]  write a run out; --format json|html|otel
   orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
   orangebox spend [--group <k>]        what your agents have cost so far
   orangebox find <text>                search your recorded prompts and responses

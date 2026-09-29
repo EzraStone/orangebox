@@ -637,3 +637,63 @@ test('`context --all` on a database with no usage says so', async () => {
     removeTempDir(server.dbPath);
   }
 });
+
+test('`export` writes JSON, an HTML report, or OTel spans', async () => {
+  const server = await startCliServer();
+  const outDir = fs.mkdtempSync(path.join(path.dirname(server.dbPath), 'export-'));
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const run = store.createRun({ name: 'exportable', source: 'explicit' });
+    store.insertCall({
+      id: 'ex-1', run_id: run.id, seq: store.nextSeq(run.id),
+      provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+      started_at: Date.now(), input_tokens: 400, output_tokens: 30, cost_usd: 0.01,
+      request_json: JSON.stringify({ messages: [{ role: 'user', content: 'reach dev@example.com' }] }),
+      response_json: '{}'
+    });
+    store.close();
+
+    const html = path.join(outDir, 'report.html');
+    const report = await runCli(['export', run.id, '--db', server.dbPath, '--format', 'html', '-o', html]);
+    assert.equal(report.code, 0, report.output);
+    const markup = fs.readFileSync(html, 'utf8');
+    assert.match(markup, /^<!doctype html>/);
+    // A report is for handing to somebody, so it is sanitized whether or not
+    // you remembered to ask — and the CLI says so rather than doing it quietly.
+    assert.equal(markup.includes('dev@example.com'), false);
+    assert.match(report.stdout, /sanitized by default/);
+
+    const otel = path.join(outDir, 'trace.json');
+    assert.equal((await runCli(['export', run.id, '--db', server.dbPath, '-f', 'otel', '-o', otel])).code, 0);
+    const spans = JSON.parse(fs.readFileSync(otel, 'utf8')).resourceSpans[0].scopeSpans[0].spans;
+    assert.equal(spans.filter((s) => !s.parentSpanId).length, 1);
+
+    const plain = path.join(outDir, 'run.json');
+    assert.equal((await runCli(['export', run.id, '--db', server.dbPath, '-o', plain])).code, 0);
+    const json = JSON.parse(fs.readFileSync(plain, 'utf8'));
+    assert.equal(json.calls.length, 1);
+    // Plain JSON is for you, so it is not sanitized unless you ask.
+    assert.match(json.calls[0].request_json, /dev@example\.com/);
+
+    const asked = path.join(outDir, 'clean.json');
+    assert.equal((await runCli(['export', run.id, '--db', server.dbPath, '--sanitize', '-o', asked])).code, 0);
+    assert.equal(fs.readFileSync(asked, 'utf8').includes('dev@example.com'), false);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});
+
+test('`export` refuses a format it cannot write', async () => {
+  const server = await startCliServer();
+  try {
+    const result = await runCli(['export', 'whatever', '--db', server.dbPath, '--format', 'pdf']);
+    assert.notEqual(result.code, 0);
+    assert.match(result.output, /unknown format "pdf"/);
+    assert.match(result.output, /json, html, otel/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});
