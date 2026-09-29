@@ -558,6 +558,42 @@ and checks they all come out the same.
 
 The untouched usage object is still in the recorded response either way.
 
+## The JSON API
+
+Everything the UI shows, it reads from here. The whole surface is on loopback
+by default, and every mutation needs the CSRF token from `/api/health` plus a
+same-origin `Origin` header.
+
+| Route | Answers |
+| --- | --- |
+| `GET /api/health` | Version, database path, run count, and the CSRF token every mutation needs. |
+| `GET /api/live` | Server-sent events: runs created, calls started, first tokens, calls completed. |
+| `GET /api/runs` | Recorded runs, newest first. Filterable and paginated. |
+| `GET /api/runs/:id` | One run with its calls. |
+| `DELETE /api/runs/:id` | Delete a run and everything recorded under it. |
+| `POST /api/runs/begin` | Open an explicit run; returns the id to scope calls to. |
+| `POST /api/runs/:id/end` | Close an explicit run. |
+| `GET /api/runs/:id/loops` | Prompts this run sent more than once, and what the repeats cost. |
+| `GET /api/runs/:id/context` | How far this run's prompt grew, and how much of it cached. |
+| `PUT /api/runs/:id/note` | Leave or clear a note on a run. |
+| `GET /api/calls/:id` | One call, with the full recorded request and response. |
+| `PUT /api/calls/:id/note` | Leave or clear a note on a call. |
+| `POST /api/calls/:id/replay` | Re-send a recorded call, optionally with an edited request. |
+| `GET /api/notes` | Every note, newest first. |
+| `GET /api/search` | Search recorded prompts and responses. |
+| `GET /api/spend` | Cost grouped by model, provider, run or day — with what could not be priced, and what caching saved. |
+| `GET /api/tools` | Tool usage across runs: how often, how slow, how often unanswered. |
+| `GET /api/errors` | Failures grouped by type, with each one's share of all calls. |
+| `GET /api/compare` | Two runs, aligned call by call. |
+| `GET /api/export/:id` | A run as JSON, sanitized JSON, a self-contained HTML report, or OpenTelemetry spans. |
+| `POST /api/import` | Load an exported run. Additive; never overwrites. |
+| `POST /api/clear` | Delete everything. |
+| `GET /api/credentials` | Which providers replay could authenticate — by variable name, never by value. |
+| `GET /api/mobile/sessions` | Paired devices. |
+| `POST /api/mobile/pair/rotate` | Rotate the pairing secret, revoking every paired device. |
+| `DELETE /api/mobile/sessions/:id` | Revoke one paired device. |
+| `GET /api/mobile/pair.svg` | The pairing link as a QR code. |
+
 ## Privacy, plainly
 
 **The database contains your prompts. So do its exports.** That is the whole product — treat both accordingly.

@@ -68,3 +68,62 @@ test('the changelog has somewhere to put the next change', () => {
   // gets written into the last version's notes.
   assert.match(read('CHANGELOG.md'), /^## Unreleased$/m);
 });
+
+/**
+ * Every API route the server answers, written the way the README writes them.
+ *
+ * Two shapes in server.mjs: a literal `pathname === '/api/...'`, and segment
+ * checks for the routes with an id in the middle.
+ */
+function servedRoutes() {
+  const source = read('src/server.mjs');
+  const routes = new Set();
+
+  for (const [, method, path] of source.matchAll(/method === '([A-Z]+)' && pathname === '(\/api[^']*)'/g)) {
+    routes.add(`${method} ${path}`);
+  }
+  for (const [, method, one, two, three] of source.matchAll(
+    /method === '([A-Z]+)' && seg\.length === \d+ && seg\[1\] === '([a-z.]+)'(?: && seg\[2\] === '([a-z.]+)')?(?: && seg\[3\] === '([a-z.]+)')?/g
+  )) {
+    // seg[2] is a literal segment when it is checked, and the id when it is not.
+    const middle = two ? `${two}/:id` : ':id';
+    routes.add(`${method} /api/${one}/${middle}${three ? `/${three}` : ''}`);
+  }
+  return [...routes];
+}
+
+test('every API route the server answers is in the README', () => {
+  const readme = read('README.md');
+  const routes = servedRoutes();
+  assert.ok(routes.length >= 15, `only found ${routes.length} routes to check`);
+
+  const missing = routes.filter((route) => {
+    const [method, path] = route.split(' ');
+    return !readme.includes(`\`${method} ${path}\``);
+  });
+  assert.deepEqual(missing, [], `undocumented: ${missing.join(', ')}`);
+});
+
+test('the README does not document routes the server does not answer', () => {
+  // The direction that rots quietly: a route removed, its row left behind.
+  const readme = read('README.md');
+  const source = read('src/server.mjs');
+  const documented = [...readme.matchAll(/`(?:GET|POST|PUT|DELETE) (\/api\/[^`]*)`/g)].map((m) => m[1]);
+  assert.ok(documented.length >= 15, `only found ${documented.length} documented routes`);
+
+  for (const path of documented) {
+    if (!path.includes(':id')) {
+      assert.ok(source.includes(`'${path}'`), `the README documents ${path}, which the server does not answer`);
+      continue;
+    }
+    // e.g. /api/runs/:id/loops is served as seg[1] === 'runs' && seg[3] === 'loops'.
+    const parts = path.split('/').slice(2); // drop the leading '' and 'api'
+    const literals = parts.filter((part) => part !== ':id');
+    for (const literal of literals) {
+      assert.ok(
+        source.includes(`'${literal}'`),
+        `the README documents ${path}, and the server never mentions "${literal}"`
+      );
+    }
+  }
+});
