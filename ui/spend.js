@@ -270,15 +270,32 @@ function chart(groups) {
   return svg;
 }
 
+/**
+ * The numeric columns, as one list rather than a header row beside a cell row.
+ *
+ * `Cached` appears only when something was cached. A column of em-dashes on
+ * every database that has never used prompt caching is a column that costs
+ * width and teaches people that this table has nothing to say.
+ */
+export function spendColumns(groups) {
+  const cached = groups.some((g) => (Number(g.cache_read_tokens) || 0) > 0);
+
+  return [
+    { label: 'Calls', cell: (g) => String(g.calls) },
+    { label: 'In', cell: (g) => fmt.tokens(g.input_tokens) },
+    cached ? { label: 'Cached', cell: (g) => fmt.tokens(g.cache_read_tokens) } : null,
+    { label: 'Out', cell: (g) => fmt.tokens(g.output_tokens) },
+    { label: 'Est. cost', cell: (g) => `${fmt.usd(g.cost_usd)}${g.unpriced_calls > 0 ? '+' : ''}` }
+  ].filter(Boolean);
+}
+
 function table(groups, onDrill) {
   const heading = GROUPS.find(([k]) => k === state.group)?.[1] ?? 'Group';
+  const columns = spendColumns(groups);
 
   const head = el('tr', {}, [
     el('th', { scope: 'col', text: heading }),
-    el('th', { scope: 'col', class: 'num', text: 'Calls' }),
-    el('th', { scope: 'col', class: 'num', text: 'In' }),
-    el('th', { scope: 'col', class: 'num', text: 'Out' }),
-    el('th', { scope: 'col', class: 'num', text: 'Est. cost' })
+    ...columns.map((column) => el('th', { scope: 'col', class: 'num', text: column.label }))
   ]);
 
   const rows = groups.map((g) => {
@@ -344,10 +361,7 @@ function table(groups, onDrill) {
         : null
     }, [
       el('td', {}, [el('span', { class: 'spend-key', text: String(g.key) }), ...flags]),
-      el('td', { class: 'num', text: String(g.calls) }),
-      el('td', { class: 'num', text: fmt.tokens(g.input_tokens) }),
-      el('td', { class: 'num', text: fmt.tokens(g.output_tokens) }),
-      el('td', { class: 'num', text: `${fmt.usd(g.cost_usd)}${g.unpriced_calls > 0 ? '+' : ''}` })
+      ...columns.map((column) => el('td', { class: 'num', text: column.cell(g) }))
     ]);
   });
 

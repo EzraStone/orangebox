@@ -305,3 +305,30 @@ test('the collapsed row does not invent a key out of the rows it replaces', () =
   const rollup = topGroups(rows, 5).at(-1);
   assert.equal(rollup.key, '16 more');
 });
+
+test('the spend table shows a cached column only when something was cached', async () => {
+  // A column of em-dashes on every database that has never used prompt caching
+  // costs width and teaches people the table has nothing to say.
+  const { spendColumns } = await import('../ui/spend.js');
+
+  const plain = spendColumns([{ key: 'm', calls: 1, input_tokens: 10, output_tokens: 1, cost_usd: 0.01 }]);
+  assert.deepEqual(plain.map((c) => c.label), ['Calls', 'In', 'Out', 'Est. cost']);
+
+  // One row with cache reads is enough for the column to be worth its width.
+  const cached = spendColumns([
+    { key: 'm', calls: 1, input_tokens: 10, output_tokens: 1, cost_usd: 0.01, cache_read_tokens: 0 },
+    { key: 'n', calls: 1, input_tokens: 10, output_tokens: 1, cost_usd: 0.01, cache_read_tokens: 4000 }
+  ]);
+  assert.deepEqual(cached.map((c) => c.label), ['Calls', 'In', 'Cached', 'Out', 'Est. cost']);
+});
+
+test('the header and the cells cannot disagree about the columns', async () => {
+  // They were two lists; this is the test that makes them one.
+  const { spendColumns } = await import('../ui/spend.js');
+  const group = { key: 'm', calls: 3, input_tokens: 10, output_tokens: 1, cost_usd: 0.01, cache_read_tokens: 500 };
+
+  for (const column of spendColumns([group])) {
+    assert.equal(typeof column.label, 'string');
+    assert.equal(typeof column.cell(group), 'string', `${column.label} produced no cell`);
+  }
+});
