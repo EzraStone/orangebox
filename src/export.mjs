@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 
 import { contextGrowth } from './context.mjs';
-import { formatTokens as formatTokenCount } from './format.mjs';
+import { formatTokens as formatTokenCount, formatUsd as formatCost } from './format.mjs';
 import { findLoops } from './loops.mjs';
 
 export function compareRuns(store, leftId, rightId) {
@@ -356,9 +356,7 @@ function formatTokens(call) {
   return `${call.input_tokens ?? '—'} in / ${call.output_tokens ?? '—'} out`;
 }
 
-function formatCost(value) {
-  return value == null ? '—' : `$${Number(value).toFixed(4)}`;
-}
+
 
 function escapeHtml(value) {
   return String(value ?? '')

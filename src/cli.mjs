@@ -7,7 +7,7 @@ import process from 'node:process';
 import { createServer, VERSION, PROVIDERS, ROUTABLE_PROVIDERS } from './server.mjs';
 import { encode as qrEncode } from './qr/index.mjs';
 import { defaultDbPath } from './store.mjs';
-import { formatTokens as tokenCount } from './format.mjs';
+import { formatTokens as tokenCount, formatUsd as usd } from './format.mjs';
 import { evaluateRunAssertions } from './assertions.mjs';
 
 /** Past this the database is worth mentioning at startup — it is all prompts. */
@@ -1698,12 +1698,7 @@ export function truncate(text, width) {
   return text.length > width ? text.slice(0, width - 1) + '…' : text;
 }
 
-function usd(v) {
-  if (v === null || v === undefined) return '—';
-  if (v === 0) return '$0';
-  if (v < 0.01) return `$${v.toFixed(4)}`;
-  return `$${v.toFixed(v < 1 ? 3 : 2)}`;
-}
+
 
 // ---------------------------------------------------------------- clear
 

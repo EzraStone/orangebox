@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { formatTokens } from '../src/format.mjs';
+import { formatTokens, formatUsd } from '../src/format.mjs';
 import { fmt } from '../ui/dom.js';
 
 const CASES = [
@@ -61,5 +61,46 @@ test('the browser copy and the node one agree', () => {
   // and not the other is caught.
   for (let value = 0; value < 2_000_000; value += 997) {
     assert.equal(fmt.tokens(value), formatTokens(value), `${value}`);
+  }
+});
+
+const COST_CASES = [
+  [0, '$0'],
+  [0.0001, '$0.0001'],
+  [0.005, '$0.0050'],
+  [0.01, '$0.010'],
+  [0.999, '$0.999'],
+  [1, '$1.00'],
+  [12.345, '$12.35'],
+  [1234.5, '$1234.50']
+];
+
+test('a cost is printed at the precision it deserves', () => {
+  // Four decimals below a cent, because $0.0003 is a real answer and "$0.00"
+  // is not. Two above a dollar, because nobody reads hundredths of a cent on
+  // a twelve-dollar bill.
+  for (const [value, expected] of COST_CASES) {
+    assert.equal(formatUsd(value), expected, `${value}`);
+  }
+});
+
+test('nothing costs "$0", not "$0.0000"', () => {
+  // A local model really does cost nothing (§08), and four decimals of nothing
+  // reads like a rounding error rather than an answer.
+  assert.equal(formatUsd(0), '$0');
+  assert.equal(formatUsd(null), '—');
+  assert.equal(formatUsd(undefined), '—');
+});
+
+test('the browser copy and the node one agree about money too', () => {
+  for (const [value] of COST_CASES) {
+    assert.equal(fmt.usd(value), formatUsd(value), `${value}`);
+  }
+  for (const value of [null, undefined, Number.NaN]) {
+    assert.equal(fmt.usd(value), formatUsd(value));
+  }
+  for (let cents = 0; cents < 200_000; cents += 37) {
+    const value = cents / 10_000;
+    assert.equal(fmt.usd(value), formatUsd(value), `${value}`);
   }
 });

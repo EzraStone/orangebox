@@ -70,8 +70,9 @@ export const fmt = {
     if (v < 999_500) return `${(v / 1000).toFixed(v < 100_000 ? 1 : 0)}k`;
     return `${(v / 1_000_000).toFixed(1)}M`;
   },
+  // Must match formatUsd in src/format.mjs — same reason as tokens above.
   usd(v) {
-    if (v === null || v === undefined) return '—';
+    if (v === null || v === undefined || Number.isNaN(v)) return '—';
     if (v === 0) return '$0';
     if (v < 0.01) return `$${v.toFixed(4)}`;
     return `$${v.toFixed(v < 1 ? 3 : 2)}`;

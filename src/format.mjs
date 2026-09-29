@@ -26,3 +26,21 @@ export function formatTokens(value) {
   if (value < 999_500) return `${(value / 1000).toFixed(value < 100_000 ? 1 : 0)}k`;
   return `${(value / 1_000_000).toFixed(1)}M`;
 }
+
+/**
+ * An estimated cost, at the precision the number deserves.
+ *
+ * Four decimals below a cent, because a run costing $0.0003 is a real answer
+ * and "$0.00" is not. Two above a dollar, because nobody reads the
+ * hundredths of a cent on a twelve-dollar bill — and the HTML report printed
+ * "$1234.5000" for months, which looks like a precision claim nobody is making.
+ *
+ * Zero is "$0" rather than "$0.0000": a local model really does cost nothing
+ * (§08), and four decimals of nothing reads like a rounding error.
+ */
+export function formatUsd(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  if (value === 0) return '$0';
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  return `$${value.toFixed(value < 1 ? 3 : 2)}`;
+}
