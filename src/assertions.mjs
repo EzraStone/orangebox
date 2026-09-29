@@ -4,7 +4,7 @@
  * `tools` is optional: callers that only have calls still work, and the
  * tool-shaped limits simply do not fire.
  */
-export function evaluateRunAssertions(run, calls, limits = {}, tools = []) {
+export function evaluateRunAssertions(run, calls, limits = {}, tools = [], loops = null) {
   const failures = [];
   const maxLatency = Math.max(0, ...calls.map((call) => call.latency_ms ?? 0));
   if (limits.maxCost != null && run.cost_usd > limits.maxCost) {
@@ -47,7 +47,20 @@ export function evaluateRunAssertions(run, calls, limits = {}, tools = []) {
     );
   }
 
-  return { ok: failures.length === 0, failures, maxLatency, tools: toolCounts };
+  // §26 — a loop is the failure that passes every other gate. The run
+  // finishes, nothing errors, latency is fine, and the cost limit catches it
+  // only once it is already large.
+  if (limits.maxRepeats != null && loops) {
+    const worst = loops.loops?.[0];
+    if (worst && worst.repeats > limits.maxRepeats) {
+      failures.push(
+        `a prompt was repeated ${worst.repeats} time(s), which exceeds ${limits.maxRepeats}` +
+          (worst.prompt ? ` — "${worst.prompt.slice(0, 60)}"` : '')
+      );
+    }
+  }
+
+  return { ok: failures.length === 0, failures, maxLatency, tools: toolCounts, loops: loops ?? null };
 }
 
 /**

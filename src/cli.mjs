@@ -539,6 +539,7 @@ async function assertRun(args) {
       case '--json': asJson = true; break;
       case '--max-tool-errors': limits.maxToolErrors = int(next(), '--max-tool-errors'); break;
       case '--max-unanswered-tools': limits.maxUnansweredTools = int(next(), '--max-unanswered-tools'); break;
+      case '--max-repeats': limits.maxRepeats = int(next(), '--max-repeats'); break;
       default:
         if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
         positional.push(args[i]);
@@ -552,7 +553,10 @@ async function assertRun(args) {
   try {
     const run = store.getRun(runId);
     if (!run) fail(`no run with id "${runId}"`);
-    const result = evaluateRunAssertions(run, store.callSummaries(runId), limits, store.toolEvents(runId));
+    const result = evaluateRunAssertions(
+      run, store.callSummaries(runId), limits, store.toolEvents(runId),
+      limits.maxRepeats != null ? store.loopsIn(runId) : null
+    );
 
     if (asJson) {
       // Everything a build step might branch on, including the measurements
@@ -568,6 +572,7 @@ async function assertRun(args) {
           errors: run.error_count,
           unknown_cost: run.unknown_cost_count,
           max_latency_ms: result.maxLatency,
+          repeats: result.loops?.loops?.[0]?.repeats ?? null,
           tools: result.tools
         }
       }, null, 2));
@@ -1723,6 +1728,7 @@ ASSERT LIMITS
   --require-known-cost      fail when any call has unknown cost
   --max-tool-errors <n>     maximum failed tool results
   --max-unanswered-tools <n>  maximum tool calls that never got a result
+  --max-repeats <n>         maximum times one prompt may be repeated
   --json                    machine-readable result, including what passed
 
 EASIEST START

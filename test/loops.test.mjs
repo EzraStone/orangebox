@@ -189,3 +189,33 @@ test('a healthy run is reported as having no loops, explicitly', async () => {
     removeTempDir(app.dbPath);
   }
 });
+
+test('CI can fail a run that went in circles (§19.6, §26)', async () => {
+  // A loop passes every other gate: the run finishes, nothing errors, latency
+  // is fine, and a cost ceiling only catches it once the bill is already large.
+  const { evaluateRunAssertions } = await import('../src/assertions.mjs');
+
+  const run = { cost_usd: 0.09, error_count: 0, call_count: 6, unknown_cost_count: 0 };
+  const loops = findLoops([1, 2, 3, 4, 5, 6].map((seq) => call(seq, ask('check the deploy'), 0.015)));
+
+  const strict = evaluateRunAssertions(run, [], { maxRepeats: 2 }, [], loops);
+  assert.equal(strict.ok, false);
+  assert.match(strict.failures[0], /repeated 5 time\(s\)/);
+  assert.match(strict.failures[0], /check the deploy/, 'names the prompt, so CI logs are actionable');
+
+  const lenient = evaluateRunAssertions(run, [], { maxRepeats: 10 }, [], loops);
+  assert.equal(lenient.ok, true, 'a generous ceiling passes');
+
+  // Without the flag, loops are reported but never fail the run.
+  const unset = evaluateRunAssertions(run, [], {}, [], loops);
+  assert.equal(unset.ok, true);
+});
+
+test('the loop gate does nothing when no loop data was gathered', () => {
+  // The CLI only computes loops when the flag is present; the evaluator must
+  // not assume it is always there.
+  return import('../src/assertions.mjs').then(({ evaluateRunAssertions }) => {
+    const run = { cost_usd: 0, error_count: 0, call_count: 1, unknown_cost_count: 0 };
+    assert.equal(evaluateRunAssertions(run, [], { maxRepeats: 0 }, [], null).ok, true);
+  });
+});
