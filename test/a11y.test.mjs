@@ -68,3 +68,26 @@ test('decorative glyphs are hidden from assistive technology', () => {
   const glyphs = nav.match(/<span>(?![A-Za-z])[^<]*<\/span>/g) ?? [];
   assert.equal(glyphs.length, 0, `a decorative glyph is not hidden: ${glyphs[0]}`);
 });
+
+test('the tablist is one tab stop, moved through with the arrow keys', () => {
+  // Seven tab stops between a control and its contents is how a keyboard user
+  // learns to route around a widget entirely.
+  assert.match(app, /tabindex: selected \? '0' : '-1'/, 'every tab is still its own tab stop');
+  assert.match(app, /function onTabKey\(/, 'the tablist has no key handler');
+  for (const key of ['ArrowRight', 'ArrowLeft', 'Home', 'End']) {
+    assert.ok(app.includes(`event.key === '${key}'`), `the tablist does not answer ${key}`);
+  }
+});
+
+test('each tab names the panel it controls, and the panel names its tab', () => {
+  assert.match(app, /'aria-controls': 'tabpanel'/);
+  assert.match(app, /panel\.setAttribute\('aria-labelledby', `tab-\$\{state\.tab\}`\)/);
+});
+
+test('the tabs keep their arrow keys to themselves', () => {
+  // j/k and the arrow shortcuts move the timeline selection. Without
+  // stopPropagation, arrowing between tabs would also move the call underneath
+  // them, which is a genuinely disorienting thing to have happen.
+  const handler = app.match(/function onTabKey\([\s\S]*?\n\}/)?.[0] ?? '';
+  assert.match(handler, /stopPropagation\(\)/);
+});

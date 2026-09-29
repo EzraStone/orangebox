@@ -1046,6 +1046,12 @@ function renderDetail() {
   const summary = state.calls.find((c) => c.id === state.callId);
   if (!summary) return;
 
+  // The full call arrives a moment after the summary does, so everything in
+  // the header that can be drawn from the summary alone is drawn from it.
+  // `call` was declared eighty lines below its first use, which is a temporal
+  // dead zone: selecting any call threw before the pane rendered anything.
+  const call = state.call;
+
   head.append(
     el('span', { class: 'pane-title', text: `call ${String(summary.seq).padStart(2, '0')} · ${summary.provider}` }),
     el('div', { class: 'spacer' }),
@@ -1055,18 +1061,18 @@ function renderDetail() {
           type: 'button',
           text: 'Replay & edit',
           on: { click: () => replayCall(state.call) },
-          dataset: { provider: call.provider ?? '' }
+          dataset: { provider: summary.provider ?? '' }
         })
       : null,
     !state.readOnly ? noteButton({
       kind: 'calls',
-      id: call.id,
-      label: `call ${String(call.seq).padStart(2, '0')}`,
-      current: call.note,
+      id: summary.id,
+      label: `call ${String(summary.seq).padStart(2, '0')}`,
+      current: summary.note,
       afterSave: async () => {
         // Reload the call so the button reflects what was just saved.
         try {
-          state.call = (await api.get(`/api/calls/${encodeURIComponent(call.id)}`)).call;
+          state.call = (await api.get(`/api/calls/${encodeURIComponent(summary.id)}`)).call;
         } catch {
           // Keep whatever we had; the note is saved either way.
         }
@@ -1095,9 +1101,8 @@ function renderDetail() {
     );
   }
 
-  if (!state.call) return void panel.append(el('p', { class: 'note', text: 'Loading…' }));
+  if (!call) return void panel.append(el('p', { class: 'note', text: 'Loading…' }));
 
-  const call = state.call;
   if (call.truncated) {
     panel.append(
       el('div', {
