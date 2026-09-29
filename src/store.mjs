@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
+import { findLoops } from './loops.mjs';
 
 export const SCHEMA_VERSION = '3';
 
@@ -892,6 +893,16 @@ export class Store {
        ORDER BY c.started_at ASC, c.id ASC
        LIMIT @limit
     `).all({ after, afterId, limit: Math.max(1, Math.min(limit, 1000)) });
+  }
+
+  /**
+   * §26 — is this run going in circles?
+   *
+   * Reads the full calls because the prompts are the evidence, and a run is
+   * bounded — this is a question you ask about one run, not the whole history.
+   */
+  loopsIn(runId, options = {}) {
+    return findLoops(this.fullCalls(runId), options);
   }
 
   toolStats({ since = null, until = null } = {}) {
