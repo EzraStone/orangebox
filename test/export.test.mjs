@@ -193,3 +193,52 @@ test('report markup is still inert once the summary is in it', () => {
   const html = buildHtmlReport(sanitizeExport(nasty));
   assert.equal(html.includes('<script>alert(1)</script>'), false);
 });
+
+test('sanitizing a run keeps its token counts', () => {
+  // "token" in the denylist means an auth token. It was also matching
+  // input_tokens, output_tokens, cache_read_tokens and max_tokens, so every
+  // sanitized export came out with no usage data and no idea what the request
+  // had asked for — the two things a shared run is shared to show.
+  const raw = {
+    orangebox_export: 1,
+    orangebox_version: '0.0.0',
+    exported_at: Date.now(),
+    run: { id: 'r', cost_usd: 0.01, unknown_cost_count: 0 },
+    calls: [{
+      seq: 1, id: 'c1', provider: 'anthropic', endpoint: '/v1/messages',
+      input_tokens: 812, output_tokens: 93, cache_read_tokens: 40,
+      request_json: JSON.stringify({ max_tokens: 1024, api_key: 'sk-live-abcdefghijklmnop' }),
+      response_json: JSON.stringify({ usage: { input_tokens: 812, output_tokens: 93 } })
+    }],
+    tools: []
+  };
+
+  const clean = sanitizeExport(raw);
+  const call = clean.calls[0];
+
+  assert.equal(call.input_tokens, 812);
+  assert.equal(call.output_tokens, 93);
+  assert.equal(call.cache_read_tokens, 40);
+  assert.match(call.request_json, /"max_tokens":1024/);
+  assert.match(call.response_json, /"input_tokens":812/);
+
+  // The actual credential is still gone.
+  assert.equal(call.request_json.includes('sk-live-abcdefghijklmnop'), false);
+  assert.match(call.request_json, /"api_key":"\[redacted-secret\]"/);
+});
+
+test('a string under a credential key is still redacted whatever it looks like', () => {
+  const raw = {
+    run: { id: 'r' },
+    calls: [{
+      seq: 1, id: 'c1',
+      request_json: JSON.stringify({ auth_token: '12345', session_cookie: 'abc', secrets: ['a', 'b'] })
+    }],
+    tools: []
+  };
+  const request = sanitizeExport(raw).calls[0].request_json;
+
+  assert.equal(request.includes('12345'), false, 'a numeric-looking string is still a string');
+  assert.equal(request.includes('abc'), false);
+  assert.equal(request.includes('"a"'), false, 'a list under a credential key goes wholesale');
+});

@@ -59,7 +59,15 @@ export function sanitizeExport(payload, { full = false } = {}) {
     if (!value || typeof value !== 'object') return value;
     const out = {};
     for (const [childKey, child] of Object.entries(value)) {
-      if (/auth|api.?key|token|secret|cookie/i.test(childKey)) out[childKey] = '[redacted-secret]';
+      // "token" here means an auth token. It also matches input_tokens,
+      // output_tokens, cache_read_tokens and max_tokens, which are counts —
+      // and redacting those left every shared run with no usage data and no
+      // record of what the request asked for. A credential is never a number,
+      // so a finite number under one of these keys is kept and everything
+      // else, including a numeric-looking string, still goes.
+      if (/auth|api.?key|token|secret|cookie/i.test(childKey) && !Number.isFinite(child)) {
+        out[childKey] = '[redacted-secret]';
+      }
       else if (/^(system|instructions)$/i.test(childKey)) out[childKey] = '[redacted-system-prompt]';
       else out[childKey] = clean(child, childKey);
     }
