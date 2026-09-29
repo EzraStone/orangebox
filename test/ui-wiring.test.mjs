@@ -55,8 +55,14 @@ test('every module the scripts import exists', () => {
 test('every ui script parses', async () => {
   // Cheap, and it is the check that would have caught a stray brace in a file
   // no test imports directly.
+  //
+  // fileURLToPath, not url.pathname: on Windows the pathname is "/C:/..." and
+  // needs the slash removed, on POSIX removing it turns an absolute path into
+  // a relative one. Doing it by hand passes on one and fails on the other.
   const { execFileSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+
   for (const name of scripts) {
-    execFileSync(process.execPath, ['--check', new URL(`../ui/${name}`, import.meta.url).pathname.slice(1)]);
+    execFileSync(process.execPath, ['--check', fileURLToPath(new URL(`../ui/${name}`, import.meta.url))]);
   }
 });

@@ -105,7 +105,7 @@ footer{margin-top:80px;border-top:2px solid var(--ink);padding-top:14px;font-fam
 <header class="masthead">
   <div class="docline">
     <span>Engineering build specification</span>
-    <span>DOC OB-SPEC-001 · REV B · 2026-07-28</span>
+    <span>DOC OB-SPEC-001 · REV C · 2026-09-29</span>
   </div>
 
   <div class="plate" role="img" aria-label="Orange data plate reading: orangebox, the flight recorder for AI agents">
@@ -556,7 +556,7 @@ CREATE INDEX IF NOT EXISTS idx_tools_use ON tool_events(tool_use_id);</code></pr
   <h3><span class="sub">12.1</span>Network posture</h3>
   <ul>
     <li>Bind <code>127.0.0.1</code> by default. <code>--host</code> with any non-loopback value MUST print: <em>"WARNING: orangebox has no authentication. Binding to &lt;addr&gt; exposes every recorded prompt to your network."</em></li>
-    <li>Outbound connections: only the two provider origins in §04, only in direct response to proxied client requests. The process makes no other network calls — no version checks, no telemetry, nothing (§02.2).</li>
+    <li>Outbound connections: only the provider origins in §04, only in direct response to proxied client requests. The process makes no other network calls — no version checks, no telemetry, nothing (§02.2).</li>
   </ul>
   <h3><span class="sub">12.2</span>Credential handling (MUST)</h3>
   <ul>
@@ -711,13 +711,14 @@ curl -sN http://127.0.0.1:4100/openai/v1/chat/completions \
 <section class="sec" id="s19">
   <div class="eyebrow">§19 · Horizon</div>
   <h2>v2 roadmap (do not build now)</h2>
+  <p><em>Every item below shipped between v1.1.0 and v1.4.0. Kept as written, with what happened attached, because the list is more useful as a record of what was predicted than as a tidy summary of what exists — see §22.</em></p>
   <ol>
-    <li><strong>Replay:</strong> re-send any recorded call (optionally with an edited prompt or different model) and diff the outputs — the feature that turns the recorder into a workbench.</li>
-    <li><strong>Run diffing:</strong> side-by-side timelines of two runs of the same agent.</li>
-    <li><strong>More providers:</strong> Gemini, Bedrock, Ollama/local (the parse-module interface in §07 is the extension point).</li>
-    <li><strong>OpenTelemetry export</strong> for teams with existing tracing.</li>
-    <li><strong>Cost dashboard:</strong> spend over time, by model, by run name.</li>
-    <li><strong>Assertions:</strong> tiny config to fail CI when a run exceeds cost/latency/loop-count thresholds — the wedge into CI usage.</li>
+    <li><strong>Replay:</strong> re-send any recorded call (optionally with an edited prompt or different model) and diff the outputs — the feature that turns the recorder into a workbench. <strong>Shipped v1.2.0.</strong></li>
+    <li><strong>Run diffing:</strong> side-by-side timelines of two runs of the same agent. <strong>Shipped v1.2.0</strong>, as an aligned comparison rather than two timelines side by side — aligning the calls is the part that does the work.</li>
+    <li><strong>More providers:</strong> Gemini, Bedrock, Ollama/local (the parse-module interface in §07 is the extension point). <strong>All three shipped v1.1.0</strong>, and each one shipped having missed at least one of the registration points the parse interface does not cover — which is why CONTRIBUTING lists them and tests derive one from another.</li>
+    <li><strong>OpenTelemetry export</strong> for teams with existing tracing. <strong>Shipped v1.2.0</strong>; gained a span for the run itself later, without which a trace viewer drew every call as an unrelated root.</li>
+    <li><strong>Cost dashboard:</strong> spend over time, by model, by run name. <strong>Shipped v1.3.0</strong>, with an explicit count of what could not be priced — the number the original sketch did not have and needed most.</li>
+    <li><strong>Assertions:</strong> tiny config to fail CI when a run exceeds cost/latency/loop-count thresholds — the wedge into CI usage. <strong>Shipped v1.1.0</strong> as flags rather than config, and has since grown gates for unanswered tools, repeated prompts and context growth.</li>
   </ol>
 </section>
 
@@ -770,10 +771,36 @@ curl -sN http://127.0.0.1:4100/openai/v1/chat/completions \
   </div>
 </section>
 
+<section class="sec" id="s22">
+  <div class="eyebrow">§22 · Built after REV B</div>
+  <h2>What the spec did not predict</h2>
+  <p><em>Added REV C, 2026-09-29. §01–§21 describe v1 as it was designed. This section records what was built afterwards and, where it matters, why the original shape was wrong. It is deliberately short on description and long on reasoning: the features are in the README, the reasoning is not.</em></p>
+
+  <h3><span class="sub">22.1</span>Encryption and a phone</h3>
+  <p><code>--https</code> serves over TLS using a certificate generated locally and kept in <code>~/.orangebox/tls/</code>, covering loopback and the machine's LAN address, with its fingerprint printed so it can be checked against what the browser shows. The certificate writer is ASN.1 DER output only — there is deliberately no parser, because a parser is an attack surface and nothing here needs to read a certificate somebody else wrote. Mobile pairing draws its link as a QR code, encoded from the standard with no dependency, since §02.2 rules out fetching one.</p>
+
+  <h3><span class="sub">22.2</span>Notes, tail, and search</h3>
+  <p>Schema v3 adds a note to runs and to calls. The thing you most want recorded about a run is why you started it, and that is knowledge no proxy can extract from the wire. <code>orangebox tail</code> polls the database rather than subscribing to the live feed, so it works with no recorder running, no port and no token — WAL is built for exactly that.</p>
+
+  <h3><span class="sub">22.3</span>Loops</h3>
+  <p>The most expensive agent failure is not an error: it is the same question asked repeatedly, where every call succeeds and the bill climbs. The trick is to fingerprint the <em>last instruction</em> in a request rather than the request. An agent loop resends a growing history with the same final ask, so hashing the whole request makes every call unique and finds nothing.</p>
+
+  <h3><span class="sub">22.4</span>Context growth</h3>
+  <p>The sibling question to a loop: not "is it repeating itself" but "is it carrying more and more with it". Growth is measured against the largest prompt in the run rather than the last, because an agent that grows and then starts a fresh sub-task ends small. The report stays quiet under four calls and never suggests caching that is already doing its job — a tool that cries wolf gets ignored, and this one has one line to spend.</p>
+
+  <h3><span class="sub">22.5</span>What a token count means</h3>
+  <div class="call warn">
+    <span class="lab">Correction to §08</span>
+    <p>§08 assumed a reported prompt total means the same thing at every provider. It does not. Anthropic and Bedrock report cache reads outside <code>input_tokens</code>; Gemini and OpenAI fold them in. orangebox recorded each total verbatim and priced cache reads separately on top, so Gemini and the OpenAI Responses API billed cached tokens twice — while OpenAI Chat Completions, which dodged that by discarding the cached count, billed them all at the full rate. One over, one under, neither right, and both invisible because the number still looked like a number.</p>
+    <p>The rule, now tested against all five providers: <strong><code>input_tokens</code> is the part of the prompt billed at the full input rate.</strong> Cached tokens sit beside it, never inside it, and the parts add back up to what the provider reported. The untouched usage object is still in the recorded response either way, so §7.1 is unharmed.</p>
+  </div>
+  <p>Once the counts are right, what caching saved is worth reporting: a read priced at the difference between the two rates, a write priced at the premium it costs, and the two netted — so a cache that never paid for itself shows as a negative rather than as a saving of zero.</p>
+</section>
+
 </main>
 
 <footer>
-  <span>OB-SPEC-001 · REV A · END OF DOCUMENT</span>
+  <span>OB-SPEC-001 · REV C · END OF DOCUMENT</span>
   <span>orangebox — if it isn't recorded, it didn't happen</span>
   <a class="backtop" href="#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false">▲ top</a>
 </footer>
