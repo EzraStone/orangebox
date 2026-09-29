@@ -60,10 +60,14 @@ export const fmt = {
     const m = Math.floor(v / 60_000);
     return `${m}m ${Math.round((v % 60_000) / 1000)}s`;
   },
+  // Must match formatTokens in src/format.mjs exactly — this file cannot
+  // import it (ui/ is served as static assets, with no build step), so a test
+  // checks the two against each other across a table of values. Before that,
+  // 24,500 tokens read as "24.5k" in the terminal and "25k" here.
   tokens(v) {
-    if (v === null || v === undefined) return '—';
-    if (v < 1000) return String(v);
-    if (v < 1_000_000) return `${(v / 1000).toFixed(v < 10_000 ? 1 : 0)}k`;
+    if (v === null || v === undefined || Number.isNaN(v)) return '—';
+    if (v < 10_000) return String(v);
+    if (v < 999_500) return `${(v / 1000).toFixed(v < 100_000 ? 1 : 0)}k`;
     return `${(v / 1_000_000).toFixed(1)}M`;
   },
   usd(v) {

@@ -7,6 +7,7 @@ import process from 'node:process';
 import { createServer, VERSION, PROVIDERS, ROUTABLE_PROVIDERS } from './server.mjs';
 import { encode as qrEncode } from './qr/index.mjs';
 import { defaultDbPath } from './store.mjs';
+import { formatTokens as tokenCount } from './format.mjs';
 import { evaluateRunAssertions } from './assertions.mjs';
 
 /** Past this the database is worth mentioning at startup — it is all prompts. */
@@ -1173,13 +1174,8 @@ export function sparkline(values, glyphs = SPARK) {
   return values.map((v) => glyphs[Math.min(glyphs.length - 1, Math.floor((v / peak) * glyphs.length))]).join('');
 }
 
-/** Token counts get long fast; thousands are what people actually compare. */
-export function tokenCount(value) {
-  if (value === null || value === undefined) return '—';
-  if (value < 10000) return String(value);
-  if (value < 1000000) return `${(value / 1000).toFixed(value < 100000 ? 1 : 0)}k`;
-  return `${(value / 1000000).toFixed(1)}M`;
-}
+/** Re-exported so the tests that read the CLI's output have one name for it. */
+export { formatTokens as tokenCount } from './format.mjs';
 
 // ----------------------------------------------------------------- tail
 

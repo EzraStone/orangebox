@@ -35,8 +35,9 @@ test('a growing run is described with both ends of the range', () => {
     total_input_tokens: 74000, cached_share: 0.02, series: [1, 2, 3]
   });
   assert.match(summary.headline, /9\.4× over 12 calls/);
-  assert.match(summary.detail, /1\.2k to 11k/);
-  assert.match(summary.detail, /74k sent in total/);
+  // Exact below ten thousand, rounded above it — one rule, src/format.mjs.
+  assert.match(summary.detail, /1200 to 11.3k/);
+  assert.match(summary.detail, /74.0k sent in total/);
   assert.equal(summary.actionable, true);
 });
 

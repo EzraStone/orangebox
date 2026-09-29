@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 
 import { contextGrowth } from './context.mjs';
+import { formatTokens as formatTokenCount } from './format.mjs';
 import { findLoops } from './loops.mjs';
 
 export function compareRuns(store, leftId, rightId) {
@@ -156,12 +157,7 @@ function summarySection(run, calls) {
 <p class="flag">${escapeHtml(text)}</p>`).join('')}`;
 }
 
-function formatTokenCount(value) {
-  if (value === null || value === undefined) return '—';
-  if (value < 10000) return String(value);
-  if (value < 1000000) return `${(value / 1000).toFixed(value < 100000 ? 1 : 0)}k`;
-  return `${(value / 1000000).toFixed(1)}M`;
-}
+
 
 export function buildOtelExport(payload) {
   const run = payload.run;
