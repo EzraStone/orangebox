@@ -101,7 +101,7 @@ footer{margin-top:70px;border-top:2px solid var(--ink);padding-top:14px;font-fam
 <div class="wrap">
 
 <div class="docline">
-  <span>orangebox v1.0.0 · MIT</span>
+  <span>orangebox v1.4.0 · MIT</span>
   <span><a href="https://github.com/EzraStone/orangebox">github.com/EzraStone/orangebox</a></span>
 </div>
 
@@ -195,7 +195,35 @@ export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"</pre>
 </section>
 
 <section>
-  <div class="eyebrow">§04 · Positioning</div>
+  <div class="eyebrow">§04 · Diagnosis</div>
+  <h2>The failures that pass every other check</h2>
+
+  <p>An agent that errors is easy. The expensive ones finish cleanly: every call succeeds, latency looks fine, nothing is logged, and the bill is four times what you expected. orangebox looks for those specifically.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Going in circles</h3>
+      <p>A loop resends a growing history with the same final ask, so hashing the whole request finds nothing. orangebox fingerprints the <em>last instruction</em> instead, counts the repeats, and prices them. <code>--max-repeats</code> fails the build on it.</p>
+    </div>
+    <div class="card">
+      <h3>A prompt that keeps growing</h3>
+      <p>Every turn re-sends the conversation, and by turn twenty it can be forty times the first prompt. orangebox measures the growth against the peak, shows its shape, and says whether prompt caching would actually pay — or is already doing the work.</p>
+    </div>
+    <div class="card">
+      <h3>Tool calls that never came back</h3>
+      <p>An agent whose tools never answer finishes the run, costs almost nothing, and reports zero errors. Every threshold passes while nothing worked. <code>--max-unanswered-tools 0</code> is the gate worth adding first.</p>
+    </div>
+    <div class="card">
+      <h3>What caching saved</h3>
+      <p>Cache reads are priced at the difference they made; cache writes cost more than ordinary input, so they are netted off rather than hidden. A cache that never paid for itself shows as a negative, not as a saving of zero.</p>
+    </div>
+  </div>
+
+  <p>None of this needs a change to your agent. It is all read back out of what was already recorded.</p>
+</section>
+
+<section>
+  <div class="eyebrow">§05 · Positioning</div>
   <h2>Who this is for</h2>
 
   <p><strong>orangebox records the agent you are building, not the agent CLI you are using.</strong></p>
@@ -208,7 +236,7 @@ export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"</pre>
 </section>
 
 <section>
-  <div class="eyebrow">§05 · Mechanism</div>
+  <div class="eyebrow">§06 · Mechanism</div>
   <h2>How it works</h2>
 
   <figure>
@@ -230,7 +258,7 @@ export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"</pre>
 </section>
 
 <section>
-  <div class="eyebrow">§06 · Trust</div>
+  <div class="eyebrow">§07 · Trust</div>
   <h2>Privacy, plainly</h2>
 
   <p><strong>The database contains your prompts. So do its exports.</strong> That is the whole product — treat both accordingly.</p>
@@ -243,7 +271,7 @@ export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"</pre>
 </section>
 
 <section>
-  <div class="eyebrow">§07 · Questions</div>
+  <div class="eyebrow">§08 · Questions</div>
   <h2>FAQ</h2>
 
   <dl class="faq">
