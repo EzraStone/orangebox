@@ -1,5 +1,8 @@
 import crypto from 'node:crypto';
 
+import { contextGrowth } from './context.mjs';
+import { findLoops } from './loops.mjs';
+
 export function compareRuns(store, leftId, rightId) {
   const left = store.getRun(leftId);
   const right = store.getRun(rightId);
@@ -99,9 +102,13 @@ export function buildOtelExport(payload) {
     toolsByCall.get(tool.call_id).push(tool);
   }
   const traceId = digest(run.id, 32);
-  const spans = (payload.calls ?? []).map((call) => ({
+  const rootSpanId = digest(`${run.id}:run`, 16);
+  const calls = payload.calls ?? [];
+
+  const spans = calls.map((call) => ({
     traceId,
     spanId: digest(call.id, 16),
+    parentSpanId: rootSpanId,
     name: `${operationName(call)} ${call.model ?? call.endpoint}`,
     kind: 3,
     startTimeUnixNano: toNano(call.started_at),
@@ -133,11 +140,62 @@ export function buildOtelExport(payload) {
     })),
     status: call.error_type ? { code: 2, message: call.error_type } : { code: 1 }
   }));
+
   return {
     resourceSpans: [{
       resource: { attributes: compactAttributes({ 'service.name': 'orangebox', 'service.version': payload.orangebox_version }) },
-      scopeSpans: [{ scope: { name: 'orangebox.export', version: payload.orangebox_version }, spans }]
+      scopeSpans: [{
+        scope: { name: 'orangebox.export', version: payload.orangebox_version },
+        spans: [runSpan(run, calls, traceId, rootSpanId), ...spans]
+      }]
     }]
+  };
+}
+
+/**
+ * The run itself, as the parent of every call in it.
+ *
+ * Without this the export is a flat handful of siblings that a trace viewer
+ * draws as unrelated root spans — the agent loop, the thing you exported the
+ * run to look at, is the one shape the trace does not have.
+ *
+ * It also carries what only the whole run knows: what it cost, how far the
+ * prompt grew, and whether it went in circles. Those are run-level facts, and
+ * hanging them off the first call would be a lie about where they came from.
+ */
+function runSpan(run, calls, traceId, spanId) {
+  const growth = contextGrowth(calls);
+  const loops = findLoops(calls);
+  const ends = calls.map((call) => call.ended_at ?? call.started_at).filter(Boolean);
+
+  return {
+    traceId,
+    spanId,
+    name: run.name ? `agent run ${run.name}` : 'agent run',
+    kind: 1, // SERVER: the run is the unit of work orangebox itself observed.
+    startTimeUnixNano: toNano(run.started_at ?? calls[0]?.started_at),
+    endTimeUnixNano: toNano(run.ended_at ?? (ends.length ? Math.max(...ends) : run.started_at)),
+    attributes: compactAttributes({
+      'orangebox.run.id': run.id,
+      'orangebox.run.name': run.name,
+      'orangebox.run.source': run.source,
+      'orangebox.run.calls': run.call_count ?? calls.length,
+      'orangebox.run.errors': run.error_count,
+      'orangebox.run.cost_usd': run.cost_usd,
+      // Named "estimated" because it is: a local price table applied to
+      // reported usage, never a figure from the provider's billing.
+      'orangebox.run.cost_estimated': true,
+      'orangebox.run.unknown_cost_calls': run.unknown_cost_count,
+      'orangebox.context.first_tokens': growth.first_tokens,
+      'orangebox.context.peak_tokens': growth.peak_tokens,
+      'orangebox.context.growth': growth.growth,
+      'orangebox.context.cached_share': growth.cached_share,
+      'orangebox.loops.repeated_prompts': loops.loops.length,
+      'orangebox.loops.looping_calls': loops.looping_calls,
+      'orangebox.loops.wasted_usd': loops.wasted_usd,
+      'gen_ai.usage.input_tokens': growth.total_input_tokens || null
+    }),
+    status: run.error_count > 0 ? { code: 2, message: `${run.error_count} failed call(s)` } : { code: 1 }
   };
 }
 

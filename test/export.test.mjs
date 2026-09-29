@@ -94,16 +94,46 @@ test('HTML reports are self-contained and recorded markup stays inert', () => {
   assert.equal(html.includes('dev@example.com'), false);
 });
 
+const attributesOf = (span) => Object.fromEntries(span.attributes.map(({ key, value }) => [key, value]));
+
 test('OpenTelemetry export uses GenAI attributes and tool events', () => {
   const otel = buildOtelExport(payload);
-  const span = otel.resourceSpans[0].scopeSpans[0].spans[0];
-  const attributes = Object.fromEntries(span.attributes.map(({ key, value }) => [key, value]));
+  const spans = otel.resourceSpans[0].scopeSpans[0].spans;
+  const span = spans.find((s) => s.parentSpanId);
+  const attributes = attributesOf(span);
   assert.equal(attributes['gen_ai.operation.name'].stringValue, 'chat');
   assert.equal(attributes['gen_ai.provider.name'].stringValue, 'openai');
   assert.equal(attributes['gen_ai.usage.input_tokens'].intValue, '10');
   assert.equal(attributes['openai.api.type'].stringValue, 'responses');
   assert.equal(span.events[0].name, 'gen_ai.tool_use');
   assert.match(span.traceId, /^[a-f0-9]{32}$/);
+});
+
+test('every call span hangs off one span for the run', () => {
+  // Without a parent the export is a handful of unrelated root spans, and the
+  // agent loop — the shape you exported the run to look at — is the one thing
+  // the trace does not show.
+  const spans = buildOtelExport(payload).resourceSpans[0].scopeSpans[0].spans;
+  const roots = spans.filter((s) => !s.parentSpanId);
+
+  assert.equal(roots.length, 1, 'exactly one span should have no parent');
+  assert.ok(spans.length > 1, 'the run span should not be the only one');
+  for (const span of spans.filter((s) => s.parentSpanId)) {
+    assert.equal(span.parentSpanId, roots[0].spanId);
+    assert.equal(span.traceId, roots[0].traceId);
+  }
+});
+
+test('the run span carries what only the whole run knows', () => {
+  const spans = buildOtelExport(payload).resourceSpans[0].scopeSpans[0].spans;
+  const attributes = attributesOf(spans.find((s) => !s.parentSpanId));
+
+  assert.ok(attributes['orangebox.run.id']);
+  // The cost is a local price table applied to reported usage, never a figure
+  // from the provider's billing, and the export has to say so.
+  assert.equal(attributes['orangebox.run.cost_estimated'].boolValue, true);
+  assert.ok('orangebox.context.growth' in attributes || 'orangebox.context.peak_tokens' in attributes);
+  assert.ok('orangebox.loops.repeated_prompts' in attributes);
 });
 
 test('CI assertions report every breached threshold', () => {

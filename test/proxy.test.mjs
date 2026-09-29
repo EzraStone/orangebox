@@ -929,8 +929,11 @@ test('replay, comparison, sanitized sharing, and OTel export work end to end', a
 
       const otel = await getJson(`${app.origin}/api/export/original?format=otel`);
       assert.equal(otel.status, 200);
-      const span = otel.body.resourceSpans[0].scopeSpans[0].spans[0];
-      assert.equal(span.name.includes('gpt-4o-mini'), true);
+      const spans = otel.body.resourceSpans[0].scopeSpans[0].spans;
+      const call = spans.find((s) => s.parentSpanId);
+      assert.equal(call.name.includes('gpt-4o-mini'), true);
+      // One parent for the whole run, and every call hanging off it.
+      assert.equal(spans.filter((s) => !s.parentSpanId).length, 1);
     }
   );
 });
