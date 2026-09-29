@@ -205,7 +205,8 @@ async function benchLargeRun() {
           id: newId(), run_id: run.id, seq: i + 1,
           provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
           started_at: Date.now() + i, ended_at: Date.now() + i + 900,
-          latency_ms: 900, input_tokens: 1000, output_tokens: 50, cost_usd: 0.001,
+          latency_ms: 900, input_tokens: 1000 + i * 20, output_tokens: 50,
+          cache_read_tokens: 500, cost_usd: 0.001,
           request_json: JSON.stringify({ messages: [{ role: 'user', content: 'x'.repeat(200) }] }),
           response_json: JSON.stringify({ content: [{ type: 'text', text: 'y'.repeat(200) }] })
         });
@@ -224,6 +225,27 @@ async function benchLargeRun() {
     }
 
     record('open a 1000-call run', percentile(times, 0.5), 500, 'ms');
+
+    // Opening a run in the UI also fires the two analyses that draw the
+    // banners above the timeline. Both re-read every call in the run, so they
+    // belong in the same measurement as the thing they happen alongside —
+    // otherwise the published figure covers a request the UI no longer makes
+    // on its own.
+    for (const [name, route, budget] of [
+      ['loop check, 1000-call run', 'loops', 250],
+      ['context check, 1000-call run', 'context', 250]
+    ]) {
+      const url = `${origin}/api/runs/${run.id}/${route}`;
+      await fetch(url).then((r) => r.json());
+
+      const taken = [];
+      for (let i = 0; i < 20; i++) {
+        const started = performance.now();
+        await fetch(url).then((r) => r.json());
+        taken.push(performance.now() - started);
+      }
+      record(name, percentile(taken, 0.5), budget, 'ms');
+    }
   } finally {
     await app.close();
     fs.rmSync(dir, { recursive: true, force: true });

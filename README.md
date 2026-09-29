@@ -166,7 +166,13 @@ Recording happens **after** your client's response is finished — never in the 
 | Added latency, non-streamed call | < 5 ms | 0.7–1.8 ms p50 |
 | 50 concurrent streams, event-loop lag | < 50 ms | 31–46 ms max |
 | Request → recorded | < 150 ms | 2–3 ms p50 |
-| UI open, 1000-call run | < 500 ms | 8–15 ms |
+| UI open, 1000-call run | < 500 ms | 8–17 ms |
+| Loop check, 1000-call run | < 250 ms | 12–15 ms |
+| Context check, 1000-call run | < 250 ms | 4–5 ms |
+
+The last two are the analyses behind the banners above the timeline. They
+run when a run is opened and re-run while it is live, so they are measured
+here rather than left out of a figure that claims to cover opening a run.
 
 The budget is the promise; the typical column is a range across the machines
 these have actually been run on. Event-loop lag under 50 concurrent streams is
