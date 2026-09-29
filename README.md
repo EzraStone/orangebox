@@ -185,7 +185,7 @@ four times budget — a regression rather than a noisy neighbour.
 
 | Command | What it does |
 | --- | --- |
-| `orangebox` | Start recording (default command). |
+| `orangebox` (or `orangebox start`) | Start recording. This is the default command. |
 | `orangebox run [--name "…"] -- CMD` | Run `CMD` with `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` pointed at a run-scoped prefix, so its calls group exactly. Exits with the child's exit code. |
 | `orangebox export <run-id> [-o file]` | Write a self-contained JSON file of the run — commit it to a bug report. |
 | `orangebox assert <run-id> [limits]` | Exit non-zero when cost, latency, errors, call count, repeats, context growth, or unknown costs exceed a CI threshold. |
@@ -208,9 +208,12 @@ four times budget — a regression rather than a noisy neighbour.
 | `--db <path>` | `~/.orangebox/orangebox.db` | Database location; parent dirs are created. |
 | `--host <addr>` | `127.0.0.1` | Bind address. Non-loopback use requires authentication or an explicit unsafe override. |
 | `--gap <seconds>` | `120` | Idle gap that starts a new implicit run. |
-| `--retain <days>` | `0` (forever) | On start, delete runs older than N days. |
 | `--openai-upstream <url>` | `https://api.openai.com` | Use Azure OpenAI, OpenRouter, Ollama, vLLM, or another OpenAI-compatible endpoint. |
 | `--anthropic-upstream <url>` | `https://api.anthropic.com` | Use an Anthropic-compatible endpoint. |
+| `--gemini-upstream <url>` | `https://generativelanguage.googleapis.com` | Use a Gemini-compatible endpoint. |
+| `--ollama-upstream <url>` | `$OLLAMA_HOST` | Override where `/ollama/…` is proxied. |
+| `--bedrock-upstream <url>` | derived from `$AWS_REGION` | Override the Bedrock runtime endpoint. |
+| `--retain <days>` | `0` (forever) | On start, delete runs older than N days. |
 | `--auth-token <token>` | — | Require `x-orangebox-auth`; use this for non-loopback binding. |
 | `--mobile` | — | Bind to the LAN and enable revocable, read-only mobile pairing. |
 | `--https` | — | Serve over TLS using a self-signed certificate, generated once and kept in `~/.orangebox/tls/`. |
@@ -227,6 +230,18 @@ variables already exist and nobody should have to learn a second name for them:
 
 
 CI example:
+
+| Threshold | Fails when |
+| --- | --- |
+| `--max-cost <usd>` | The run's estimated cost exceeds the limit. |
+| `--max-latency <ms>` | Any single call took longer than the limit. |
+| `--max-errors <n>` | More calls failed than the limit allows. |
+| `--max-calls <n>` | The agent loop ran more calls than the limit allows. |
+| `--max-tool-errors <n>` | More tool results came back as errors than the limit allows. |
+| `--max-unanswered-tools <n>` | More tool calls never got a result than the limit allows. |
+| `--max-repeats <n>` | One prompt was sent more times than the limit allows. |
+| `--max-context-growth <x>` | The largest prompt was more than `x` times the first. |
+| `--require-known-cost` | Any call could not be priced — separately reporting the ones with no rate and the ones with no usage. |
 
 `--max-unanswered-tools 0` is the one worth adding first. An agent whose tool
 calls never come back finishes the run, costs almost nothing, and reports zero
