@@ -1051,6 +1051,7 @@ async function contextReport(args) {
         continue;
       }
 
+      if (report.series.length > 1) console.log(`    ${sparkline(report.series)}`);
       console.log(`    first prompt   ${tokenCount(report.first_tokens)}`);
       console.log(`    largest        ${tokenCount(report.peak_tokens)}${report.growth ? `  (${report.growth.toFixed(1)}× the first)` : ''}`);
       console.log(`    sent in total  ${tokenCount(report.total_input_tokens)}`);
@@ -1061,6 +1062,21 @@ async function contextReport(args) {
   } finally {
     store.close();
   }
+}
+
+const SPARK = '▁▂▃▄▅▆▇█';
+
+/**
+ * Draw a series as one line of blocks.
+ *
+ * Scaled from zero rather than from the minimum. A chart that starts at the
+ * smallest value makes every series look dramatic, including a flat one, and
+ * the whole point here is to tell a flat run from a climbing one at a glance.
+ */
+export function sparkline(values, glyphs = SPARK) {
+  const peak = Math.max(...values, 0);
+  if (peak === 0) return glyphs[0].repeat(values.length);
+  return values.map((v) => glyphs[Math.min(glyphs.length - 1, Math.floor((v / peak) * glyphs.length))]).join('');
 }
 
 /** Token counts get long fast; thousands are what people actually compare. */

@@ -2,7 +2,7 @@
 // recorded name written by somebody else meets a file somebody else parses.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { csvCell, truncate } from '../src/cli.mjs';
+import { csvCell, truncate, sparkline, tokenCount } from '../src/cli.mjs';
 
 test('plain values go through the csv unquoted', () => {
   assert.equal(csvCell('claude-opus-5'), 'claude-opus-5');
@@ -144,4 +144,34 @@ test('every command the CLI dispatches is in --help', async () => {
       `"${command}" is dispatched but never appears in --help`
     );
   }
+});
+
+test('a sparkline is drawn one glyph per value', () => {
+  assert.equal(sparkline([1, 2, 3, 4], '.oOQ').length, 4);
+});
+
+test('the chart is scaled from zero, not from the smallest value', () => {
+  // Scaling from the minimum makes a flat series look like a cliff, which is
+  // the one thing this line exists to rule out.
+  assert.equal(sparkline([100, 101, 102], '.oOQ'), 'QQQ');
+  assert.equal(sparkline([1, 30, 50, 100], '.oOQ'), '.oOQ');
+});
+
+test('an all-zero series draws a floor rather than dividing by zero', () => {
+  assert.equal(sparkline([0, 0, 0], '.oOQ'), '...');
+});
+
+test('the largest value reaches the top of the chart, never past it', () => {
+  const glyphs = '.oOQ';
+  assert.equal(sparkline([7], glyphs), 'Q');
+  assert.ok(glyphs.includes(sparkline([3, 7, 5], glyphs).at(-1)));
+});
+
+test('token counts are rounded once they stop being comparable', () => {
+  assert.equal(tokenCount(0), '0');
+  assert.equal(tokenCount(9999), '9999');
+  assert.equal(tokenCount(24500), '24.5k');
+  assert.equal(tokenCount(147382), '147k');
+  assert.equal(tokenCount(2400000), '2.4M');
+  assert.equal(tokenCount(null), '—');
 });
