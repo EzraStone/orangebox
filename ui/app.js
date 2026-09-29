@@ -802,6 +802,11 @@ function renderTimeline() {
     return void root.append(el('p', { class: 'note', text: 'No calls recorded in this run yet.' }));
   }
 
+  // §26 — a loop banner, filled in once the check comes back.
+  const loopSlot = el('div', { class: 'loop-slot' });
+  root.append(loopSlot);
+  void renderLoopBanner(loopSlot, state.run.id);
+
   const resultsByUseId = new Map();
   for (const t of state.tools) {
     if (t.kind === 'tool_result' && t.tool_use_id) resultsByUseId.set(t.tool_use_id, t);
@@ -1189,6 +1194,56 @@ function noteButton({ kind, id, label, current, afterSave }) {
       }
     }
   });
+}
+
+/**
+ * §26 — say so when the open run has been asking the same thing repeatedly.
+ *
+ * Shown as a banner on the timeline rather than a number somewhere, because
+ * a loop is not a statistic you go looking for — it is the answer to "why is
+ * this run taking so long and costing so much", and you are already here.
+ */
+export function loopSummary(data) {
+  if (!data || !Array.isArray(data.loops) || data.loops.length === 0) return null;
+
+  const worst = data.loops[0];
+  const tight = worst.consecutive > 1;
+  const where = tight ? `${worst.consecutive} of them back to back` : 'spread through the run';
+
+  return {
+    headline: `${worst.count} calls asked the same thing — ${where}.`,
+    prompt: worst.prompt,
+    wasted: data.wasted_usd,
+    others: data.loops.length - 1
+  };
+}
+
+/** Fill the banner, or leave the slot empty when there is nothing to say. */
+async function renderLoopBanner(slot, runId) {
+  const summary = loopSummary(await loadLoops(runId));
+  // The run may have changed while the request was in flight.
+  if (!summary || state.run?.id !== runId || !slot.isConnected) return;
+
+  const parts = [el('span', { class: 'loop-headline', text: summary.headline })];
+  if (summary.prompt) {
+    parts.push(el('span', { class: 'loop-prompt', text: summary.prompt }));
+  }
+  if (summary.wasted > 0) {
+    parts.push(el('span', { class: 'loop-cost', text: `${fmt.usd(summary.wasted)} of this run was repeats` }));
+  }
+  if (summary.others > 0) {
+    parts.push(el('span', { class: 'loop-more', text: `and ${summary.others} other repeated prompt${summary.others === 1 ? '' : 's'}` }));
+  }
+
+  slot.replaceChildren(el('div', { class: 'banner loop-banner', role: 'status' }, parts));
+}
+
+async function loadLoops(runId) {
+  try {
+    return await api.get(`/api/runs/${encodeURIComponent(runId)}/loops`);
+  } catch {
+    return null; // loop detection is a bonus; never let it break the timeline
+  }
 }
 
 async function replayCall(call) {
