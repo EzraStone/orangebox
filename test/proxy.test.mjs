@@ -197,7 +197,8 @@ test('OpenAI Responses API records output items, usage, and function calls', asy
       const run = app.store.listRuns().runs[0];
       const call = app.store.callSummaries(run.id)[0];
       assert.equal(call.endpoint, '/v1/responses');
-      assert.equal(call.input_tokens, 30);
+      // 30 reported, 7 of it cached — 23 is billed at the full input rate.
+      assert.equal(call.input_tokens, 23);
       assert.equal(call.output_tokens, 8);
       assert.equal(call.cache_read_tokens, 7);
       assert.equal(call.stop_reason, 'completed');

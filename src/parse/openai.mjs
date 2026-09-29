@@ -16,28 +16,48 @@ export function parseResponse(json) {
   if (!isObject(json)) return emptyResult();
   const usage = isObject(json.usage) ? json.usage : {};
   if (Array.isArray(json.output) || json.object === 'response') {
+    const details = isObject(usage.input_tokens_details) ? usage.input_tokens_details : {};
     return {
       model: str(json.model),
       stop_reason:
         str(json.incomplete_details?.reason) ??
         (json.status === 'completed' ? 'completed' : str(json.status)),
-      input_tokens: int(usage.input_tokens),
-      output_tokens: int(usage.output_tokens),
-      cache_read_tokens: int(usage.input_tokens_details?.cached_tokens),
-      cache_write_tokens: null
+      ...splitInput(usage.input_tokens, details.cached_tokens, details.cache_write_tokens),
+      output_tokens: int(usage.output_tokens)
     };
   }
   const choice = Array.isArray(json.choices) && isObject(json.choices[0]) ? json.choices[0] : {};
+  const details = isObject(usage.prompt_tokens_details) ? usage.prompt_tokens_details : {};
   return {
     model: str(json.model),
     stop_reason: str(choice.finish_reason),
-    input_tokens: int(usage.prompt_tokens),
-    output_tokens: int(usage.completion_tokens),
-    // Chat Completions reports no cache-write counts, and §7.3 does not map
-    // prompt_tokens_details.cached_tokens (it is a subset of prompt_tokens,
-    // so counting it separately would double-bill in §08).
-    cache_read_tokens: null,
-    cache_write_tokens: null
+    // Chat Completions reports no cache-write count, so writes stay inside the
+    // ordinary input total — which is how OpenAI bills them on those models.
+    ...splitInput(usage.prompt_tokens, details.cached_tokens, null),
+    output_tokens: int(usage.completion_tokens)
+  };
+}
+
+/**
+ * Split a reported prompt total into what each rate applies to.
+ *
+ * OpenAI's own cost formula is
+ *   ordinary = input_tokens - cached_tokens - cache_write_tokens
+ * so the reported total includes both. Recording it whole beside the cached
+ * count charged those tokens at the input rate and again at the cache rate.
+ *
+ * Clamped at zero, because the counts come from one usage object and should
+ * never disagree — but a negative token count would be inherited by every
+ * total above it, and that is worse than being slightly optimistic.
+ */
+function splitInput(total, cached, written) {
+  const all = int(total);
+  const read = int(cached);
+  const write = int(written);
+  return {
+    input_tokens: all === null ? null : Math.max(0, all - (read ?? 0) - (write ?? 0)),
+    cache_read_tokens: read,
+    cache_write_tokens: write
   };
 }
 

@@ -285,7 +285,8 @@ test('openai responses: usage, function calls, and function outputs normalize', 
   assert.deepEqual(openai.parseResponse(response), {
     model: 'gpt-5.6-terra',
     stop_reason: 'completed',
-    input_tokens: 120,
+    // 120 reported, 80 of it cached — 40 is billed at the full input rate.
+    input_tokens: 40,
     output_tokens: 35,
     cache_read_tokens: 80,
     cache_write_tokens: null
@@ -656,4 +657,94 @@ test('gemini: a prompt count that disagrees with the cache count never goes nega
     usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 5, cachedContentTokenCount: 900 }
   });
   assert.equal(parsed.input_tokens, 0);
+});
+
+test('openai: the reported prompt total is split across the rates it is billed at', () => {
+  // OpenAI's own formula is
+  //   ordinary = input_tokens - cached_tokens - cache_write_tokens
+  // so input_tokens is the whole prompt. Recording it whole beside the cached
+  // count charged those tokens at the input rate and again at the cache rate.
+  const parsed = openai.parseResponse({
+    object: 'response', model: 'gpt-5.6-sol', status: 'completed', output: [],
+    usage: {
+      input_tokens: 20000, output_tokens: 300,
+      input_tokens_details: { cached_tokens: 12000, cache_write_tokens: 3000 }
+    }
+  });
+
+  assert.equal(parsed.input_tokens, 5000);
+  assert.equal(parsed.cache_read_tokens, 12000);
+  assert.equal(parsed.cache_write_tokens, 3000);
+  assert.equal(
+    parsed.input_tokens + parsed.cache_read_tokens + parsed.cache_write_tokens,
+    20000,
+    'the three parts add back up to what the provider reported'
+  );
+});
+
+test('openai chat completions: cached prompt tokens are reported, not swallowed', () => {
+  // These used to be dropped on the floor to avoid double-billing, which
+  // priced every cached token at the full input rate instead.
+  const parsed = openai.parseResponse({
+    object: 'chat.completion', model: 'gpt-4.1', choices: [{ finish_reason: 'stop' }],
+    usage: { prompt_tokens: 9000, completion_tokens: 40, prompt_tokens_details: { cached_tokens: 8000 } }
+  });
+
+  assert.equal(parsed.input_tokens, 1000);
+  assert.equal(parsed.cache_read_tokens, 8000);
+  assert.equal(parsed.cache_write_tokens, null, 'chat completions reports no write count');
+});
+
+test('openai: a response with no usage still reports nulls, not zeroes', () => {
+  const parsed = openai.parseResponse({ object: 'response', model: 'gpt-5.6-sol', output: [] });
+  assert.equal(parsed.input_tokens, null);
+  assert.equal(parsed.cache_read_tokens, null);
+  assert.equal(parsed.cache_write_tokens, null);
+});
+
+test('a cached OpenAI call is priced the way OpenAI prices it (§08)', async () => {
+  // The whole point of splitting the prompt total: check the answer against
+  // the arithmetic in OpenAI's own documentation rather than against ourselves.
+  const { loadPricing } = await import('../src/pricing.mjs');
+  const pricing = loadPricing({ userFile: null });
+
+  const usage = {
+    input_tokens: 20000, output_tokens: 1000,
+    input_tokens_details: { cached_tokens: 12000, cache_write_tokens: 3000 }
+  };
+  const parsed = openai.parseResponse({
+    object: 'response', model: 'gpt-5.6-sol', status: 'completed', output: [], usage
+  });
+
+  const rate = pricing.rateFor('gpt-5.6-sol');
+  const expected =
+    ((usage.input_tokens - 12000 - 3000) / 1e6) * rate.in +
+    (12000 / 1e6) * rate.cache_read +
+    (3000 / 1e6) * rate.cache_write +
+    (usage.output_tokens / 1e6) * rate.out;
+
+  const actual = pricing.costFor({ provider: 'openai', model: 'gpt-5.6-sol', ...parsed });
+  assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} !== ${expected}`);
+
+  // And the old behaviour — the whole prompt at the input rate, plus the
+  // cached share again — really was more expensive.
+  const doubled =
+    (usage.input_tokens / 1e6) * rate.in + (12000 / 1e6) * rate.cache_read +
+    (usage.output_tokens / 1e6) * rate.out;
+  assert.ok(doubled > actual);
+});
+
+test('every OpenAI model with a cache-read rate has a cache-write rate', () => {
+  // A write rate missing from the table would price cache writes at zero now
+  // that §7.3 subtracts them out of the input total.
+  const table = JSON.parse(
+    fs.readFileSync(new URL('../src/pricing.json', import.meta.url), 'utf8')
+  );
+  for (const [model, rate] of Object.entries(table)) {
+    if (model.startsWith('_') || !model.startsWith('gpt-')) continue;
+    assert.ok(
+      typeof rate.cache_write === 'number',
+      `${model} has no cache_write rate; its cache writes would be free`
+    );
+  }
 });
