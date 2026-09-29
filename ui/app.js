@@ -778,7 +778,7 @@ async function deleteRun(run) {
  * finally was — lands where it can be seen.
  */
 const ANALYSIS_INTERVAL_MS = 3000;
-const analysis = { loopSlot: null, contextSlot: null, runId: null };
+const analysis = { loopSlot: null, contextSlot: null, runId: null, loops: null, context: null };
 
 const refreshAnalysis = throttled(ANALYSIS_INTERVAL_MS, () => {
   const { loopSlot, contextSlot, runId } = analysis;
@@ -786,6 +786,20 @@ const refreshAnalysis = throttled(ANALYSIS_INTERVAL_MS, () => {
   if (loopSlot) void renderLoopBanner(loopSlot, runId);
   if (contextSlot) void renderContextStrip(contextSlot, runId);
 });
+
+/**
+ * Draw what was last found, immediately, into the slots a redraw just made.
+ *
+ * The timeline redraws whenever a call completes, and the refresh behind it is
+ * throttled — so without this the banners would vanish for up to three seconds
+ * every time, which during a live run means blank most of the time. The
+ * throttle exists to stop needless requests, not to take the answer away
+ * while it waits.
+ */
+function paintLastAnalysis() {
+  if (analysis.loops) paintLoopBanner(analysis.loopSlot, analysis.loops);
+  if (analysis.context) paintContextStrip(analysis.contextSlot, analysis.context);
+}
 
 function renderTimeline() {
   if (state.view === 'errors') {
@@ -827,10 +841,17 @@ function renderTimeline() {
 
   // §26/§27 — the loop banner and the context strip, filled in once their
   // checks come back. Each gets its own slot so neither waits for the other.
+  // A different run means the last answer describes something else. Drop it
+  // before the id moves, or it gets painted onto the run it is not about.
+  if (analysis.runId !== state.run.id) {
+    analysis.loops = null;
+    analysis.context = null;
+  }
   analysis.loopSlot = el('div', { class: 'loop-slot' });
   analysis.contextSlot = el('div', { class: 'context-slot' });
   analysis.runId = state.run.id;
   root.append(analysis.loopSlot, analysis.contextSlot);
+  paintLastAnalysis();
   refreshAnalysis();
 
 
@@ -1291,8 +1312,15 @@ export function loopSummary(data) {
 async function renderLoopBanner(slot, runId) {
   const summary = loopSummary(await loadLoops(runId));
   // The run may have changed while the request was in flight.
-  if (!summary || state.run?.id !== runId || !slot.isConnected) return;
+  if (state.run?.id !== runId) return;
 
+  analysis.loops = summary;
+  if (!summary || !slot.isConnected) return;
+  paintLoopBanner(slot, summary);
+}
+
+function paintLoopBanner(slot, summary) {
+  if (!slot) return;
   const parts = [el('span', { class: 'loop-headline', text: summary.headline })];
   if (summary.prompt) {
     parts.push(el('span', { class: 'loop-prompt', text: summary.prompt }));
@@ -1349,8 +1377,15 @@ export function contextChart(series, { width = 100, height = 24 } = {}) {
 
 async function renderContextStrip(slot, runId) {
   const summary = contextSummary(await loadContext(runId));
-  if (!summary || state.run?.id !== runId || !slot.isConnected) return;
+  if (state.run?.id !== runId) return;
 
+  analysis.context = summary;
+  if (!summary || !slot.isConnected) return;
+  paintContextStrip(slot, summary);
+}
+
+function paintContextStrip(slot, summary) {
+  if (!slot) return;
   slot.replaceChildren(el('div', {
     class: `banner context-banner${summary.actionable ? ' context-actionable' : ''}`, role: 'status'
   }, [

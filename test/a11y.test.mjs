@@ -91,3 +91,22 @@ test('the tabs keep their arrow keys to themselves', () => {
   const handler = app.match(/function onTabKey\([\s\S]*?\n\}/)?.[0] ?? '';
   assert.match(handler, /stopPropagation\(\)/);
 });
+
+test('the banners are repainted from the last answer, not left blank', () => {
+  // The timeline redraws on every completed call and the refresh behind the
+  // banners is throttled, so without a repaint they vanish for up to three
+  // seconds each time — which during a live run is most of the time. The
+  // throttle is there to stop needless requests, not to take the answer away
+  // while one is pending.
+  assert.match(app, /function paintLastAnalysis\(/);
+  assert.match(app, /paintLastAnalysis\(\);\s*\n\s*refreshAnalysis\(\);/,
+    'the repaint must happen before the throttled refresh, not after it');
+
+  // And the cached answer has to be dropped before the run id moves, or it is
+  // painted onto a run it does not describe.
+  const setup = app.slice(app.indexOf("analysis.loopSlot = el(") - 400, app.indexOf('refreshAnalysis();'));
+  assert.ok(
+    setup.indexOf('analysis.loops = null') < setup.indexOf('analysis.runId = state.run.id'),
+    'the cache is cleared after the run id is updated, which never clears it'
+  );
+});
