@@ -6,6 +6,7 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Added
 
+- Loop detection (§26): `orangebox loops`, `GET /api/runs/:id/loops`, a banner on the timeline, and `orangebox assert --max-repeats`. Finds prompts an agent sent more than once and reports what the repeats cost.
 - `orangebox tail` (§25): watch calls as they are recorded, one line each. Polls the database, so it needs no running recorder.
 
 ## [1.4.0] - 2026-09-28

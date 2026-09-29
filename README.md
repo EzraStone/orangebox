@@ -192,6 +192,7 @@ four times budget — a regression rather than a noisy neighbour.
 | `orangebox spend [--group <k>]` | What your agents have cost, by model, provider, run, or day — with an explicit count of what it could not price. |
 | `orangebox import <file.json>` | Load a run somebody exported. Additive — never overwrites what you already have. |
 | `orangebox prune [--older-than <d>]` | Reclaim space by age or size (`--max-size 500MB`), or rebuild the file (`--vacuum`). |
+| `orangebox loops [<run-id>]` | Find prompts your agent sent more than once, and what the repeats cost. |
 | `orangebox tail [--run <id>]` | Watch calls as they are recorded, one line each. Works without a running recorder. |
 | `orangebox note [<id> "text"]` | Leave or read a note on a run or call; with no arguments, lists every note. |
 | `orangebox find <text>` | Search recorded prompts and responses. Prints the run, call, model, and a snippet. |
@@ -231,7 +232,7 @@ calls never come back finishes the run, costs almost nothing, and reports zero
 errors — every other threshold passes while nothing worked.
 
 ```bash
-orangebox assert "$RUN_ID" --max-cost 0.25 --max-latency 5000 --max-errors 0 --max-calls 12 --max-unanswered-tools 0 --require-known-cost
+orangebox assert "$RUN_ID" --max-cost 0.25 --max-latency 5000 --max-errors 0 --max-calls 12 --max-unanswered-tools 0 --max-repeats 3 --require-known-cost
 ```
 
 ## Configuration file
@@ -359,6 +360,37 @@ result come back. When one call requests three tools, that hole covers all
 three and cannot honestly be split, so only single-tool calls contribute to the
 average. `timed on 2/3` says how much of the number is real. A tool only ever
 used alongside others reports an em-dash rather than a plausible figure.
+
+## Loops
+
+The most expensive agent failure is not an error. It is a loop: the model asks
+for the same thing, gets the same answer, and asks again. Nothing errors, every
+call succeeds, latency looks fine, and the bill climbs.
+
+```bash
+orangebox loops
+```
+
+```
+  stuck agent  ·  6 call(s), $0.091 wasted
+      6× 6 in a row      $0.091  check whether the deploy finished
+
+  1 run(s) with repeats, $0.091 spent asking the same things twice
+```
+
+orangebox fingerprints the **last instruction** in each request, not the whole
+conversation. That is the entire trick: an agent loop resends a growing history
+with the same final ask, so hashing the full request makes every call unique and
+finds nothing. Tool results count as content too, since the classic loop is a
+model re-reading the same file.
+
+Consecutive repeats are reported separately from scattered ones. Six in a row is
+an agent stuck; the same question twice an hour apart is probably an agent
+asking twice.
+
+A run with repeats shows a banner on its timeline, and `--max-repeats` fails CI
+on it — the one gate that cost, latency and error thresholds all pass straight
+through.
 
 ## Watching from a terminal
 
