@@ -92,3 +92,39 @@ test('spend carries the cached token counts alongside the cost', () => {
   assert.equal(group.cache_write_tokens, 500);
   store.close();
 });
+
+test('GET /api/spend reports what caching did', async () => {
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+
+  try {
+    const run = app.store.createRun({ name: 'cached', source: 'gap' });
+    app.store.insertCall({
+      id: newId(), run_id: run.id, seq: app.store.nextSeq(run.id),
+      provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+      started_at: Date.now(), input_tokens: 500, output_tokens: 30,
+      cache_read_tokens: 1_000_000, cost_usd: 0.5, request_json: '{}'
+    });
+
+    const body = await (await fetch(`${app.origin}/api/spend`)).json();
+    assert.ok(body.cache, 'spend should carry a cache block');
+    assert.equal(body.cache.cached_tokens, 1_000_000);
+    assert.ok(body.cache.saved_usd > 0);
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});
+
+test('a database with no caching at all reports zeroes, not a missing block', async () => {
+  const { startOrangebox, removeTempDir } = await import('./helpers.mjs');
+  const app = await startOrangebox({});
+  try {
+    const body = await (await fetch(`${app.origin}/api/spend`)).json();
+    assert.equal(body.cache.cached_tokens, 0);
+    assert.equal(body.cache.net_usd, 0);
+  } finally {
+    await app.close();
+    removeTempDir(app.dbPath);
+  }
+});

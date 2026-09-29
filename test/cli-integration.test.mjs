@@ -544,3 +544,31 @@ test('`context` on an empty database says so instead of crashing', async () => {
     removeTempDir(server.dbPath);
   }
 });
+
+test('`spend` says what caching saved, and only when there was some (§28)', async () => {
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const run = store.createRun({ name: 'cached', source: 'explicit' });
+
+    const plain = await runCli(['spend', '--db', server.dbPath]);
+    assert.equal(plain.stdout.includes('caching'), false, 'nothing to say about an empty database');
+
+    store.insertCall({
+      id: 'cached-1', run_id: run.id, seq: store.nextSeq(run.id),
+      provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+      started_at: Date.now(), input_tokens: 400, output_tokens: 40,
+      cache_read_tokens: 2_000_000, cost_usd: 0.01, request_json: '{}'
+    });
+    store.close();
+
+    const report = await runCli(['spend', '--db', server.dbPath]);
+    assert.equal(report.code, 0, report.output);
+    assert.match(report.stdout, /caching saved \$\d/);
+    assert.match(report.stdout, /2\.0M tokens read from cache/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});

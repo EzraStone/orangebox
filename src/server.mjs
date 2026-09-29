@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import { openStore, newId, safeStringify } from './store.mjs';
 import { createLiveHub } from './live.mjs';
-import { loadPricing } from './pricing.mjs';
+import { loadPricing, cacheSavings } from './pricing.mjs';
 import { createProxy } from './proxy.mjs';
 import { compareRuns, sanitizeExport, buildHtmlReport, buildOtelExport } from './export.mjs';
 import { createMobileAccess, mobileSessionCanAccess, MOBILE_SESSION_TTL_SECONDS, pairingUrl } from './mobile.mjs';
@@ -110,7 +110,7 @@ export function createServer({
   // knows or cares, which is why this is one line rather than a second
   // server implementation.
   const listener = (req, res) => {
-    handle(req, res, { store, live, proxy, security, mobile, providers, tls }).catch((err) => {
+    handle(req, res, { store, live, proxy, security, mobile, providers, tls, pricing }).catch((err) => {
       // Nothing below should throw, but a 500 beats a hung socket.
       if (!res.headersSent) sendJson(res, 500, { error: String(err?.message ?? err) });
       else res.end();
@@ -253,7 +253,7 @@ async function handle(req, res, ctx) {
 // ================================================================= §10 API
 
 async function handleApi(req, res, ctx, pathname, url) {
-  const { store, live, security, providers, tls, mobile } = ctx;
+  const { store, live, security, providers, tls, mobile, pricing } = ctx;
   const method = req.method;
   const seg = pathname.split('/').filter(Boolean); // ['api', ...]
 
@@ -568,7 +568,10 @@ async function handleApi(req, res, ctx, pathname, url) {
     }
     const since = epochParam(url.searchParams.get('since'));
     const until = epochParam(url.searchParams.get('until'));
-    return sendJson(res, 200, store.spend({ groupBy: group, since, until }));
+    return sendJson(res, 200, {
+      ...store.spend({ groupBy: group, since, until }),
+      cache: cacheSavings(store.cacheUsage({ since, until }), pricing)
+    });
   }
 
   // GET /api/search?q=&limit=&since=&until=  (§19.9)

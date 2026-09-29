@@ -1456,6 +1456,9 @@ async function spendReport(args) {
       fail(`${err.message} — try one of: model, provider, run, day`);
     }
 
+    const { loadPricing, cacheSavings } = await import('./pricing.mjs');
+    data.cache = cacheSavings(store.cacheUsage({ since, until }), loadPricing());
+
     if (format === 'json') return void console.log(JSON.stringify(data, null, 2));
     if (format === 'csv') return void printSpendCsv(data);
     printSpendTable(data);
@@ -1535,7 +1538,32 @@ function printSpendTable(data) {
       console.log(warn(`  add rates to ~/.orangebox/pricing.json to close the gap.`));
     }
   }
+  printCacheLine(data.cache);
   console.log();
+}
+
+/**
+ * §28 — one line about caching, and only when there is caching to report.
+ *
+ * The net figure leads because it is the one that answers the question. The
+ * saving and the write premium follow it, because a net of roughly nothing can
+ * mean no caching happened or that it exactly broke even, and those want
+ * different responses.
+ */
+function printCacheLine(cache) {
+  if (!cache || (cache.cached_tokens === 0 && cache.written_tokens === 0)) return;
+
+  const net = cache.net_usd;
+  const detail = `${tokenCount(cache.cached_tokens)} tokens read from cache`
+    + (cache.written_tokens > 0 ? `, ${tokenCount(cache.written_tokens)} written` : '');
+
+  if (net > 0) console.log(`  caching saved ${usd(net)} — ${detail}`);
+  else if (net < 0) console.log(warn(`  caching cost ${usd(-net)} more than it saved — ${detail}`));
+  else console.log(`  caching broke even — ${detail}`);
+
+  if (cache.unrated_calls > 0) {
+    console.log(warn(`  ${cache.unrated_calls} cached call(s) have no rate for their model and are left out of that.`));
+  }
 }
 
 /** Machine-readable, for a spreadsheet or a chart someone else draws. */
