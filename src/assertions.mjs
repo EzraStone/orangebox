@@ -4,7 +4,7 @@
  * `tools` is optional: callers that only have calls still work, and the
  * tool-shaped limits simply do not fire.
  */
-export function evaluateRunAssertions(run, calls, limits = {}, tools = [], loops = null) {
+export function evaluateRunAssertions(run, calls, limits = {}, tools = [], loops = null, context = null) {
   const failures = [];
   const maxLatency = Math.max(0, ...calls.map((call) => call.latency_ms ?? 0));
   if (limits.maxCost != null && run.cost_usd > limits.maxCost) {
@@ -60,7 +60,22 @@ export function evaluateRunAssertions(run, calls, limits = {}, tools = [], loops
     }
   }
 
-  return { ok: failures.length === 0, failures, maxLatency, tools: toolCounts, loops: loops ?? null };
+  // §27 — a prompt that quietly grows forty-fold is how a run that passed
+  // every gate last week fails the cost gate this week. Catching the growth
+  // itself reports the cause rather than the symptom.
+  if (limits.maxContextGrowth != null && context?.growth != null) {
+    if (context.growth > limits.maxContextGrowth) {
+      failures.push(
+        `the prompt grew ${context.growth.toFixed(1)}× over the run, which exceeds ${limits.maxContextGrowth}×` +
+          ` (${context.first_tokens} to ${context.peak_tokens} tokens)`
+      );
+    }
+  }
+
+  return {
+    ok: failures.length === 0, failures, maxLatency,
+    tools: toolCounts, loops: loops ?? null, context: context ?? null
+  };
 }
 
 /**

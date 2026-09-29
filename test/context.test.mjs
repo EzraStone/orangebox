@@ -146,3 +146,32 @@ test('the growth report carries a drawable series', () => {
   assert.equal(result.series.length, SERIES_WIDTH);
   assert.equal(Math.max(...result.series), result.peak_tokens);
 });
+
+test('a run whose prompt ballooned can fail CI (§27)', async () => {
+  const { evaluateRunAssertions } = await import('../src/assertions.mjs');
+  const run = { cost_usd: 0.4, call_count: 10, error_count: 0, unknown_cost_count: 0 };
+  const growth = contextGrowth(Array.from({ length: 10 }, (_, i) => call(i + 1, 1000 * (i + 1))));
+
+  const strict = evaluateRunAssertions(run, [], { maxContextGrowth: 4 }, [], null, growth);
+  assert.equal(strict.ok, false);
+  assert.match(strict.failures[0], /grew 10\.0×/);
+  assert.match(strict.failures[0], /exceeds 4×/);
+
+  const lenient = evaluateRunAssertions(run, [], { maxContextGrowth: 20 }, [], null, growth);
+  assert.equal(lenient.ok, true);
+
+  // Without the flag, growth is measured but never fails the run.
+  const unset = evaluateRunAssertions(run, [], {}, [], null, growth);
+  assert.equal(unset.ok, true);
+});
+
+test('a run with no token counts cannot fail the growth gate', async () => {
+  // Refusing to judge is the only honest answer when the provider reported no
+  // usage; failing the build on a number orangebox never saw would be worse.
+  const { evaluateRunAssertions } = await import('../src/assertions.mjs');
+  const run = { cost_usd: 0, call_count: 3, error_count: 0, unknown_cost_count: 3 };
+  const growth = contextGrowth([{ seq: 1, input_tokens: null }]);
+
+  const result = evaluateRunAssertions(run, [], { maxContextGrowth: 1.5 }, [], null, growth);
+  assert.equal(result.ok, true);
+});
