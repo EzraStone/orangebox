@@ -697,3 +697,51 @@ test('`export` refuses a format it cannot write', async () => {
     removeTempDir(server.dbPath);
   }
 });
+
+test('`loops` and `context` take the same window as every other report', async () => {
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const day = 86_400_000;
+
+    const build = (name, startedAt) => {
+      const run = store.createRun({ name, source: 'explicit' });
+      store.setRunStartedAt?.(run.id, startedAt);
+      for (let i = 0; i < 6; i++) {
+        store.insertCall({
+          id: `${name}-${i}`, run_id: run.id, seq: store.nextSeq(run.id),
+          provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+          started_at: startedAt + i, input_tokens: 1000 * (i + 1), output_tokens: 20, cost_usd: 0.02,
+          request_json: JSON.stringify({ messages: [{ role: 'user', content: 'check the deploy' }] })
+        });
+      }
+      return run;
+    };
+
+    build('recent', Date.now());
+    store.close();
+
+    // A window that excludes everything says which window it covered, rather
+    // than the same sentence an empty database produces.
+    const none = await runCli(['loops', '--db', server.dbPath, '--since', '2099-01-01']);
+    assert.equal(none.code, 0, none.output);
+    assert.match(none.stdout, /0 run\(s\) since 2099-01-01/);
+
+    const ctx = await runCli(['context', '--db', server.dbPath, '--since', '2099-01-01']);
+    assert.equal(ctx.code, 0, ctx.output);
+    assert.match(ctx.stdout, /No runs since 2099-01-01/);
+    assert.equal(ctx.stdout.includes('No runs recorded yet'), false);
+
+    // A window that includes it finds it.
+    const found = await runCli(['loops', '--db', server.dbPath, '--days', '1']);
+    assert.match(found.stdout, /recent/);
+
+    // --since implies scanning every run in the window, not just the newest.
+    const scan = await runCli(['context', '--db', server.dbPath, '--days', '1', '--json']);
+    assert.equal(JSON.parse(scan.stdout).runs.length, 1);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});

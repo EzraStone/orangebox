@@ -980,6 +980,20 @@ function highlight(text, query) {
 
 
 
+/**
+ * Say which window a "nothing found" answer covered.
+ *
+ * Without it, `--days 1` on a quiet day and a database with nothing in it
+ * produce the same sentence, and the difference is the whole answer.
+ */
+function describeRunWindow({ from, to }) {
+  if (from === null && to === null) return '';
+  const when = (ms) => new Date(ms).toISOString().slice(0, 10);
+  if (from !== null && to !== null) return ` between ${when(from)} and ${when(to)}`;
+  if (from !== null) return ` since ${when(from)}`;
+  return ` before ${when(to)}`;
+}
+
 // ---------------------------------------------------------------- loops
 
 /** §26 — which runs are going in circles, and what it cost. */
@@ -988,6 +1002,8 @@ async function loopReport(args) {
   let dbPath = null;
   let minRepeats = 2;
   let format = 'text';
+  let limit = 200;
+  const window = { from: null, to: null };
 
   for (let i = 0; i < args.length; i++) {
     const next = () => {
@@ -998,6 +1014,10 @@ async function loopReport(args) {
     switch (args[i]) {
       case '--db': dbPath = next(); break;
       case '--min': minRepeats = int(next(), '--min'); break;
+      case '--since': window.from = epochArg(next(), '--since'); break;
+      case '--until': window.to = epochArg(next(), '--until'); break;
+      case '--days': window.from = Date.now() - int(next(), '--days') * 86_400_000; break;
+      case '--limit': limit = int(next(), '--limit'); break;
       case '--json': format = 'json'; break;
       default:
         if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
@@ -1013,7 +1033,7 @@ async function loopReport(args) {
     // question you have before you know which run to look at.
     const runs = positional.length > 0
       ? positional.map((id) => store.getRun(id) ?? fail(`no run with id "${id}"`))
-      : store.listRuns({ limit: 200 }).runs;
+      : store.listRuns({ limit, ...window }).runs;
 
     const found = [];
     for (const run of runs) {
@@ -1024,7 +1044,7 @@ async function loopReport(args) {
     if (format === 'json') return void console.log(JSON.stringify({ runs: found }, null, 2));
 
     if (found.length === 0) {
-      console.log(`No repeated prompts in ${runs.length} run(s).`);
+      console.log(`No repeated prompts in ${runs.length} run(s)${describeRunWindow(window)}.`);
       return;
     }
 
@@ -1054,6 +1074,7 @@ async function contextReport(args) {
   let format = 'text';
   let all = false;
   let limit = 200;
+  const window = { from: null, to: null };
 
   for (let i = 0; i < args.length; i++) {
     const next = () => {
@@ -1065,6 +1086,9 @@ async function contextReport(args) {
       case '--db': dbPath = next(); break;
       case '--all': all = true; break;
       case '--limit': limit = int(next(), '--limit'); break;
+      case '--since': window.from = epochArg(next(), '--since'); all = true; break;
+      case '--until': window.to = epochArg(next(), '--until'); all = true; break;
+      case '--days': window.from = Date.now() - int(next(), '--days') * 86_400_000; all = true; break;
       case '--json': format = 'json'; break;
       default:
         if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
@@ -1082,10 +1106,14 @@ async function contextReport(args) {
     // which you have before you know the run id to ask about.
     const runs = positional.length > 0
       ? positional.map((id) => store.getRun(id) ?? fail(`no run with id "${id}"`))
-      : store.listRuns({ limit: all ? limit : 1 }).runs;
+      : store.listRuns({ limit: all ? limit : 1, ...window }).runs;
 
     if (runs.length === 0) {
-      console.log('No runs recorded yet.');
+      // "No runs recorded yet" is a different claim from "none in that window",
+      // and printing the first when the second is true sends people looking for
+      // a recording problem that is not there.
+      const scope = describeRunWindow(window);
+      console.log(scope ? `No runs${scope}.` : 'No runs recorded yet.');
       return;
     }
 
@@ -1100,7 +1128,7 @@ async function contextReport(args) {
         .sort((a, b) => b.growth - a.growth);
 
       if (reports.length === 0) {
-        console.log(`No token counts recorded in ${runs.length} run(s).`);
+        console.log(`No token counts recorded in ${runs.length} run(s)${describeRunWindow(window)}.`);
         return;
       }
     }
@@ -1869,7 +1897,7 @@ USAGE
   orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
   orangebox spend [--group <k>]        what your agents have cost so far
   orangebox find <text>                search your recorded prompts and responses
-  orangebox loops [<run-id>]           find prompts your agent sent more than once
+  orangebox loops [<run-id>] [--days n] find prompts your agent sent more than once
   orangebox context [<run-id>] [--all] how far the prompt grew, and what cached
   orangebox tail [--run <id>]          watch calls as they are recorded
   orangebox note [<id> "text"]         leave or read a note on a run or call

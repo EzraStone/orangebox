@@ -192,8 +192,8 @@ four times budget — a regression rather than a noisy neighbour.
 | `orangebox spend [--group <k>]` | What your agents have cost, by model, provider, run, or day — with an explicit count of what it could not price. |
 | `orangebox import <file.json>` | Load a run somebody exported. Additive — never overwrites what you already have. |
 | `orangebox prune [--older-than <d>]` | Reclaim space by age or size (`--max-size 500MB`), or rebuild the file (`--vacuum`). |
-| `orangebox loops [<run-id>]` | Find prompts your agent sent more than once, and what the repeats cost. |
-| `orangebox context [<run-id>] [--all]` | How far the prompt grew over a run, and how much of it the provider cached. `--all` ranks every run by growth. |
+| `orangebox loops [<run-id>]` | Find prompts your agent sent more than once, and what the repeats cost. `--days`, `--since`, `--until` window it. |
+| `orangebox context [<run-id>] [--all]` | How far the prompt grew over a run, and how much of it the provider cached. `--all` ranks every run by growth; `--days`, `--since`, `--until` window it. |
 | `orangebox tail [--run <id>]` | Watch calls as they are recorded, one line each. Works without a running recorder. |
 | `orangebox note [<id> "text"]` | Leave or read a note on a run or call; with no arguments, lists every note. |
 | `orangebox find <text>` | Search recorded prompts and responses. Prints the run, call, model, and a snippet. |
