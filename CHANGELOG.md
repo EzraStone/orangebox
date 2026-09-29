@@ -8,10 +8,26 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Added
 
-- Cache accounting (§28): `orangebox spend` and `GET /api/spend` report what prompt caching saved, netting cache writes off against reads and naming any cached calls whose model has no rate.
+- Cache accounting (§28): `orangebox spend` and `GET /api/spend` report what prompt caching saved, netting cache writes off against reads and naming any cached calls whose model has no rate. Cached tokens get a column in the spend table, shown only when something was cached, and `orangebox doctor` names any model that reads from cache with no cache rate to price it at.
+- `orangebox export --format html|otel`, with `--sanitize` and `--sanitize-full`. The HTTP route could already produce all three; the CLI, which is where a CI job or a bug report would do this, could write raw JSON and nothing else. HTML reports are sanitized whether or not you ask, and say so.
+- The HTML report leads with what the run cost, how far its prompt grew and whether it went in circles, above the calls.
+- The OpenTelemetry export has a span for the run, parent to every call in it, carrying the run's cost, context growth and repeat count.
+- `orangebox loops` and `orangebox context` take `--days`, `--since` and `--until` like every other cross-run report, and say which window a "nothing found" answer covered.
+- `orangebox context --all` ranks every run by how far its prompt grew.
+- The JSON API is documented in the README, with a test in both directions.
 - Context growth (§27): `orangebox context`, `GET /api/runs/:id/context`, a strip on the timeline, and `orangebox assert --max-context-growth`. Reports how far a run's prompt grew and how much of it the provider served from cache — only suggesting prompt caching when the cache is not already doing the work.
 - Loop detection (§26): `orangebox loops`, `GET /api/runs/:id/loops`, a banner on the timeline, and `orangebox assert --max-repeats`. Finds prompts an agent sent more than once and reports what the repeats cost.
 - `orangebox tail` (§25): watch calls as they are recorded, one line each. Polls the database, so it needs no running recorder.
+
+### Fixed
+
+- Gemini and OpenAI cached tokens were billed twice. Both providers include cached tokens in the reported prompt total; orangebox recorded that total whole and the cached count beside it, so §08 charged the cached share at the input rate and again at the cache rate. OpenAI Chat Completions had the opposite bug — it discarded the cached count, pricing those tokens at the full rate. `input_tokens` now means the part billed at the full input rate for all five providers, with a test that checks they agree.
+- OpenAI cache writes (`input_tokens_details.cache_write_tokens`, 1.25x input on gpt-5.6 and later) were neither extracted nor priced.
+- The export sanitizer redacted every field whose name contains "token", which included `input_tokens`, `output_tokens` and `max_tokens` — so a shared run carried no usage data and no record of what the request asked for.
+- The call detail pane threw a ReferenceError on every click — the whole right-hand side of the UI — because `const call` was declared eighty lines below its first use. Introduced with the replay-credential marker in 1.4.0.
+- The spend CSV and the collapsed "N more" row both listed their fields by hand, so cached-token counts reached the JSON, the API and the terminal report but not the spreadsheet export or the rollup row.
+- `package-lock.json` had said 1.1.0 since that release, three versions behind `package.json`.
+- The OpenTelemetry export had no span for the run, so a trace viewer drew each call as an unrelated root.
 
 ## [1.4.0] - 2026-09-28
 
@@ -25,10 +41,6 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Fixed
 
-- Gemini and OpenAI cached tokens were billed twice. Both providers include cached tokens in the reported prompt total; orangebox recorded that total whole and the cached count beside it, so §08 charged the cached share at the input rate and again at the cache rate. OpenAI Chat Completions had the opposite bug — it discarded the cached count, pricing those tokens at the full rate. `input_tokens` now means the part billed at the full input rate for all five providers, with a test that checks they agree.
-- OpenAI cache writes (`input_tokens_details.cache_write_tokens`, 1.25x input on gpt-5.6 and later) were neither extracted nor priced.
-- The export sanitizer redacted every field whose name contains "token", which included `input_tokens`, `output_tokens` and `max_tokens` — so a shared run carried no usage data and no record of what the request asked for.
-- The OpenTelemetry export had no span for the run, so a trace viewer drew each call as an unrelated root.
 - The Store constructor left the database handle open when it rejected a newer schema, which on Windows makes the file undeletable.
 - Column migrations failed with "duplicate column name" against a database missing a table, because the schema is applied with CREATE TABLE IF NOT EXISTS before migrations run. They check first now.
 - `--port 0` advertised `http://127.0.0.1:0` instead of the port actually bound.
