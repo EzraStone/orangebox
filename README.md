@@ -517,6 +517,24 @@ Rates live in [`src/pricing.json`](src/pricing.json), matched by the longest key
 { "claude-opus-5": { "in": 5.00, "out": 25.00, "cache_read": 0.50, "cache_write": 6.25 } }
 ```
 
+### What a token count means
+
+Providers disagree about whether a reported prompt total already includes the
+tokens served from cache. Anthropic and Bedrock report them separately; Gemini
+and OpenAI fold them in. orangebox normalises to one meaning:
+
+> **`input_tokens` is the part of the prompt billed at the full input rate.**
+> Cached tokens sit beside it in `cache_read_tokens`, never inside it.
+
+So `input_tokens + cache_read_tokens + cache_write_tokens` adds back up to what
+the provider reported, and each part is priced at its own rate. Getting this
+wrong in either direction is easy and invisible — bill the cached share twice,
+or price it at full rate — so there is a test that feeds every provider the same
+10,000-token prompt with 8,000 of it cached, in that provider's own spelling,
+and checks they all come out the same.
+
+The untouched usage object is still in the recorded response either way.
+
 ## Privacy, plainly
 
 **The database contains your prompts. So do its exports.** That is the whole product — treat both accordingly.
