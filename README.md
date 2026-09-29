@@ -192,6 +192,7 @@ four times budget — a regression rather than a noisy neighbour.
 | `orangebox spend [--group <k>]` | What your agents have cost, by model, provider, run, or day — with an explicit count of what it could not price. |
 | `orangebox import <file.json>` | Load a run somebody exported. Additive — never overwrites what you already have. |
 | `orangebox prune [--older-than <d>]` | Reclaim space by age or size (`--max-size 500MB`), or rebuild the file (`--vacuum`). |
+| `orangebox tail [--run <id>]` | Watch calls as they are recorded, one line each. Works without a running recorder. |
 | `orangebox note [<id> "text"]` | Leave or read a note on a run or call; with no arguments, lists every note. |
 | `orangebox find <text>` | Search recorded prompts and responses. Prints the run, call, model, and a snippet. |
 | `orangebox errors` | Which failures keep happening, with each one's share of all calls. |
@@ -358,6 +359,25 @@ result come back. When one call requests three tools, that hole covers all
 three and cannot honestly be split, so only single-tool calls contribute to the
 average. `timed on 2/3` says how much of the number is real. A tool only ever
 used alongside others reports an em-dash rather than a plausible figure.
+
+## Watching from a terminal
+
+```bash
+orangebox tail
+```
+
+```
+14:30:05  checkout bot        claude-opus-5                1234 ms  1800→96 · $0.012 · stream    tool_use
+14:30:09  checkout bot        claude-opus-5                 890 ms  2100→41 · $0.014             end_turn
+14:30:11  checkout bot        claude-haiku-4-5              —        0→0                          ▲ upstream_error
+```
+
+It reads the database rather than subscribing to the live feed, so it needs no
+port, no token and no running recorder — SQLite in WAL mode is built for one
+writer and many readers. Run it in a split beside your agent.
+
+`--run <id>` narrows to one run, `-n` sets how much history to show first, and
+`--no-follow` prints what is there and exits, which is the form worth piping.
 
 ## Analytics
 

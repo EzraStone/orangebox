@@ -2,6 +2,12 @@
 
 All notable changes to orangebox are documented here. Versions follow semantic versioning.
 
+## Unreleased
+
+### Added
+
+- `orangebox tail` (§25): watch calls as they are recorded, one line each. Polls the database, so it needs no running recorder.
+
 ## [1.4.0] - 2026-09-28
 
 ### Added
