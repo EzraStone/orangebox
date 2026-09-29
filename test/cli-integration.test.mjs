@@ -572,3 +572,68 @@ test('`spend` says what caching saved, and only when there was some (§28)', asy
     removeTempDir(server.dbPath);
   }
 });
+
+test('`context --all` ranks every run by how far its prompt grew (§27)', async () => {
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+
+    const build = (name, shape) => {
+      const run = store.createRun({ name, source: 'explicit' });
+      shape.forEach((tokens, i) => store.insertCall({
+        id: `${name}-${i}`, run_id: run.id, seq: store.nextSeq(run.id),
+        provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+        started_at: Date.now() + i, input_tokens: tokens, output_tokens: 20, request_json: '{}'
+      }));
+    };
+
+    build('steady', [1000, 1100, 1200, 1300, 1400]);
+    build('ballooning', [1000, 4000, 9000, 16000, 30000]);
+    // A run with no usage at all has nothing to rank and should not appear.
+    const empty = store.createRun({ name: 'no-usage', source: 'explicit' });
+    store.insertCall({
+      id: 'nu-0', run_id: empty.id, seq: store.nextSeq(empty.id),
+      provider: 'anthropic', endpoint: '/v1/messages',
+      started_at: Date.now(), request_json: '{}'
+    });
+    store.close();
+
+    const json = await runCli(['context', '--db', server.dbPath, '--all', '--json']);
+    assert.equal(json.code, 0, json.output);
+    const runs = JSON.parse(json.stdout).runs;
+
+    assert.equal(runs.length, 2, 'the run with no token counts is left out');
+    assert.equal(runs[0].run.name, 'ballooning', 'worst first');
+    assert.equal(runs[1].run.name, 'steady');
+
+    const report = await runCli(['context', '--db', server.dbPath, '--all']);
+    assert.match(report.stdout, /ballooning/);
+    assert.match(report.stdout, /steady/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});
+
+test('`context --all` on a database with no usage says so', async () => {
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const run = store.createRun({ name: 'silent', source: 'explicit' });
+    store.insertCall({
+      id: 's-0', run_id: run.id, seq: store.nextSeq(run.id),
+      provider: 'anthropic', endpoint: '/v1/messages',
+      started_at: Date.now(), request_json: '{}'
+    });
+    store.close();
+
+    const result = await runCli(['context', '--db', server.dbPath, '--all']);
+    assert.equal(result.code, 0, result.output);
+    assert.match(result.stdout, /No token counts recorded/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});

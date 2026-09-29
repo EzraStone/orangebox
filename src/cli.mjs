@@ -1009,6 +1009,8 @@ async function contextReport(args) {
   const positional = [];
   let dbPath = null;
   let format = 'text';
+  let all = false;
+  let limit = 200;
 
   for (let i = 0; i < args.length; i++) {
     const next = () => {
@@ -1018,6 +1020,8 @@ async function contextReport(args) {
     };
     switch (args[i]) {
       case '--db': dbPath = next(); break;
+      case '--all': all = true; break;
+      case '--limit': limit = int(next(), '--limit'); break;
       case '--json': format = 'json'; break;
       default:
         if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
@@ -1031,16 +1035,32 @@ async function contextReport(args) {
   try {
     // Default to the most recent run: "what did my last run cost me in
     // re-sent context" is the question you have right after a run ends.
+    // --all answers the other one — "which of my runs does this happen in" —
+    // which you have before you know the run id to ask about.
     const runs = positional.length > 0
       ? positional.map((id) => store.getRun(id) ?? fail(`no run with id "${id}"`))
-      : store.listRuns({ limit: 1 }).runs;
+      : store.listRuns({ limit: all ? limit : 1 }).runs;
 
     if (runs.length === 0) {
       console.log('No runs recorded yet.');
       return;
     }
 
-    const reports = runs.map((run) => ({ run, ...store.contextGrowth(run.id) }));
+    let reports = runs.map((run) => ({ run, ...store.contextGrowth(run.id) }));
+
+    if (all) {
+      // Worst first, and runs with nothing to measure dropped entirely: a
+      // ranked list whose tail is forty rows of em-dashes is a list nobody
+      // reads to the end of.
+      reports = reports
+        .filter((report) => report.growth !== null)
+        .sort((a, b) => b.growth - a.growth);
+
+      if (reports.length === 0) {
+        console.log(`No token counts recorded in ${runs.length} run(s).`);
+        return;
+      }
+    }
 
     if (format === 'json') return void console.log(JSON.stringify({ runs: reports }, null, 2));
 
@@ -1807,7 +1827,7 @@ USAGE
   orangebox spend [--group <k>]        what your agents have cost so far
   orangebox find <text>                search your recorded prompts and responses
   orangebox loops [<run-id>]           find prompts your agent sent more than once
-  orangebox context [<run-id>]         how far the prompt grew, and what cached
+  orangebox context [<run-id>] [--all] how far the prompt grew, and what cached
   orangebox tail [--run <id>]          watch calls as they are recorded
   orangebox note [<id> "text"]         leave or read a note on a run or call
   orangebox errors                     which failures keep happening, across runs
