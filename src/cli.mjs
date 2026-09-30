@@ -1371,7 +1371,7 @@ async function contextReport(args) {
       return;
     }
 
-    let reports = runs.map((run) => ({ run, ...store.contextGrowth(run.id) }));
+    let reports = runs.map((run) => ({ run, ...store.contextGrowth(run.id), tool_weight: store.toolWeightIn(run.id) }));
 
     if (all) {
       // Worst first, and runs with nothing to measure dropped entirely: a
@@ -1405,6 +1405,7 @@ async function contextReport(args) {
       console.log(`    sent in total  ${tokenCount(report.total_input_tokens)}`);
       console.log(`    served cached  ${tokenCount(report.cached_tokens)}${report.cached_share === null ? '' : `  (${Math.round(report.cached_share * 100)}%)`}`);
       console.log(`    ${report.growth >= 5 && (report.cached_share ?? 0) < 0.25 ? warn(report.verdict) : report.verdict}`);
+      for (const line of carriedLines(report.tool_weight)) console.log(`    ${line}`);
       console.log();
     }
   } finally {
@@ -1425,6 +1426,29 @@ export function sparkline(values, glyphs = SPARK) {
   const peak = Math.max(...values, 0);
   if (peak === 0) return glyphs[0].repeat(values.length);
   return values.map((v) => glyphs[Math.min(glyphs.length - 1, Math.floor((v / peak) * glyphs.length))]).join('');
+}
+
+/**
+ * §31 — what the prompt was carrying, in at most four lines.
+ *
+ * Only tools that carried a meaningful share are named: listing a tool that
+ * accounts for 0.3% of the prompt next to one that accounts for 60% gives
+ * them equal weight on the screen, which is the opposite of the point.
+ */
+export function carriedLines(weight, { limit = 3, floor = 0.05 } = {}) {
+  if (!weight || weight.results === 0 || !weight.carried_tokens) return [];
+  const total = weight.carried_tokens;
+  const heavy = weight.tools.filter((tool) => tool.carried_tokens / total >= floor).slice(0, limit);
+  if (heavy.length === 0) return [];
+
+  const lines = [];
+  const share = weight.share_of_input === null ? '' : ` — about ${Math.round(weight.share_of_input * 100)}% of everything sent`;
+  lines.push(`tool results carried ~${tokenCount(total)} tokens${share} (estimated)`);
+  for (const tool of heavy) {
+    const pct = Math.round((tool.carried_tokens / total) * 100);
+    lines.push(`  ${tool.tool.padEnd(18)} ${String(pct).padStart(3)}%  ${tool.results} result(s), largest ~${tokenCount(tool.largest_tokens)}`);
+  }
+  return lines;
 }
 
 /** Re-exported so the tests that read the CLI's output have one name for it. */

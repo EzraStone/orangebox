@@ -111,3 +111,28 @@ test('GET /api/runs/:id/tool-weight answers with the same shape as the store', a
     await app.stop();
   }
 });
+
+test('the context report names only the tools that carried a real share', async () => {
+  // A tool at 0.3% listed beside one at 60% gets equal weight on the screen,
+  // which is the opposite of the point.
+  const { carriedLines } = await import('../src/cli.mjs');
+  const lines = carriedLines({
+    results: 5, carried_tokens: 10000, share_of_input: 0.62,
+    tools: [
+      { tool: 'read_file', results: 3, carried_tokens: 7000, largest_tokens: 2400 },
+      { tool: 'search', results: 1, carried_tokens: 2970, largest_tokens: 900 },
+      { tool: 'clock', results: 1, carried_tokens: 30, largest_tokens: 5 }
+    ]
+  });
+
+  assert.match(lines[0], /carried ~10\.0k tokens — about 62% of everything sent \(estimated\)/);
+  assert.equal(lines.length, 3, 'header plus the two tools above the floor');
+  assert.match(lines[1], /read_file\s+70%/);
+  assert.equal(lines.join('\n').includes('clock'), false);
+});
+
+test('a run without tool results adds nothing to the context report', async () => {
+  const { carriedLines } = await import('../src/cli.mjs');
+  assert.deepEqual(carriedLines({ results: 0, carried_tokens: 0, tools: [] }), []);
+  assert.deepEqual(carriedLines(null), []);
+});
