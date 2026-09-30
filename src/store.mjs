@@ -8,6 +8,7 @@ import Database from 'better-sqlite3';
 import { findLoops } from './loops.mjs';
 import { contextGrowth } from './context.mjs';
 import { findTruncations } from './truncation.mjs';
+import { diagnose } from './diagnosis.mjs';
 
 export const SCHEMA_VERSION = '3';
 
@@ -946,6 +947,25 @@ export class Store {
   /** §29 — calls in this run that stopped at their output limit. */
   truncationsIn(runId) {
     return findTruncations(this.callSummaries(runId));
+  }
+
+  /**
+   * §30 — every check, across the runs in a window, worst first.
+   *
+   * One full read per run feeds all three analyses: loops need the request
+   * bodies, the other two only the summaries, and reading the run twice to
+   * save a column is the wrong trade.
+   */
+  diagnose({ from = null, to = null, limit = 200 } = {}) {
+    const runs = this.listRuns({ limit, from, to }).runs;
+    return diagnose(runs, (runId) => {
+      const calls = this.fullCalls(runId);
+      return {
+        loops: findLoops(calls),
+        context: contextGrowth(calls),
+        truncations: findTruncations(calls)
+      };
+    });
   }
 
   toolStats({ since = null, until = null } = {}) {

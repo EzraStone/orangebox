@@ -351,6 +351,15 @@ async function handleApi(req, res, ctx, pathname, url) {
     return sendJson(res, 200, store.truncationsIn(seg[2]));
   }
 
+  // GET /api/diagnosis?since=&until=&limit=  (§30)
+  if (method === 'GET' && pathname === '/api/diagnosis') {
+    return sendJson(res, 200, store.diagnose({
+      from: epochParam(url.searchParams.get('since')),
+      to: epochParam(url.searchParams.get('until')),
+      limit: clampInt(url.searchParams.get('limit'), 200, 1, 1000)
+    }));
+  }
+
   // GET /api/notes  (§24)
   if (method === 'GET' && pathname === '/api/notes') {
     return sendJson(res, 200, store.notes({ limit: clampInt(url.searchParams.get('limit'), 200, 1, 1000) }));
