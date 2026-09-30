@@ -969,7 +969,8 @@ export class Store {
       return {
         loops: findLoops(calls),
         context: contextGrowth(calls),
-        truncations: findTruncations(calls)
+        truncations: findTruncations(calls),
+        weight: toolWeight(calls, this.toolEvents(runId))
       };
     });
   }

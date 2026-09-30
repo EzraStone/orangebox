@@ -16,7 +16,7 @@ const WEIGHT = { truncated: 3, loop: 2, growth: 1 };
  * gentler is how multi-turn agents work, and listing it would bury the runs
  * that actually need looking at.
  */
-export function findingsFor({ truncations, loops, context }) {
+export function findingsFor({ truncations, loops, context, weight }) {
   const findings = [];
 
   if (truncations?.truncated_calls > 0) {
@@ -39,14 +39,27 @@ export function findingsFor({ truncations, loops, context }) {
   }
 
   if (context && context.calls >= 4 && context.growth >= 5 && (context.cached_share ?? 0) < 0.25) {
+    // §31 — say what it grew with, when one tool clearly is the answer. The
+    // finding is the thing someone acts on, and "cache it" and "stop
+    // re-reading that file" are different actions.
+    const culprit = dominantTool(weight);
     findings.push({
       kind: 'growth',
       growth: context.growth,
+      tool: culprit,
       text: `prompt grew ${context.growth.toFixed(1)}× with almost nothing cached`
+        + (culprit ? `, mostly re-sent ${culprit} results` : '')
     });
   }
 
   return findings;
+}
+
+/** The tool that carried most of what tool results carried, if one did. */
+export function dominantTool(weight) {
+  if (!weight?.carried_tokens || !weight.tools?.length) return null;
+  const [top] = weight.tools;
+  return top.carried_tokens / weight.carried_tokens >= 0.5 ? top.tool : null;
 }
 
 /** Most serious first: the weight of what was found, then how recent. */

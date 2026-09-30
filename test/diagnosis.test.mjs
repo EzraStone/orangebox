@@ -95,3 +95,20 @@ test('GET /api/diagnosis answers with the same shape as the store', async () => 
     removeTempDir(app.dbPath);
   }
 });
+
+test('a growth finding names the tool behind it when one dominates', async () => {
+  // "cache it" and "stop re-reading that file" are different actions, and the
+  // finding is the line somebody acts on.
+  const { dominantTool } = await import('../src/diagnosis.mjs');
+  const context = { calls: 12, growth: 9, cached_share: 0 };
+
+  const named = findingsFor({ context, weight: { carried_tokens: 100, tools: [{ tool: 'read_file', carried_tokens: 80 }] } });
+  assert.match(named[0].text, /mostly re-sent read_file results/);
+  assert.equal(named[0].tool, 'read_file');
+
+  const spread = findingsFor({ context, weight: { carried_tokens: 100, tools: [{ tool: 'a', carried_tokens: 45 }, { tool: 'b', carried_tokens: 55 }].reverse() } });
+  assert.equal(spread[0].tool, 'b', 'a majority is enough');
+
+  assert.equal(dominantTool({ carried_tokens: 100, tools: [{ tool: 'a', carried_tokens: 49 }] }), null);
+  assert.equal(findingsFor({ context })[0].tool, null, 'no tool data, no claim');
+});
