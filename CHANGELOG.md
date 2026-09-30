@@ -8,11 +8,14 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 - `orangebox assert --limits <file>`, and `orangebox.limits.json` picked up from the working directory: CI thresholds as a JSON file keyed by flag name. Flags beat the file; unknown keys and wrong types are refused; a run asserted with no limits says it checked nothing.
 - `orangebox export --format md`: a run as Markdown, for pasting into an issue.
+- Tool weight (§31): `GET /api/runs/:id/tool-weight`, a breakdown at the end of `orangebox context`, and a line on the timeline's context strip — which tools' results a run's prompts carried, weighted by how many calls re-sent them. Estimated from stored bytes, and labelled so.
 - Diagnosis (§30): `orangebox diagnose`, `GET /api/diagnosis`, and a Diagnosis view behind `d` — every run in a window with a cut-off answer, a loop or runaway context, ranked by what was found. `--fail` for nightly jobs.
 - Cut-off answers (§29): `orangebox truncated`, `GET /api/runs/:id/truncations`, a banner on the timeline, and `orangebox assert --max-truncated`. Finds responses that stopped at their output limit, whichever provider's spelling of that they used.
 
 ### Fixed
 
+- Sanitized exports turned null token counts into the string `[redacted-secret]`, which made the context-growth maths NaN — so the "prompt grew and nothing was cached" warning never appeared in a shared HTML report.
+- The test suite leaked a temp directory per recorder it started: 6,600 of them, 408 MB, before anyone looked.
 - The timeline's stop chip recognised only Anthropic's `max_tokens` and `tool_use`. An OpenAI response cut off with `length` or a Gemini one with `MAX_TOKENS` drew as an ordinary finish, and OpenAI's `tool_calls` got no colour.
 
 ## [1.5.0] - 2026-09-29

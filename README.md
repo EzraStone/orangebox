@@ -572,6 +572,26 @@ The share is capped at 100%, because providers disagree about whether cache
 reads are counted inside input tokens, and a "137% cached" figure would rightly
 destroy trust in every other number on the page.
 
+### What the prompt was carrying
+
+The usual reason a prompt grows is a tool result — a file read, a search, a
+fetched page — which lands in the history once and is then re-sent on every
+later call. A 20k-token result read at call 3 of 30 is paid for twenty-eight
+times, so the cost of a tool is its size times how long the conversation
+carries it. `orangebox context <run>` ends with the tools that carried the most:
+
+```
+    tool results carried ~105k tokens — about 78% of everything sent (estimated)
+      read_file           96%  1 result(s), largest ~10.0k
+```
+
+and the timeline strip names the tool when one clearly dominates.
+
+These figures are **estimates**. Providers report token counts per call, not per
+message, so a result's size comes from its stored bytes at four to one, and
+stored results are capped at 256 KB with images stripped. They are good for
+"which tool", not for reconciling against a bill.
+
 `--max-context-growth 8` fails CI on a run whose prompt grew more than eightfold.
 The cost gate catches this too, eventually — but only once the bill is large
 enough to notice, and it reports the symptom rather than the cause.
