@@ -52,6 +52,8 @@ export async function main(argv) {
       return loopReport(rest);
     case 'context':
       return contextReport(rest);
+    case 'truncated':
+      return truncationReport(rest);
     case 'tail':
       return tail(rest);
     case 'note':
@@ -1066,6 +1068,81 @@ async function loopReport(args) {
     store.close();
   }
 }
+// ------------------------------------------------------------- truncated
+
+/**
+ * §29 — which runs had answers cut off at the output limit.
+ *
+ * Scans every run in the window rather than only the latest, like `loops`:
+ * "did anything get truncated" is a question you have before you know which
+ * run to look at, and a truncation is quiet enough that you usually do not.
+ */
+async function truncationReport(args) {
+  const positional = [];
+  let dbPath = null;
+  let format = 'text';
+  let limit = 200;
+  const window = { from: null, to: null };
+
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--since': window.from = epochArg(next(), '--since'); break;
+      case '--until': window.to = epochArg(next(), '--until'); break;
+      case '--days': window.from = Date.now() - int(next(), '--days') * 86_400_000; break;
+      case '--limit': limit = int(next(), '--limit'); break;
+      case '--json': format = 'json'; break;
+      default:
+        if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
+        positional.push(args[i]);
+    }
+  }
+
+  const { openStore } = await import('./store.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+
+  try {
+    const runs = positional.length > 0
+      ? positional.map((id) => store.getRun(id) ?? fail(`no run with id "${id}"`))
+      : store.listRuns({ limit, ...window }).runs;
+
+    const found = [];
+    for (const run of runs) {
+      const result = store.truncationsIn(run.id);
+      if (result.truncated_calls > 0) found.push({ run, ...result });
+    }
+
+    if (format === 'json') return void console.log(JSON.stringify({ runs: found }, null, 2));
+
+    if (found.length === 0) {
+      console.log(`No truncated responses in ${runs.length} run(s)${describeRunWindow(window)}.`);
+      return;
+    }
+
+    console.log();
+    for (const entry of found) {
+      const pct = Math.round(entry.share * 100);
+      console.log(`  ${entry.run.name ?? entry.run.id}  ·  ${warn(`${entry.truncated_calls} of ${entry.answered_calls} cut off`)} (${pct}%)`);
+      for (const call of entry.calls) {
+        const at = call.output_tokens === null ? '' : ` at ${tokenCount(call.output_tokens)} tokens`;
+        console.log(`    call ${String(call.seq).padStart(3, '0')}  ${call.model ?? call.provider}  stopped: ${call.stop_reason}${at}`);
+      }
+      console.log();
+    }
+
+    const total = found.reduce((sum, entry) => sum + entry.truncated_calls, 0);
+    console.log(`  ${total} response(s) cut off across ${found.length} run(s) — raise max_tokens, or ask for less at once`);
+    console.log();
+  } finally {
+    store.close();
+  }
+}
+
 // --------------------------------------------------------------- context
 
 /** §27 — how much the prompt grew over a run, and how much of it cached. */
@@ -1895,6 +1972,7 @@ USAGE
   orangebox find <text>                search your recorded prompts and responses
   orangebox loops [<run-id>] [--days n] find prompts your agent sent more than once
   orangebox context [<run-id>] [--all] how far the prompt grew, and what cached
+  orangebox truncated [<run-id>]       find responses cut off at their output limit
   orangebox tail [--run <id>]          watch calls as they are recorded
   orangebox note [<id> "text"]         leave or read a note on a run or call
   orangebox errors                     which failures keep happening, across runs

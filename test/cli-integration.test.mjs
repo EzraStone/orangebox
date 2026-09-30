@@ -816,3 +816,36 @@ test('a gate that is not asked for is not measured', async () => {
     removeTempDir(server.dbPath);
   }
 });
+
+test('`truncated` finds responses cut off at their limit (§29)', async () => {
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const run = store.createRun({ name: 'cut short', source: 'explicit' });
+    const add = (id, provider, stop) => store.insertCall({
+      id, run_id: run.id, seq: store.nextSeq(run.id),
+      provider, endpoint: '/v1/messages', model: provider === 'openai' ? 'gpt-5.6-sol' : 'claude-opus-5',
+      started_at: Date.now(), output_tokens: 4096, stop_reason: stop, request_json: '{}'
+    });
+    add('t-1', 'anthropic', 'end_turn');
+    add('t-2', 'anthropic', 'max_tokens');
+    add('t-3', 'openai', 'length');
+    store.close();
+
+    const report = await runCli(['truncated', '--db', server.dbPath]);
+    assert.equal(report.code, 0, report.output);
+    assert.match(report.stdout, /cut short/);
+    assert.match(report.stdout, /2 of 3 cut off/);
+    assert.match(report.stdout, /stopped: length at 4096 tokens/);
+
+    const json = JSON.parse((await runCli(['truncated', '--db', server.dbPath, '--json'])).stdout);
+    assert.equal(json.runs[0].truncated_calls, 2);
+
+    const none = await runCli(['truncated', '--db', server.dbPath, '--since', '2099-01-01']);
+    assert.match(none.stdout, /No truncated responses in 0 run\(s\) since 2099-01-01/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});
