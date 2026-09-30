@@ -169,3 +169,23 @@ test('a loop finding says what the repeats cost', () => {
   const [free] = findingsFor({ loops: { loops: [{ count: 3, call_ids: ['a'] }], wasted_usd: 0 } });
   assert.equal(free.text, '3 calls asked the same thing');
 });
+
+test('the CI gate does not forgive what diagnosis forgives, on purpose', async () => {
+  // Diagnosis gives a live run's final tool request five minutes to be
+  // answered. CI asserts moments after a run ends — inside those five minutes
+  // — and an agent that stopped with a tool request outstanding is exactly
+  // what --max-unanswered-tools 0 exists to catch. Unifying the two counts
+  // would quietly switch the gate off for the case it was written for.
+  const { unansweredTools } = await import('../src/diagnosis.mjs');
+  const { evaluateRunAssertions } = await import('../src/assertions.mjs');
+
+  const now = Date.now();
+  const calls = [{ id: 'c1', seq: 1, started_at: now - 10_000, ended_at: now - 9_000 }];
+  const tools = [{ kind: 'tool_use', call_id: 'c1', tool_use_id: 'pending' }];
+
+  assert.equal(unansweredTools(calls, tools, { now }).count, 0, 'diagnosis waits');
+
+  const run = { cost_usd: 0, call_count: 1, error_count: 0, unknown_cost_count: 0 };
+  const gate = evaluateRunAssertions(run, calls, { maxUnansweredTools: 0 }, tools);
+  assert.equal(gate.ok, false, 'the gate does not');
+});

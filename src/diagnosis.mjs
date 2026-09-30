@@ -124,6 +124,11 @@ export const PENDING_MS = 5 * 60_000;
  * skipped over by later calls, and anything in the final call of a run that
  * has gone quiet was abandoned — which is the failure this looks for.
  */
+//
+// Deliberately NOT what `assert --max-unanswered-tools` counts. CI asserts
+// seconds after a run ends, inside this grace period, and a final request left
+// outstanding is precisely what that gate is for; see countToolOutcomes in
+// src/assertions.mjs, and the test that holds the two apart.
 export function unansweredTools(calls, tools, { now = Date.now() } = {}) {
   const answered = new Set(tools.filter((t) => t.kind === 'tool_result' && t.tool_use_id).map((t) => t.tool_use_id));
   const last = calls.reduce((latest, call) => ((call.seq ?? 0) > (latest?.seq ?? -1) ? call : latest), null);
