@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 import { findLoops } from './loops.mjs';
 import { contextGrowth } from './context.mjs';
+import { findTruncations } from './truncation.mjs';
 
 export const SCHEMA_VERSION = '3';
 
@@ -940,6 +941,11 @@ export class Store {
 
   loopsIn(runId, options = {}) {
     return findLoops(this.fullCalls(runId), options);
+  }
+
+  /** §29 — calls in this run that stopped at their output limit. */
+  truncationsIn(runId) {
+    return findTruncations(this.callSummaries(runId));
   }
 
   toolStats({ since = null, until = null } = {}) {

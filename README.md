@@ -600,6 +600,7 @@ same-origin `Origin` header.
 | `POST /api/runs/:id/end` | Close an explicit run. |
 | `GET /api/runs/:id/loops` | Prompts this run sent more than once, and what the repeats cost. |
 | `GET /api/runs/:id/context` | How far this run's prompt grew, and how much of it cached. |
+| `GET /api/runs/:id/truncations` | Calls in this run that stopped at their output limit. |
 | `PUT /api/runs/:id/note` | Leave or clear a note on a run. |
 | `GET /api/calls/:id` | One call, with the full recorded request and response. |
 | `PUT /api/calls/:id/note` | Leave or clear a note on a call. |
