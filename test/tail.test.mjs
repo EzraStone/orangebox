@@ -120,3 +120,18 @@ test('a noted call says so in the tail', () => {
   });
   assert.match(line, /noted/);
 });
+
+test('a cut-off answer stands out in tail, whatever the provider called it', () => {
+  // Scrolling past at speed, "length" reads as a normal finish. It is the one
+  // outcome that means the agent is about to act on half a response.
+  const base = {
+    started_at: Date.UTC(2026, 8, 30, 12, 0, 0), run_name: 'agent', model: 'gpt-5.6-sol',
+    latency_ms: 900, input_tokens: 100, output_tokens: 4096, cost_usd: 0.01
+  };
+  assert.match(formatTailLine({ ...base, provider: 'openai', stop_reason: 'length' }), /cut off \(length\)/);
+  assert.match(formatTailLine({ ...base, provider: 'gemini', stop_reason: 'MAX_TOKENS' }), /cut off \(MAX_TOKENS\)/);
+
+  const normal = formatTailLine({ ...base, provider: 'openai', stop_reason: 'stop' });
+  assert.equal(normal.includes('cut off'), false);
+  assert.match(normal, /stop$/);
+});

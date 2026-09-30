@@ -8,6 +8,7 @@ import { createServer, VERSION, PROVIDERS, ROUTABLE_PROVIDERS } from './server.m
 import { encode as qrEncode } from './qr/index.mjs';
 import { defaultDbPath } from './store.mjs';
 import { formatTokens as tokenCount, formatUsd as usd } from './format.mjs';
+import { isTruncated } from './truncation.mjs';
 import { evaluateRunAssertions } from './assertions.mjs';
 
 /** Past this the database is worth mentioning at startup — it is all prompts. */
@@ -1549,9 +1550,14 @@ export function formatTailLine(call) {
   if (call.streamed) bits.push('stream');
   if (call.note) bits.push('noted');
 
+  // A cut-off answer is flagged like an error: from a terminal scrolling past
+  // at speed, "length" reads as a normal finish, and it is the one outcome
+  // that means the agent is about to act on half a response (§29).
   const outcome = call.error_type
     ? warn(`▲ ${call.error_type}`)
-    : call.stop_reason ?? '';
+    : isTruncated(call.stop_reason, call.provider)
+      ? warn(`✂ cut off (${call.stop_reason})`)
+      : call.stop_reason ?? '';
 
   return `${time}  ${truncate(call.run_name, 18).padEnd(18)}  ${model}  ${latency.padStart(9)}  ${bits.join(' · ').padEnd(28)}  ${outcome}`;
 }
