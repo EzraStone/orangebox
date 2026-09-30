@@ -144,29 +144,36 @@ bites is worse than none, because it reads like coverage.
 
 ## When a whole test file fails with no reason
 
-Rarely — about one full run in ten on Windows, less elsewhere — a single test
-file fails before reporting any test at all: `✖ test/import.test.mjs` and the
-word `'test failed'`, nothing else. It has been four different files. Each
+Sometimes — roughly one full run in five to fifteen on Windows — a single test
+file fails before reporting any test at all: `✖ test/certificate.test.mjs` and
+the word `'test failed'`, nothing else. It has been six different files. Each
 passes on its own and on the next full run.
 
-Do not re-run until it goes away and move on. That is how a real failure gets
-waved through. Re-run it under the TAP reporter, which records the child
-process's exit code and signal, and write down what it says:
+**What it is, as far as anyone has got:** the file's process is killed by a
+native abort. Run both reporters at once so the TAP one records the exit code
+whenever the default one shows the failure:
 
 ```bash
-node --test --test-reporter=tap $(node -p "require('./package.json').scripts.test.replace('node --test ','')") > tap.log
-grep -nE "^not ok|exitCode|signal" tap.log
+node --test --test-reporter=spec --test-reporter-destination=stdout   --test-reporter=tap --test-reporter-destination=tap.log $(node -p "require('./package.json').scripts.test.replace('node --test ','')")
+grep -nE "^not ok|exitCode" tap.log
 ```
 
-A non-zero exit with no JavaScript error points at the native SQLite module or
-at the filesystem underneath it, not at the test. So far it has not reproduced
-under the TAP reporter in six consecutive runs, which is itself a clue: the
-default reporter runs the files with more output buffering in flight.
+The exit code has been `3221226505`, which is `0xC0000409`: Windows' fast-fail,
+what `abort()` produces from native code. It has struck `certificate.test.mjs`,
+which loads no native addon at all — only `node:crypto` and `node:https` — so
+it is neither better-sqlite3 nor anything in these tests. The process dies in
+Node itself, around 600–800 ms in, before its first result is written.
 
-Two things that were wrong nearby, and are fixed: the harness leaked a temp
-directory per recorder it started (6,600 of them had piled up), and fifty-seven
-call sites passed a database file where a directory was expected. If it comes
-back, check `ls $TMPDIR/orangebox-*` first.
+**What has been ruled out:** the temp-directory leak (fixed; the crash
+continued), and test concurrency (0 crashes in six runs at both 4 and the
+default 11, at the same 22 s a run — no evidence either way, so it was left
+alone). It has never appeared in a TAP-only run, which may be chance.
+
+**What to do:** do not re-run until it goes away and move on — that is how a
+real failure gets waved through. Confirm the exit code is `0xC0000409` with the
+command above. If it is anything else, it is a different failure, and a real
+one. If it is that code, it is this, and it is worth a report to Node with the
+version and the TAP record.
 
 ## Run it, not only the tests
 
