@@ -4,7 +4,7 @@
  * `tools` is optional: callers that only have calls still work, and the
  * tool-shaped limits simply do not fire.
  */
-export function evaluateRunAssertions(run, calls, limits = {}, tools = [], loops = null, context = null) {
+export function evaluateRunAssertions(run, calls, limits = {}, tools = [], loops = null, context = null, truncations = null) {
   const failures = [];
   const maxLatency = Math.max(0, ...calls.map((call) => call.latency_ms ?? 0));
   if (limits.maxCost != null && run.cost_usd > limits.maxCost) {
@@ -72,9 +72,22 @@ export function evaluateRunAssertions(run, calls, limits = {}, tools = [], loops
     }
   }
 
+  // §29 — an answer cut off at its output limit is a 200 with an ordinary
+  // cost. Every gate above passes it, and the agent acts on half a response.
+  if (limits.maxTruncated != null && truncations) {
+    if (truncations.truncated_calls > limits.maxTruncated) {
+      const seqs = truncations.calls.slice(0, 5).map((call) => call.seq).join(', ');
+      failures.push(
+        `${truncations.truncated_calls} response(s) were cut off at the output limit, which exceeds ${limits.maxTruncated}` +
+          (seqs ? ` — calls ${seqs}` : '')
+      );
+    }
+  }
+
   return {
     ok: failures.length === 0, failures, maxLatency,
-    tools: toolCounts, loops: loops ?? null, context: context ?? null
+    tools: toolCounts, loops: loops ?? null, context: context ?? null,
+    truncations: truncations ?? null
   };
 }
 

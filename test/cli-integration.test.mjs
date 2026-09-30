@@ -849,3 +849,33 @@ test('`truncated` finds responses cut off at their limit (§29)', async () => {
     removeTempDir(server.dbPath);
   }
 });
+
+test('`assert --max-truncated` fails a run whose answers were cut off (§29)', async () => {
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const run = store.createRun({ name: 'cut short', source: 'explicit' });
+    for (const [i, stop] of ['end_turn', 'max_tokens', 'max_tokens'].entries()) {
+      store.insertCall({
+        id: `mt-${i}`, run_id: run.id, seq: store.nextSeq(run.id),
+        provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+        started_at: Date.now() + i, output_tokens: 1024, cost_usd: 0.01, stop_reason: stop, request_json: '{}'
+      });
+    }
+    store.close();
+
+    const strict = await runCli(['assert', run.id, '--db', server.dbPath, '--max-truncated', '0']);
+    assert.equal(strict.code, 1, strict.output);
+    assert.match(strict.output, /2 response\(s\) were cut off/);
+    assert.match(strict.output, /calls 2, 3/);
+
+    assert.equal((await runCli(['assert', run.id, '--db', server.dbPath, '--max-truncated', '2'])).code, 0);
+
+    const json = JSON.parse((await runCli(['assert', run.id, '--db', server.dbPath, '--max-truncated', '5', '--json'])).stdout);
+    assert.equal(json.measured.truncated, 2, 'measured even when it passes');
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});

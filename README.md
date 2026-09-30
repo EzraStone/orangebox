@@ -248,6 +248,7 @@ CI example:
 | `--max-unanswered-tools <n>` | More tool calls never got a result than the limit allows. |
 | `--max-repeats <n>` | One prompt was sent more times than the limit allows. |
 | `--max-context-growth <x>` | The largest prompt was more than `x` times the first. |
+| `--max-truncated <n>` | More responses were cut off at their output limit than the limit allows. |
 | `--require-known-cost` | Any call could not be priced — separately reporting the ones with no rate and the ones with no usage. |
 
 `--max-unanswered-tools 0` is the one worth adding first. An agent whose tool
@@ -255,7 +256,7 @@ calls never come back finishes the run, costs almost nothing, and reports zero
 errors — every other threshold passes while nothing worked.
 
 ```bash
-orangebox assert "$RUN_ID" --max-cost 0.25 --max-latency 5000 --max-errors 0 --max-calls 12 --max-unanswered-tools 0 --max-repeats 3 --max-context-growth 8 --require-known-cost
+orangebox assert "$RUN_ID" --max-cost 0.25 --max-latency 5000 --max-errors 0 --max-calls 12 --max-unanswered-tools 0 --max-repeats 3 --max-context-growth 8 --max-truncated 0 --require-known-cost
 ```
 
 ### Sharing a run

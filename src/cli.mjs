@@ -589,6 +589,7 @@ async function assertRun(args) {
       case '--max-unanswered-tools': limits.maxUnansweredTools = int(next(), '--max-unanswered-tools'); break;
       case '--max-repeats': limits.maxRepeats = int(next(), '--max-repeats'); break;
       case '--max-context-growth': limits.maxContextGrowth = number(next(), '--max-context-growth'); break;
+      case '--max-truncated': limits.maxTruncated = int(next(), '--max-truncated'); break;
       default:
         if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
         positional.push(args[i]);
@@ -605,7 +606,8 @@ async function assertRun(args) {
     const result = evaluateRunAssertions(
       run, store.callSummaries(runId), limits, store.toolEvents(runId),
       limits.maxRepeats != null ? store.loopsIn(runId) : null,
-      limits.maxContextGrowth != null ? store.contextGrowth(runId) : null
+      limits.maxContextGrowth != null ? store.contextGrowth(runId) : null,
+      limits.maxTruncated != null ? store.truncationsIn(runId) : null
     );
 
     if (asJson) {
@@ -624,6 +626,7 @@ async function assertRun(args) {
           max_latency_ms: result.maxLatency,
           repeats: result.loops?.loops?.[0]?.repeats ?? null,
           context_growth: result.context?.growth ?? null,
+          truncated: result.truncations?.truncated_calls ?? null,
           tools: result.tools
         }
       }, null, 2));
@@ -2017,6 +2020,7 @@ ASSERT LIMITS
   --max-unanswered-tools <n>  maximum tool calls that never got a result
   --max-repeats <n>         maximum times one prompt may be repeated
   --max-context-growth <x>  maximum prompt growth, as a multiple of the first
+  --max-truncated <n>       maximum responses cut off at their output limit
   --json                    machine-readable result, including what passed
 
 EASIEST START
