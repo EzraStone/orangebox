@@ -58,7 +58,8 @@ export async function startOrangebox({
  * only swallows ENOENT, not that. Retry briefly, then give up quietly: this is
  * teardown, and a leaked temp directory must never fail a passing test.
  */
-export async function removeTempDir(dir) {
+export async function removeTempDir(target) {
+  const dir = tempDirOf(target);
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -68,6 +69,31 @@ export async function removeTempDir(dir) {
     }
   }
   return false;
+}
+
+/**
+ * The temp directory a path belongs to.
+ *
+ * Fifty-seven call sites passed a database *file* here — `app.dbPath` —
+ * which removed the file and left its directory, its -wal and its -shm
+ * behind. Six and a half thousand directories had piled up in the OS temp
+ * folder before anyone looked. Rather than trust every caller to pass the
+ * right thing, a file inside one of this suite's own temp directories is
+ * resolved to that directory. Anything else is left exactly as given.
+ */
+export function tempDirOf(target) {
+  const parent = path.dirname(target);
+  const ours = path.dirname(parent) === path.resolve(os.tmpdir())
+    && /^orangebox-(test|cli)-/.test(path.basename(parent));
+  return ours && !isDirectory(target) ? parent : target;
+}
+
+function isDirectory(target) {
+  try {
+    return fs.statSync(target).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 export function jsonResponse(res, status, body, extraHeaders = {}) {
@@ -268,12 +294,16 @@ export async function startCliServer(args = [], { env = {}, timeoutMs = 30_000 }
       }
       return false;
     },
-    stop: () =>
-      new Promise((resolve) => {
+    // Stopping cleans up too. It used to kill the process and leave the
+    // database directory behind, one per test, every run.
+    stop: async () => {
+      await new Promise((resolve) => {
         if (child.exitCode !== null) return resolve();
         child.once('close', () => resolve());
         child.kill('SIGKILL');
-      })
+      });
+      await removeTempDir(dir);
+    }
   };
 }
 
