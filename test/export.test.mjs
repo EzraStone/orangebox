@@ -376,3 +376,23 @@ test('sanitizing rewrites strings and nothing else', async () => {
     store.close();
   }
 });
+
+test('a report names the tool behind the growth, in both formats and the trace', async () => {
+  const { buildMarkdownReport } = await import('../src/export.mjs');
+  const calls = Array.from({ length: 10 }, (_, i) => ({
+    seq: i + 1, id: `c${i + 1}`, provider: 'anthropic', model: 'claude-opus-5', started_at: i,
+    input_tokens: 1000 * (i + 1), stop_reason: 'end_turn',
+    request_json: JSON.stringify({ messages: [{ role: 'user', content: `step ${i}` }] })
+  }));
+  const tools = [
+    { kind: 'tool_use', call_id: 'c1', tool_use_id: 'rf', tool_name: 'read_file' },
+    { kind: 'tool_result', call_id: 'c2', tool_use_id: 'rf', tool_name: null, content_json: JSON.stringify('z'.repeat(8000)) }
+  ];
+  const report = { orangebox_version: '0', exported_at: Date.now(), run: { id: 'r', cost_usd: 1, unknown_cost_count: 0, error_count: 0 }, calls, tools };
+
+  assert.match(buildHtmlReport(report), /re-sent read_file results \(estimated\)/);
+  assert.match(buildMarkdownReport(report), /re-sent read_file results \(estimated\)/);
+
+  const span = buildOtelExport(report).resourceSpans[0].scopeSpans[0].spans.find((s) => !s.parentSpanId);
+  assert.equal(attributesOf(span)['orangebox.context.dominant_tool'].stringValue, 'read_file');
+});

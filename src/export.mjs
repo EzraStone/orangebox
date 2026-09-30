@@ -4,6 +4,8 @@ import { contextGrowth } from './context.mjs';
 import { formatTokens as formatTokenCount, formatUsd as formatCost } from './format.mjs';
 import { findLoops } from './loops.mjs';
 import { findTruncations, isTruncated } from './truncation.mjs';
+import { toolWeight } from './tool-weight.mjs';
+import { dominantTool } from './diagnosis.mjs';
 
 export function compareRuns(store, leftId, rightId) {
   const left = store.getRun(leftId);
@@ -110,7 +112,7 @@ export function buildHtmlReport(payload) {
 <style>${REPORT_CSS}</style></head>
 <body>
 <h1>${escapeHtml(run.name ?? run.id)}</h1>
-${summarySection(run, calls)}
+${summarySection(run, calls, payload.tools ?? [])}
 ${rows}
 <footer>Sanitized orangebox report &middot; generated ${escapeHtml(new Date(payload.exported_at).toISOString())}</footer>
 </body></html>`;
@@ -136,7 +138,7 @@ const REPORT_CSS = 'body{max-width:980px;margin:40px auto;padding:0 20px;backgro
  * rather than each working the figures out for itself — two reports of one
  * run that disagreed about what it cost would be worse than either alone.
  */
-export function runSummary(run, calls) {
+export function runSummary(run, calls, tools = []) {
   const growth = contextGrowth(calls);
   const loops = findLoops(calls);
   const truncations = findTruncations(calls);
@@ -162,14 +164,19 @@ export function runSummary(run, calls) {
     flags.push(`${worst.count} calls asked the same thing, costing ${formatCost(loops.wasted_usd)} in repeats.`);
   }
   if (growth.growth >= 5 && (growth.cached_share ?? 0) < 0.25 && growth.calls >= 4) {
-    flags.push(`The prompt grew ${growth.growth.toFixed(1)}x and almost none of it was cached.`);
+    // Name the tool when one carried most of it: "stop re-sending that file"
+    // is a different fix from "turn on caching", and this line is the one a
+    // reader acts on.
+    const culprit = dominantTool(toolWeight(calls, tools));
+    flags.push(`The prompt grew ${growth.growth.toFixed(1)}x and almost none of it was cached.`
+      + (culprit ? ` Most of what it carried was re-sent ${culprit} results (estimated).` : ''));
   }
 
   return { items, flags };
 }
 
-function summarySection(run, calls) {
-  const { items, flags } = runSummary(run, calls);
+function summarySection(run, calls, tools) {
+  const { items, flags } = runSummary(run, calls, tools);
   return `<dl class="summary">${items.map(([label, value, note]) => `
   <div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}${note ? `<small>${escapeHtml(note)}</small>` : ''}</dd></div>`).join('')}
 </dl>${flags.map((text) => `
@@ -187,7 +194,7 @@ function summarySection(run, calls) {
 export function buildMarkdownReport(payload) {
   const run = payload.run;
   const calls = payload.calls ?? [];
-  const { items, flags } = runSummary(run, calls);
+  const { items, flags } = runSummary(run, calls, payload.tools ?? []);
   const lines = [];
 
   lines.push(`### orangebox run: ${mdCell(run.name ?? run.id)}`, '');
@@ -295,7 +302,7 @@ export function buildOtelExport(payload) {
       resource: { attributes: compactAttributes({ 'service.name': 'orangebox', 'service.version': payload.orangebox_version }) },
       scopeSpans: [{
         scope: { name: 'orangebox.export', version: payload.orangebox_version },
-        spans: [runSpan(run, calls, traceId, rootSpanId), ...spans]
+        spans: [runSpan(run, calls, traceId, rootSpanId, payload.tools ?? []), ...spans]
       }]
     }]
   };
@@ -312,7 +319,7 @@ export function buildOtelExport(payload) {
  * prompt grew, and whether it went in circles. Those are run-level facts, and
  * hanging them off the first call would be a lie about where they came from.
  */
-function runSpan(run, calls, traceId, spanId) {
+function runSpan(run, calls, traceId, spanId, tools = []) {
   const growth = contextGrowth(calls);
   const loops = findLoops(calls);
   const truncations = findTruncations(calls);
@@ -340,6 +347,10 @@ function runSpan(run, calls, traceId, spanId) {
       'orangebox.context.peak_tokens': growth.peak_tokens,
       'orangebox.context.growth': growth.growth,
       'orangebox.context.cached_share': growth.cached_share,
+      // Named only when one tool carried a majority, and never as a number:
+      // the sizes behind it are estimates and a trace is not the place to
+      // present an estimate as a measurement.
+      'orangebox.context.dominant_tool': dominantTool(toolWeight(calls, tools)),
       'orangebox.loops.repeated_prompts': loops.loops.length,
       'orangebox.loops.looping_calls': loops.looping_calls,
       'orangebox.loops.wasted_usd': loops.wasted_usd,
