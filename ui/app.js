@@ -778,11 +778,15 @@ async function deleteRun(run) {
  * finally was — lands where it can be seen.
  */
 const ANALYSIS_INTERVAL_MS = 3000;
-const analysis = { loopSlot: null, contextSlot: null, runId: null, loops: null, context: null };
+const analysis = {
+  loopSlot: null, contextSlot: null, truncationSlot: null, runId: null,
+  loops: null, context: null, truncations: null
+};
 
 const refreshAnalysis = throttled(ANALYSIS_INTERVAL_MS, () => {
-  const { loopSlot, contextSlot, runId } = analysis;
+  const { loopSlot, contextSlot, truncationSlot, runId } = analysis;
   if (!runId) return;
+  if (truncationSlot) void renderTruncationBanner(truncationSlot, runId);
   if (loopSlot) void renderLoopBanner(loopSlot, runId);
   if (contextSlot) void renderContextStrip(contextSlot, runId);
 });
@@ -797,6 +801,7 @@ const refreshAnalysis = throttled(ANALYSIS_INTERVAL_MS, () => {
  * while it waits.
  */
 function paintLastAnalysis() {
+  if (analysis.truncations) paintTruncationBanner(analysis.truncationSlot, analysis.truncations);
   if (analysis.loops) paintLoopBanner(analysis.loopSlot, analysis.loops);
   if (analysis.context) paintContextStrip(analysis.contextSlot, analysis.context);
 }
@@ -846,11 +851,15 @@ function renderTimeline() {
   if (analysis.runId !== state.run.id) {
     analysis.loops = null;
     analysis.context = null;
+    analysis.truncations = null;
   }
+  // Truncation first: it is the one that means an answer is actually wrong,
+  // rather than expensive.
+  analysis.truncationSlot = el('div', { class: 'truncation-slot' });
   analysis.loopSlot = el('div', { class: 'loop-slot' });
   analysis.contextSlot = el('div', { class: 'context-slot' });
   analysis.runId = state.run.id;
-  root.append(analysis.loopSlot, analysis.contextSlot);
+  root.append(analysis.truncationSlot, analysis.loopSlot, analysis.contextSlot);
   paintLastAnalysis();
   refreshAnalysis();
 
@@ -1402,6 +1411,54 @@ function paintContextStrip(slot, summary) {
       el('span', { class: 'context-cached', text: summary.cached })
     ])
   ]));
+}
+
+/**
+ * §29 — one sentence when answers in this run were cut off, or nothing.
+ *
+ * Leads with the calls that also asked for tools when there are any: a cut-off
+ * sentence is visibly short, a cut-off tool call is malformed JSON the agent
+ * will try to run, and the error that follows blames the tool.
+ */
+export function truncationSummary(data) {
+  if (!data || !data.truncated_calls) return null;
+
+  const n = data.truncated_calls;
+  const seqs = (data.calls ?? []).map((call) => String(call.seq).padStart(2, '0'));
+  const shown = seqs.slice(0, 6).join(', ') + (seqs.length > 6 ? `, and ${seqs.length - 6} more` : '');
+  const limits = [...new Set((data.calls ?? []).map((call) => call.output_tokens).filter(Number.isFinite))];
+
+  return {
+    headline: `${n} ${n === 1 ? 'response was' : 'responses were'} cut off at the output limit.`,
+    detail: `Call${n === 1 ? '' : 's'} ${shown}` + (limits.length === 1 ? ` — each stopped at ${fmt.tokens(limits[0])} tokens.` : '.'),
+    advice: 'The model had more to say. Raise max_tokens, or ask for less at once.'
+  };
+}
+
+async function renderTruncationBanner(slot, runId) {
+  const summary = truncationSummary(await loadTruncations(runId));
+  if (state.run?.id !== runId) return;
+
+  analysis.truncations = summary;
+  if (!summary || !slot.isConnected) return;
+  paintTruncationBanner(slot, summary);
+}
+
+function paintTruncationBanner(slot, summary) {
+  if (!slot) return;
+  slot.replaceChildren(el('div', { class: 'banner truncation-banner', role: 'status' }, [
+    el('span', { class: 'truncation-headline', text: summary.headline }),
+    el('span', { class: 'truncation-detail', text: summary.detail }),
+    el('span', { class: 'truncation-advice', text: summary.advice })
+  ]));
+}
+
+async function loadTruncations(runId) {
+  try {
+    return await api.get(`/api/runs/${encodeURIComponent(runId)}/truncations`);
+  } catch {
+    return null; // an extra never breaks the timeline
+  }
 }
 
 async function loadContext(runId) {

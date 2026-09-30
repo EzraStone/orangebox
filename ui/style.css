@@ -1058,6 +1058,12 @@ kbd {
 }
 .loop-cost, .loop-more { font-size: 11px; color: var(--muted); }
 
+/* §29 — cut-off responses. Amber like a loop, because like a loop it means
+   the run did not do what it appeared to. */
+.truncation-banner { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; }
+.truncation-headline { color: var(--amber); font-weight: 500; }
+.truncation-detail, .truncation-advice { font-size: 11px; color: var(--muted); }
+
 /* §28 — the caching line sits under the total, in the muted voice of a
    footnote. It qualifies the number above it rather than competing with it. */
 .spend-cache { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
