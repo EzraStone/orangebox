@@ -32,7 +32,7 @@ test('every module the view modules import is in the shell too', () => {
   // The views import dom.js. A second-level import missing from the shell
   // fails in exactly the same way as a first-level one.
   const shell = new Set(shellPaths());
-  for (const view of ['spend.js', 'tools.js', 'find.js', 'errors.js']) {
+  for (const view of ['spend.js', 'tools.js', 'find.js', 'errors.js', 'diagnosis.js']) {
     const imports = [...read(view).matchAll(/from '\.\/([^']+\.js)'/g)].map((m) => `/${m[1]}`);
     for (const path of imports) {
       assert.ok(shell.has(path), `${view} imports ${path}, which is not precached`);

@@ -983,6 +983,32 @@ kbd {
 .err-count { font-size: 11px; color: var(--muted); margin-left: auto; }
 .err-meta { font-size: 11px; color: var(--muted); }
 
+/* §30 — the diagnosis list. Each finding carries its kind as a word, not
+   only as a colour: the kinds mean different things and the colour alone would
+   leave anyone who cannot tell amber from orange guessing which. */
+.diag-list { list-style: none; margin: 14px 0 0; padding: 0; }
+.diag-row {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin: 0 0 8px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.diag-row:hover { background: var(--panel-hi); }
+.diag-row:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px; }
+.diag-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.diag-name { font-weight: 500; }
+.diag-when { font-size: 11px; color: var(--muted); margin-left: auto; }
+.diag-findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.diag-finding { display: flex; gap: 10px; font-size: 12px; }
+.diag-kind { flex: 0 0 120px; font-family: var(--mono); font-size: 11px; }
+.diag-text { color: var(--muted); }
+.diag-truncated .diag-kind { color: var(--amber); }
+.diag-loop .diag-kind { color: var(--orange); }
+.diag-growth .diag-kind { color: var(--blue); }
+
 /* -------------------------------------------------- §10.7 drop to import */
 
 /* An outline rather than an overlay: covering the timeline to say "you may

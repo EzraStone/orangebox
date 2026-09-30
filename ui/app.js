@@ -7,6 +7,7 @@ import { renderSpend, loadSpend } from '/spend.js';
 import { renderTools, loadTools } from '/tools.js';
 import { renderFind, loadFind, state as findState } from '/find.js';
 import { renderErrors, loadErrors } from '/errors.js';
+import { renderDiagnosis, loadDiagnosis } from '/diagnosis.js';
 
 const authToken = new URLSearchParams(location.search).get('token');
 let csrfToken = null;
@@ -121,7 +122,7 @@ const state = {
   readOnly: false,
   mobileAccess: false,
   filters: { search: '', model: '', provider: '', tool: '', error: '', min_latency: '', min_cost: '', from: '', to: '' },
-  view: 'runs', // 'runs' | 'spend' | 'tools' | 'find' | 'errors'
+  view: 'runs', // 'runs' | 'spend' | 'tools' | 'find' | 'errors' | 'diagnosis'
   credentials: null, // §19.7 — which providers replay could authenticate
   runId: null,
   run: null,
@@ -354,6 +355,24 @@ const TOOLS_PATH = '/tools';
 const FIND_PATH = '/find';
 const ERRORS_PATH = '/errors';
 const pathIsErrors = () => location.pathname === ERRORS_PATH;
+const DIAGNOSIS_PATH = '/diagnosis';
+const pathIsDiagnosis = () => location.pathname === DIAGNOSIS_PATH;
+
+/** §30 — every check, across runs. */
+async function openDiagnosis({ replace = false } = {}) {
+  state.view = 'diagnosis';
+  if (!pathIsDiagnosis()) history[replace ? 'replaceState' : 'pushState']({}, '', DIAGNOSIS_PATH);
+  closeDetail();
+  renderRuns();
+  renderTimeline();
+  syncMobileNav();
+  await refreshDiagnosis();
+}
+
+async function refreshDiagnosis() {
+  await loadDiagnosis((path) => api.get(path));
+  if (state.view === 'diagnosis') renderTimeline();
+}
 
 /** §19.10 — failures across runs. */
 async function openErrors({ replace = false } = {}) {
@@ -456,6 +475,7 @@ window.addEventListener('popstate', () => {
   if (pathIsTools()) return void openTools({ replace: true });
   if (pathIsFind()) return void openFind({ replace: true });
   if (pathIsErrors()) return void openErrors({ replace: true });
+  if (pathIsDiagnosis()) return void openDiagnosis({ replace: true });
   state.view = 'runs';
   selectRun(pathRunId(), { fromNav: true });
   renderTimeline();
@@ -807,6 +827,13 @@ function paintLastAnalysis() {
 }
 
 function renderTimeline() {
+  if (state.view === 'diagnosis') {
+    renderAnalyticsHeader('Diagnosis');
+    return void renderDiagnosis($('timeline'), () => void refreshDiagnosis(), (entry) => {
+      closeAnalytics();
+      navigate(entry.run.id);
+    });
+  }
   if (state.view === 'errors') {
     renderAnalyticsHeader('Errors');
     return void renderErrors($('timeline'), () => void refreshErrors(), (error) => {
@@ -2173,6 +2200,11 @@ document.addEventListener('keydown', (e) => {
     return void (state.view === 'errors' ? closeAnalytics() : openErrors());
   }
 
+  if (e.key === 'd') {
+    e.preventDefault();
+    return void (state.view === 'diagnosis' ? closeAnalytics() : openDiagnosis());
+  }
+
   // The rest of these steer the timeline, which is not what is on screen.
   if (state.view !== 'runs') return;
 
@@ -2300,6 +2332,11 @@ function dateBoundary(value, endOfDay) {
 $('errors-open').addEventListener('click', () => {
   if (state.view === 'errors') closeAnalytics();
   else void openErrors();
+});
+
+$('diagnosis-open').addEventListener('click', () => {
+  if (state.view === 'diagnosis') closeAnalytics();
+  else void openDiagnosis();
 });
 
 $('find-open').addEventListener('click', () => {
@@ -2503,6 +2540,7 @@ async function boot() {
     const bootTools = pathIsTools();
     const bootFind = pathIsFind();
     const bootErrors = pathIsErrors();
+    const bootDiagnosis = pathIsDiagnosis();
     state.runId = pathRunId();
     renderPill();
     await loadRuns();
@@ -2511,6 +2549,7 @@ async function boot() {
     if (bootTools) await openTools({ replace: true });
     if (bootFind) await openFind({ replace: true });
     if (bootErrors) await openErrors({ replace: true });
+    if (bootDiagnosis) await openDiagnosis({ replace: true });
     connectLive();
   } catch (error) {
     // The user-facing message stays friendly, but swallowing the reason

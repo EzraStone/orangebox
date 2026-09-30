@@ -7,7 +7,7 @@ import fs from 'node:fs';
 
 const file = (name) => fs.readFileSync(new URL(`../ui/${name}`, import.meta.url), 'utf8');
 const shell = file('index.html');
-const scripts = ['app.js', 'dom.js', 'spend.js', 'tools.js', 'errors.js', 'find.js', 'diff.js'];
+const scripts = ['app.js', 'dom.js', 'spend.js', 'tools.js', 'errors.js', 'find.js', 'diff.js', 'diagnosis.js'];
 
 /** Every id the shell defines. */
 const declared = new Set([...shell.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));

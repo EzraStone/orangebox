@@ -118,6 +118,7 @@ export const SHORTCUTS = [
   { keys: ['/'], label: 'Search recorded prompts and responses' },
   { keys: ['$'], label: 'Spend across runs' },
   { keys: ['t'], label: 'Tool usage across runs' },
+  { keys: ['d'], label: 'Runs that need a look' },
   { keys: ['e'], label: 'Failures across runs' },
   { keys: [String.fromCharCode(92)], label: 'Show or hide the runs pane' },
   { keys: ['?'], label: 'This list' },
