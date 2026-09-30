@@ -1010,6 +1010,13 @@ kbd {
   background: none; border: 1px solid var(--line); border-radius: 3px; padding: 0 6px; cursor: pointer;
 }
 .diag-open:hover, .diag-open:focus-visible { color: var(--text); border-color: var(--muted); }
+
+@media (max-width: 720px) {
+  /* A 120px label column beside a button leaves a phone about seventy pixels
+     for the sentence that matters. The label goes above instead. */
+  .diag-finding { flex-wrap: wrap; row-gap: 2px; align-items: baseline; }
+  .diag-kind { flex: 0 0 100%; }
+}
 .diag-truncated .diag-kind { color: var(--amber); }
 .diag-loop .diag-kind { color: var(--orange); }
 .diag-growth .diag-kind { color: var(--blue); }
