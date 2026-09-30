@@ -15,7 +15,8 @@ function lift(name, scope = {}) {
   return new Function(...keys, body)(...keys.map((k) => scope[k]));
 }
 
-const contextSummary = lift('contextSummary', { fmt });
+const carriedBy = lift('carriedBy', {});
+const contextSummary = lift('contextSummary', { fmt, carriedBy });
 
 test('a run that did not grow gets no strip', () => {
   // "Your prompt stayed the same size" is not news, and a panel that always
@@ -64,4 +65,31 @@ test('a missing cached share is treated as none, not as unknown growth', () => {
   });
   assert.equal(summary.actionable, true);
   assert.ok(Array.isArray(summary.series));
+});
+
+
+test('the strip names the tool behind the growth when one clearly is', () => {
+  const text = carriedBy({
+    carried_tokens: 10000,
+    tools: [{ tool: 'read_file', carried_tokens: 7000 }, { tool: 'search', carried_tokens: 3000 }]
+  });
+  assert.match(text, /from read_file — about 70% of what tool results carried \(estimated\)/);
+});
+
+test('no single culprit means no line at all', () => {
+  // "a bit of five things" is not an answer worth a line on the timeline.
+  assert.equal(carriedBy({
+    carried_tokens: 10000,
+    tools: [{ tool: 'c', carried_tokens: 3800 }, { tool: 'a', carried_tokens: 3100 }, { tool: 'b', carried_tokens: 3100 }]
+  }), null);
+  assert.equal(carriedBy(null), null);
+  assert.equal(carriedBy({ carried_tokens: 0, tools: [] }), null);
+});
+
+test('the context summary carries the tool line through', () => {
+  const summary = contextSummary({
+    calls: 10, growth: 8, first_tokens: 1000, peak_tokens: 8000, total_input_tokens: 40000, cached_share: 0,
+    tool_weight: { carried_tokens: 100, tools: [{ tool: 'read_file', carried_tokens: 90 }] }
+  });
+  assert.match(summary.carried, /read_file/);
 });

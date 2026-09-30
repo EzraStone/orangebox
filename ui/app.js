@@ -1395,8 +1395,24 @@ export function contextSummary(data) {
     cached: share > 0 ? `${Math.round(share * 100)}% served from cache` : 'none of it served from cache',
     // Worth a nudge only when caching would actually change the bill.
     actionable: data.growth >= 5 && share < 0.25,
+    carried: carriedBy(data.tool_weight),
     series: data.series ?? []
   };
+}
+
+/**
+ * §31 — name the tool behind the growth, when one tool clearly is.
+ *
+ * Only when a single tool carried at least two fifths of what tool results
+ * carried: "mostly read_file" is an answer, "a bit of five things" is not,
+ * and the full breakdown is one `orangebox context` away.
+ */
+export function carriedBy(weight) {
+  if (!weight || !weight.carried_tokens || !weight.tools?.length) return null;
+  const [top] = weight.tools;
+  const share = top.carried_tokens / weight.carried_tokens;
+  if (share < 0.4) return null;
+  return `Mostly re-sent tool results from ${top.tool} — about ${Math.round(share * 100)}% of what tool results carried (estimated)`;
 }
 
 /** The series as a filled area, 100×24 and scaled from zero like the CLI. */
@@ -1435,7 +1451,8 @@ function paintContextStrip(slot, summary) {
     el('div', { class: 'context-text' }, [
       el('span', { class: 'context-headline', text: summary.headline }),
       el('span', { class: 'context-detail', text: summary.detail }),
-      el('span', { class: 'context-cached', text: summary.cached })
+      el('span', { class: 'context-cached', text: summary.cached }),
+      summary.carried ? el('span', { class: 'context-carried', text: summary.carried }) : null
     ])
   ]));
 }
@@ -1490,7 +1507,15 @@ async function loadTruncations(runId) {
 
 async function loadContext(runId) {
   try {
-    return await api.get(`/api/runs/${encodeURIComponent(runId)}/context`);
+    const id = encodeURIComponent(runId);
+    // Two requests rather than one route doing two jobs: every per-run route
+    // answers with exactly what its store method returns, which is what lets
+    // the tests compare them field for field.
+    const [growth, weight] = await Promise.all([
+      api.get(`/api/runs/${id}/context`),
+      api.get(`/api/runs/${id}/tool-weight`).catch(() => null)
+    ]);
+    return { ...growth, tool_weight: weight };
   } catch {
     return null; // same rule as loops: an extra never breaks the timeline
   }
