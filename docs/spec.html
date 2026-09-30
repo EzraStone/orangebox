@@ -799,8 +799,8 @@ curl -sN http://127.0.0.1:4100/openai/v1/chat/completions \
   <h3><span class="sub">22.6</span>Answers that were cut off</h3>
   <p>A response that stopped at its output limit is the quietest failure there is: a 200, an ordinary cost, and an agent acting on half an answer — or on a tool call whose arguments end mid-JSON, so the error that follows blames the tool. Every provider spells it differently (<code>max_tokens</code>, <code>length</code>, <code>max_output_tokens</code>, <code>MAX_TOKENS</code>) and §7.1 keeps the stop reason verbatim, so the translation is one table that every routable provider must appear in. The timeline had only ever recognised Anthropic's spelling; the other four drew a truncation as a normal finish.</p>
 
-  <h3><span class="sub">22.7</span>One question instead of three</h3>
-  <p>Loops, runaway context and cut-off answers each only help once you already suspect them. <code>diagnose</code> inverts that: every run in a window with anything wrong, ranked by what was found rather than when — a wrong answer above a costly one above a slowly costly one.</p>
+  <h3><span class="sub">22.7</span>One question instead of four</h3>
+  <p>Unanswered tool calls, cut-off answers, loops and runaway context each only help once you already suspect them. <code>diagnose</code> inverts that: every run in a window with anything wrong, ranked by what was found rather than when — a wrong result above a costly one above a slowly costly one. The unanswered-tool check forgives the final call of a run that is still going, because its results may simply not have been sent yet; a check that accused live runs of abandoning work would be switched off by the first person it cried wolf at.</p>
 
   <h3><span class="sub">22.8</span>What the prompt carries</h3>
   <p>Growth usually comes from a tool result that lands once and is re-sent on every later call, so a tool's cost is its size times how long the conversation carries it. orangebox has token counts per call, not per message, so this is estimated from stored bytes and labelled as such everywhere it appears. It is for "which tool", never for reconciling against a bill.</p>
