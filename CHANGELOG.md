@@ -9,7 +9,9 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 - `orangebox assert --limits <file>`, and `orangebox.limits.json` picked up from the working directory: CI thresholds as a JSON file keyed by flag name. Flags beat the file; unknown keys and wrong types are refused; a run asserted with no limits says it checked nothing.
 - `orangebox export --format md`: a run as Markdown, for pasting into an issue.
 - Tool weight (§31): `GET /api/runs/:id/tool-weight`, a breakdown at the end of `orangebox context`, and a line on the timeline's context strip — which tools' results a run's prompts carried, weighted by how many calls re-sent them. Estimated from stored bytes, and labelled so.
-- Diagnosis (§30): `orangebox diagnose`, `GET /api/diagnosis`, and a Diagnosis view behind `d` — every run in a window with a cut-off answer, a loop or runaway context, ranked by what was found. `--fail` for nightly jobs.
+- Diagnosis (§30): `orangebox diagnose`, `GET /api/diagnosis`, and a Diagnosis view behind `d` — every run in a window with an unanswered tool call, a cut-off answer, a loop or runaway context, ranked by what was found. Findings open onto the call behind them, and show the note left on the run. `--fail` for nightly jobs.
+- Cut-off answers name the request parameter that set the limit, in that provider's own spelling (`max_completion_tokens`, `generationConfig.maxOutputTokens`, …), so the advice says which setting to raise.
+- `orangebox tail` marks cut-off answers; `orangebox doctor` reports the age of the shipped price table.
 - Cut-off answers (§29): `orangebox truncated`, `GET /api/runs/:id/truncations`, a banner on the timeline, and `orangebox assert --max-truncated`. Finds responses that stopped at their output limit, whichever provider's spelling of that they used.
 
 ### Fixed

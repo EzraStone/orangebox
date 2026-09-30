@@ -202,7 +202,7 @@ four times budget — a regression rather than a noisy neighbour.
 | `orangebox loops [<run-id>]` | Find prompts your agent sent more than once, and what the repeats cost. `--days`, `--since`, `--until` window it. |
 | `orangebox context [<run-id>] [--all]` | How far the prompt grew over a run, and how much of it the provider cached. `--all` ranks every run by growth; `--days`, `--since`, `--until` window it. |
 | `orangebox truncated [<run-id>]` | Responses cut off at their output limit, across runs. Takes the same window flags. |
-| `orangebox diagnose [--days n]` | Every check at once — cut-off answers, loops, runaway context — across runs, worst first. `--fail` exits non-zero when anything is found. |
+| `orangebox diagnose [--days n]` | Every check at once — unanswered tool calls, cut-off answers, loops, runaway context — across runs, worst first. `--fail` exits non-zero when anything is found. |
 | `orangebox tail [--run <id>]` | Watch calls as they are recorded, one line each. Works without a running recorder. |
 | `orangebox note [<id> "text"]` | Leave or read a note on a run or call; with no arguments, lists every note. |
 | `orangebox find <text>` | Search recorded prompts and responses. Prints the run, call, model, and a snippet. |
@@ -503,8 +503,11 @@ orangebox diagnose --days 7
   3 of 4 run(s) need a look — 1 with cut-off answers, 1 looping, 1 with runaway context
 ```
 
-Runs are ranked by what was found rather than when: a cut-off answer means a
-wrong answer, a loop a costly one, runaway context a costly one slowly. Growth
+Runs are ranked by what was found rather than when: a tool call that never
+got an answer or a cut-off answer means a wrong result, a loop a costly one,
+runaway context a costly one slowly. A tool request in the last call of a run
+that is still going is not counted until the run has been quiet for five
+minutes — until then its results may simply not have been sent yet. Growth
 is only listed when it is steep, over enough calls to mean something, and not
 already being cached — anything gentler is how multi-turn agents work.
 
@@ -705,7 +708,7 @@ same-origin `Origin` header.
 | `GET /api/runs/:id/context` | How far this run's prompt grew, and how much of it cached. |
 | `GET /api/runs/:id/truncations` | Calls in this run that stopped at their output limit. |
 | `GET /api/runs/:id/tool-weight` | Which tools' results this run's prompts carried, weighted by how many calls re-sent them. Estimated. |
-| `GET /api/diagnosis` | Every run in a window with something wrong with it — loops, runaway context, cut-off answers — worst first. |
+| `GET /api/diagnosis` | Every run in a window with something wrong with it — unanswered tool calls, cut-off answers, loops, runaway context — worst first. |
 | `PUT /api/runs/:id/note` | Leave or clear a note on a run. |
 | `GET /api/calls/:id` | One call, with the full recorded request and response. |
 | `PUT /api/calls/:id/note` | Leave or clear a note on a call. |
