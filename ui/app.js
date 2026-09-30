@@ -829,8 +829,9 @@ function paintLastAnalysis() {
 function renderTimeline() {
   if (state.view === 'diagnosis') {
     renderAnalyticsHeader('Diagnosis');
-    return void renderDiagnosis($('timeline'), () => void refreshDiagnosis(), (entry) => {
+    return void renderDiagnosis($('timeline'), () => void refreshDiagnosis(), (entry, callId) => {
       closeAnalytics();
+      if (callId) return void openCallById(callId);
       navigate(entry.run.id);
     });
   }

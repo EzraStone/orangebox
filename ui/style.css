@@ -1004,7 +1004,12 @@ kbd {
 .diag-findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .diag-finding { display: flex; gap: 10px; font-size: 12px; }
 .diag-kind { flex: 0 0 120px; font-family: var(--mono); font-size: 11px; }
-.diag-text { color: var(--muted); }
+.diag-text { color: var(--muted); flex: 1; }
+.diag-open {
+  font: inherit; font-size: 11px; color: var(--muted);
+  background: none; border: 1px solid var(--line); border-radius: 3px; padding: 0 6px; cursor: pointer;
+}
+.diag-open:hover, .diag-open:focus-visible { color: var(--text); border-color: var(--muted); }
 .diag-truncated .diag-kind { color: var(--amber); }
 .diag-loop .diag-kind { color: var(--orange); }
 .diag-growth .diag-kind { color: var(--blue); }

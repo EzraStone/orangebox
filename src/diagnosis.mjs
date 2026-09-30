@@ -24,6 +24,8 @@ export function findingsFor({ truncations, loops, context, weight }) {
     findings.push({
       kind: 'truncated',
       count: n,
+      // The first offending call, so a finding can open straight onto it.
+      call_id: truncations.calls?.[0]?.id ?? null,
       text: `${n} ${n === 1 ? 'response' : 'responses'} cut off at the output limit`
     });
   }
@@ -34,6 +36,8 @@ export function findingsFor({ truncations, loops, context, weight }) {
       kind: 'loop',
       count: worst.count,
       wasted_usd: loops.wasted_usd,
+      // The second time it asked — the first repeat is where it went wrong.
+      call_id: worst.call_ids?.[1] ?? worst.call_ids?.[0] ?? null,
       text: `${worst.count} calls asked the same thing`
     });
   }

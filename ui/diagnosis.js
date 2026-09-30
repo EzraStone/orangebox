@@ -72,7 +72,17 @@ function runRow(entry, onOpen) {
     el('ul', { class: 'diag-findings' }, entry.findings.map((finding) =>
       el('li', { class: `diag-finding diag-${finding.kind}` }, [
         el('span', { class: 'diag-kind', text: FINDING_LABELS[finding.kind] ?? finding.kind }),
-        el('span', { class: 'diag-text', text: finding.text })
+        el('span', { class: 'diag-text', text: finding.text }),
+        // A finding that points at a call opens onto it. Its own button, not
+        // a click target inside the row's: nested interactive elements are
+        // announced as one and cannot be told apart by keyboard.
+        finding.call_id
+          ? el('button', {
+              class: 'diag-open', type: 'button', text: 'show call',
+              'aria-label': `Show the call behind: ${finding.text}`,
+              on: { click: (event) => { event.stopPropagation(); onOpen(entry, finding.call_id); } }
+            })
+          : null
       ])
     ))
   ]);

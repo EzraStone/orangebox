@@ -112,3 +112,14 @@ test('a growth finding names the tool behind it when one dominates', async () =>
   assert.equal(dominantTool({ carried_tokens: 100, tools: [{ tool: 'a', carried_tokens: 49 }] }), null);
   assert.equal(findingsFor({ context })[0].tool, null, 'no tool data, no claim');
 });
+
+test('a finding that points at a call says which', () => {
+  const findings = findingsFor({
+    truncations: { truncated_calls: 2, calls: [{ id: 'first-cut' }, { id: 'second-cut' }] },
+    loops: { loops: [{ count: 3, call_ids: ['ask-1', 'ask-2', 'ask-3'] }], wasted_usd: 0.02 }
+  });
+  const byKind = Object.fromEntries(findings.map((f) => [f.kind, f]));
+  assert.equal(byKind.truncated.call_id, 'first-cut');
+  // The first repeat, not the original ask — that is where it went wrong.
+  assert.equal(byKind.loop.call_id, 'ask-2');
+});
