@@ -595,11 +595,60 @@ export const ASSERT_LIMITS = [
   { flag: '--max-truncated', key: 'maxTruncated', kind: 'int' }
 ];
 
+/** Picked up from the working directory when no --limits file is named. */
+export const LIMITS_FILE = 'orangebox.limits.json';
+
+/**
+ * Read a limits file: the same thresholds as the flags, keyed by the flag's
+ * name without its dashes — `{ "max-cost": 0.25, "max-truncated": 0 }` —
+ * so the README's table of flags is also the documentation for the file.
+ *
+ * Strict on purpose. A misspelled key in a CI config does not fail loudly on
+ * its own; it silently switches a gate off, and the build goes green for the
+ * one reason it should not. So an unknown key, or a value of the wrong kind,
+ * is refused with the list of keys that would have worked.
+ */
+export function readLimitsFile(text, source) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${source} is not valid JSON: ${error.message}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${source} must be a JSON object of thresholds`);
+  }
+
+  const limits = {};
+  for (const [name, value] of Object.entries(parsed)) {
+    if (name.startsWith('$') || name.startsWith('_')) continue; // $schema, _comment
+    const limit = ASSERT_LIMITS.find((entry) => entry.flag === `--${name}`);
+    if (!limit) {
+      const known = ASSERT_LIMITS.map((entry) => entry.flag.slice(2)).join(', ');
+      throw new Error(`${source}: unknown threshold "${name}" — known ones are ${known}`);
+    }
+
+    const ok = limit.kind === 'switch'
+      ? typeof value === 'boolean'
+      : typeof value === 'number' && Number.isFinite(value) && value >= 0 && (limit.kind !== 'int' || Number.isInteger(value));
+    if (!ok) {
+      const wanted = { switch: 'true or false', int: 'a whole number', number: 'a number' }[limit.kind];
+      throw new Error(`${source}: "${name}" must be ${wanted}, got ${JSON.stringify(value)}`);
+    }
+
+    // `false` for a switch means "not required", which is what leaving it out
+    // means too; only true sets it.
+    if (limit.kind !== 'switch' || value) limits[limit.key] = value;
+  }
+  return limits;
+}
+
 async function assertRun(args) {
   const positional = [];
   let dbPath = null;
   let asJson = false;
-  const limits = {};
+  let limitsPath = null;
+  const flagged = {};
   for (let i = 0; i < args.length; i++) {
     const next = () => {
       const value = args[++i];
@@ -608,13 +657,14 @@ async function assertRun(args) {
     };
     const limit = ASSERT_LIMITS.find((entry) => entry.flag === args[i]);
     if (limit) {
-      if (limit.kind === 'switch') limits[limit.key] = true;
-      else limits[limit.key] = (limit.kind === 'int' ? int : number)(next(), limit.flag);
+      if (limit.kind === 'switch') flagged[limit.key] = true;
+      else flagged[limit.key] = (limit.kind === 'int' ? int : number)(next(), limit.flag);
       continue;
     }
     switch (args[i]) {
       case '--db': dbPath = next(); break;
       case '--json': asJson = true; break;
+      case '--limits': limitsPath = next(); break;
       default:
         if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
         positional.push(args[i]);
@@ -622,7 +672,29 @@ async function assertRun(args) {
   }
 
   const runId = positional[0];
-  if (!runId) fail('usage: orangebox assert <run-id> [thresholds]');
+  if (!runId) fail('usage: orangebox assert <run-id> [thresholds] [--limits file]');
+
+  // A named file must exist; the default one is used only if it is there.
+  // Flags on the command line win over the file, so a job can tighten or
+  // loosen one threshold without editing the shared config.
+  const fs = await import('node:fs');
+  const limitsSource = limitsPath ?? (fs.existsSync(LIMITS_FILE) ? LIMITS_FILE : null);
+  let fromFile = {};
+  if (limitsSource) {
+    let text;
+    try {
+      text = fs.readFileSync(limitsSource, 'utf8');
+    } catch {
+      fail(`cannot read limits file "${limitsSource}"`);
+    }
+    try {
+      fromFile = readLimitsFile(text, limitsSource);
+    } catch (error) {
+      fail(error.message);
+    }
+  }
+  const limits = { ...fromFile, ...flagged };
+
   const { openStore } = await import('./store.mjs');
   const store = openStore(dbPath ?? defaultDbPath());
   try {
@@ -640,6 +712,7 @@ async function assertRun(args) {
       // that passed — a gate that only reports failures cannot be graphed.
       console.log(JSON.stringify({
         run_id: runId,
+        limits_file: limitsSource,
         ok: result.ok,
         failures: result.failures,
         limits,
@@ -660,10 +733,17 @@ async function assertRun(args) {
     }
 
     if (result.ok) {
-      console.log(`orangebox assertions passed for ${runId}`);
+      // Say where the limits came from. A job that passes because it silently
+      // picked up nobody's thresholds looks exactly like one that passed.
+      const from = limitsSource ? ` (limits from ${limitsSource})` : '';
+      if (Object.keys(limits).length === 0) {
+        console.log(`orangebox assertions passed for ${runId} — but no limits were set, so nothing was checked`);
+      } else {
+        console.log(`orangebox assertions passed for ${runId}${from}`);
+      }
       return;
     }
-    console.error(`orangebox assertions failed for ${runId}:`);
+    console.error(`orangebox assertions failed for ${runId}${limitsSource ? ` (limits from ${limitsSource})` : ''}:`);
     for (const failure of result.failures) console.error(`  - ${failure}`);
     process.exitCode = 1;
   } finally {
@@ -2107,6 +2187,7 @@ SPEND OPTIONS
   --json                    the full response, totals included
 
 ASSERT LIMITS
+  --limits <file>           read thresholds from a JSON file (default: ./orangebox.limits.json)
   --max-cost <usd>          maximum total estimated cost
   --max-latency <ms>        maximum latency of any call
   --max-errors <n>          maximum error count

@@ -252,6 +252,28 @@ CI example:
 | `--max-truncated <n>` | More responses were cut off at their output limit than the limit allows. |
 | `--require-known-cost` | Any call could not be priced — separately reporting the ones with no rate and the ones with no usage. |
 
+Or keep them in a file, so the pipeline does not carry a paragraph of flags.
+`orangebox.limits.json` in the working directory is picked up on its own; any
+other path goes through `--limits`:
+
+```json
+{
+  "max-cost": 0.25,
+  "max-truncated": 0,
+  "max-unanswered-tools": 0,
+  "max-repeats": 3,
+  "require-known-cost": true
+}
+```
+
+The keys are the flag names without their dashes, so the table above is the
+documentation for the file too. A flag on the command line beats the file, so a
+single job can tighten one threshold without editing the shared config. The
+file is strict: a misspelled key is refused rather than ignored, because
+ignoring it would quietly switch that gate off and the build would go green for
+the one reason it should not. And a run asserted with no limits at all says it
+checked nothing, rather than reporting a pass.
+
 `--max-unanswered-tools 0` is the one worth adding first. An agent whose tool
 calls never come back finishes the run, costs almost nothing, and reports zero
 errors — every other threshold passes while nothing worked.

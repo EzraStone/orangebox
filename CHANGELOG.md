@@ -6,6 +6,8 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Added
 
+- `orangebox assert --limits <file>`, and `orangebox.limits.json` picked up from the working directory: CI thresholds as a JSON file keyed by flag name. Flags beat the file; unknown keys and wrong types are refused; a run asserted with no limits says it checked nothing.
+- `orangebox export --format md`: a run as Markdown, for pasting into an issue.
 - Diagnosis (§30): `orangebox diagnose`, `GET /api/diagnosis`, and a Diagnosis view behind `d` — every run in a window with a cut-off answer, a loop or runaway context, ranked by what was found. `--fail` for nightly jobs.
 - Cut-off answers (§29): `orangebox truncated`, `GET /api/runs/:id/truncations`, a banner on the timeline, and `orangebox assert --max-truncated`. Finds responses that stopped at their output limit, whichever provider's spelling of that they used.
 
