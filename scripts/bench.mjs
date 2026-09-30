@@ -252,10 +252,60 @@ async function benchLargeRun() {
   }
 }
 
+/**
+ * §30 — the Diagnosis view's request: every check across a week of runs.
+ *
+ * The expensive part is loop detection, which parses every request body to
+ * find its last instruction. So the runs here carry realistic histories —
+ * thirty turns growing to sixty — rather than the one-line bodies that make
+ * any analysis look free.
+ */
+async function benchDiagnosis() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orangebox-bench-'));
+  const app = createServer({ dbPath: path.join(dir, 'bench.db') });
+  const address = await app.listen(0, '127.0.0.1');
+  const origin = `http://127.0.0.1:${address.port}`;
+
+  try {
+    const { newId } = await import('../src/store.mjs');
+    const turn = (i) => ({ role: i % 2 ? 'assistant' : 'user', content: 'the agent said something reasonable here. '.repeat(30) });
+    const history = Array.from({ length: 60 }, (_, i) => turn(i));
+
+    app.store.db.transaction(() => {
+      for (let r = 0; r < 50; r++) {
+        const run = app.store.createRun({ name: `run ${r}`, source: 'gap' });
+        for (let i = 0; i < 30; i++) {
+          app.store.insertCall({
+            id: newId(), run_id: run.id, seq: i + 1, provider: 'anthropic', endpoint: '/v1/messages',
+            model: 'claude-opus-5', started_at: Date.now() - r * 60_000 + i, input_tokens: 4000 + i * 150,
+            output_tokens: 200, cost_usd: 0.03, stop_reason: i === 29 && r % 5 === 0 ? 'max_tokens' : 'end_turn',
+            request_json: JSON.stringify({ messages: history.slice(0, 30 + i).concat([{ role: 'user', content: `step ${i % 12}` }]) }),
+            response_json: JSON.stringify({ content: [{ type: 'text', text: 'done' }] })
+          });
+        }
+      }
+    })();
+
+    await fetch(`${origin}/api/diagnosis`).then((r) => r.json());
+    const times = [];
+    for (let i = 0; i < 10; i++) {
+      const started = performance.now();
+      const body = await fetch(`${origin}/api/diagnosis`).then((r) => r.json());
+      times.push(performance.now() - started);
+      if (body.checked_runs !== 50) throw new Error(`expected 50 runs, got ${body.checked_runs}`);
+    }
+    record('diagnose 50 runs x 30 calls', percentile(times, 0.5), 1000, 'ms');
+  } finally {
+    await app.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 await benchAddedLatency();
 await benchTimeToRecorded();
 await benchStreamLag();
 await benchLargeRun();
+await benchDiagnosis();
 
 const pad = (s, n) => String(s).padEnd(n);
 console.log();

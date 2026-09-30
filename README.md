@@ -169,6 +169,7 @@ Recording happens **after** your client's response is finished — never in the 
 | UI open, 1000-call run | < 500 ms | 8–17 ms |
 | Loop check, 1000-call run | < 250 ms | 12–15 ms |
 | Context check, 1000-call run | < 250 ms | 4–5 ms |
+| Diagnose, 50 runs × 30 calls | < 1000 ms | 340–360 ms |
 
 The last two are the analyses behind the banners above the timeline. They
 run when a run is opened and re-run while it is live, so they are measured
