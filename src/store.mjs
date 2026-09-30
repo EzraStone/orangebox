@@ -9,6 +9,7 @@ import { findLoops } from './loops.mjs';
 import { contextGrowth } from './context.mjs';
 import { findTruncations } from './truncation.mjs';
 import { diagnose } from './diagnosis.mjs';
+import { toolWeight } from './tool-weight.mjs';
 
 export const SCHEMA_VERSION = '3';
 
@@ -942,6 +943,11 @@ export class Store {
 
   loopsIn(runId, options = {}) {
     return findLoops(this.fullCalls(runId), options);
+  }
+
+  /** §31 — which tools this run's prompts were carrying, and how heavily. */
+  toolWeightIn(runId) {
+    return toolWeight(this.callSummaries(runId), this.toolEvents(runId));
   }
 
   /** §29 — calls in this run that stopped at their output limit. */

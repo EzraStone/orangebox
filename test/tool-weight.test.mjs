@@ -66,3 +66,48 @@ test('a run with no tools weighs nothing and says so', () => {
   assert.deepEqual(weight.tools, []);
   assert.equal(weight.estimated, true);
 });
+
+test('toolWeightIn reads a real run, naming results by their tool', async () => {
+  const { Store, newId } = await import('../src/store.mjs');
+  const store = new Store(':memory:');
+  try {
+    const run = store.createRun({ name: 'reader', source: 'explicit' });
+    const ids = [];
+    for (let i = 0; i < 5; i++) {
+      const id = newId();
+      ids.push(id);
+      const events = [];
+      if (i === 0) events.push({ id: newId(), run_id: run.id, call_id: id, kind: 'tool_use', tool_name: 'read_file', tool_use_id: 'tu_1', is_error: 0, content_json: '{}' });
+      if (i === 1) events.push({ id: newId(), run_id: run.id, call_id: id, kind: 'tool_result', tool_name: null, tool_use_id: 'tu_1', is_error: 0, content_json: JSON.stringify('y'.repeat(3998)) });
+      store.insertCall({
+        id, run_id: run.id, seq: store.nextSeq(run.id), provider: 'anthropic', endpoint: '/v1/messages',
+        model: 'claude-opus-5', started_at: Date.now() + i, input_tokens: 2000, request_json: '{}'
+      }, events);
+    }
+
+    const weight = store.toolWeightIn(run.id);
+    assert.equal(weight.tools[0].tool, 'read_file');
+    assert.equal(weight.tools[0].tokens, 1000);
+    assert.equal(weight.tools[0].carried_tokens, 4000, 'arrived at call 2 of 5, so sent four times');
+  } finally {
+    store.close();
+  }
+});
+
+test('GET /api/runs/:id/tool-weight answers with the same shape as the store', async () => {
+  const { startOrangebox } = await import('./helpers.mjs');
+  const { newId } = await import('../src/store.mjs');
+  const app = await startOrangebox({});
+  try {
+    const run = app.store.createRun({ name: 'x', source: 'explicit' });
+    app.store.insertCall({
+      id: newId(), run_id: run.id, seq: 1, provider: 'anthropic', endpoint: '/v1/messages',
+      started_at: Date.now(), input_tokens: 10, request_json: '{}'
+    });
+    const body = await (await fetch(`${app.origin}/api/runs/${run.id}/tool-weight`)).json();
+    assert.deepEqual(body, app.store.toolWeightIn(run.id));
+    assert.equal((await fetch(`${app.origin}/api/runs/nope/tool-weight`)).status, 404);
+  } finally {
+    await app.stop();
+  }
+});

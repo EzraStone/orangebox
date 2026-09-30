@@ -345,6 +345,12 @@ async function handleApi(req, res, ctx, pathname, url) {
     return sendJson(res, 200, store.contextGrowth(seg[2]));
   }
 
+  // GET /api/runs/:id/tool-weight  (§31)
+  if (method === 'GET' && seg.length === 4 && seg[1] === 'runs' && seg[3] === 'tool-weight') {
+    if (!store.getRun(seg[2])) return sendJson(res, 404, { error: 'no such run' });
+    return sendJson(res, 200, store.toolWeightIn(seg[2]));
+  }
+
   // GET /api/runs/:id/truncations  (§29)
   if (method === 'GET' && seg.length === 4 && seg[1] === 'runs' && seg[3] === 'truncations') {
     if (!store.getRun(seg[2])) return sendJson(res, 404, { error: 'no such run' });

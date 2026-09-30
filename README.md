@@ -683,6 +683,7 @@ same-origin `Origin` header.
 | `GET /api/runs/:id/loops` | Prompts this run sent more than once, and what the repeats cost. |
 | `GET /api/runs/:id/context` | How far this run's prompt grew, and how much of it cached. |
 | `GET /api/runs/:id/truncations` | Calls in this run that stopped at their output limit. |
+| `GET /api/runs/:id/tool-weight` | Which tools' results this run's prompts carried, weighted by how many calls re-sent them. Estimated. |
 | `GET /api/diagnosis` | Every run in a window with something wrong with it — loops, runaway context, cut-off answers — worst first. |
 | `PUT /api/runs/:id/note` | Leave or clear a note on a run. |
 | `GET /api/calls/:id` | One call, with the full recorded request and response. |
