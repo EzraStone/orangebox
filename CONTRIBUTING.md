@@ -129,6 +129,32 @@ one from the other. `test/cli.test.mjs` and `test/shell.test.mjs` have several
 to copy. Confirm it fails before you make it pass — a drift test that never
 bites is worse than none, because it reads like coverage.
 
+## When a whole test file fails with no reason
+
+Rarely — about one full run in ten on Windows, less elsewhere — a single test
+file fails before reporting any test at all: `✖ test/import.test.mjs` and the
+word `'test failed'`, nothing else. It has been four different files. Each
+passes on its own and on the next full run.
+
+Do not re-run until it goes away and move on. That is how a real failure gets
+waved through. Re-run it under the TAP reporter, which records the child
+process's exit code and signal, and write down what it says:
+
+```bash
+node --test --test-reporter=tap $(node -p "require('./package.json').scripts.test.replace('node --test ','')") > tap.log
+grep -nE "^not ok|exitCode|signal" tap.log
+```
+
+A non-zero exit with no JavaScript error points at the native SQLite module or
+at the filesystem underneath it, not at the test. So far it has not reproduced
+under the TAP reporter in six consecutive runs, which is itself a clue: the
+default reporter runs the files with more output buffering in flight.
+
+Two things that were wrong nearby, and are fixed: the harness leaked a temp
+directory per recorder it started (6,600 of them had piled up), and fifty-seven
+call sites passed a database file where a directory was expected. If it comes
+back, check `ls $TMPDIR/orangebox-*` first.
+
 ## Run it, not only the tests
 
 The suite is large and it is not the product. Two of the worst bugs here were
