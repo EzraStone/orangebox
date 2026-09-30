@@ -1000,6 +1000,7 @@ kbd {
 .diag-row:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px; }
 .diag-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
 .diag-name { font-weight: 500; }
+.diag-note { margin: -2px 0 6px; font-size: 11.5px; color: var(--muted); font-style: italic; white-space: pre-wrap; }
 .diag-when { font-size: 11px; color: var(--muted); margin-left: auto; }
 .diag-findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .diag-finding { display: flex; gap: 10px; font-size: 12px; }

@@ -1235,6 +1235,7 @@ async function diagnoseReport(args) {
     console.log();
     for (const entry of result.runs) {
       console.log(`  ${entry.run.name ?? entry.run.id}  ${fmtDim(entry.run.id)}`);
+      if (entry.run.note) console.log(`    ${fmtDim(`“${truncate(entry.run.note.replace(/\s+/g, ' '), 70)}”`)}`);
       for (const finding of entry.findings) {
         console.log(`    ${warn((FINDING_MARK[finding.kind] ?? finding.kind).padEnd(8))} ${finding.text}`);
       }

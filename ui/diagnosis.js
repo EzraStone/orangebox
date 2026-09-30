@@ -69,6 +69,9 @@ function runRow(entry, onOpen) {
       el('span', { class: 'diag-name', text: entry.run.name ?? entry.run.id }),
       el('span', { class: 'diag-when', text: fmt.when(entry.run.started_at) })
     ]),
+    // §24 — why the run was started is the first thing you need when deciding
+    // whether its findings matter, and it is knowledge only you wrote down.
+    entry.run.note ? el('p', { class: 'diag-note', text: entry.run.note }) : null,
     el('ul', { class: 'diag-findings' }, entry.findings.map((finding) =>
       el('li', { class: `diag-finding diag-${finding.kind}` }, [
         el('span', { class: 'diag-kind', text: FINDING_LABELS[finding.kind] ?? finding.kind }),

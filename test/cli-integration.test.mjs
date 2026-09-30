@@ -944,3 +944,25 @@ test('`export --format md` writes a sanitized report to paste into an issue', as
     removeTempDir(server.dbPath);
   }
 });
+
+test('`diagnose` shows the note you left on a run', async () => {
+  // Why the run was started decides whether its findings matter, and it is the
+  // one thing about a run no proxy can know.
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const run = store.createRun({ name: 'experiment', source: 'explicit' });
+    store.setRunNote(run.id, 'trying a 256-token limit\nto see what breaks');
+    store.insertCall({
+      id: 'n-1', run_id: run.id, seq: 1, provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+      started_at: Date.now(), output_tokens: 256, stop_reason: 'max_tokens', request_json: '{}'
+    });
+    store.close();
+
+    const report = await runCli(['diagnose', '--db', server.dbPath]);
+    assert.match(report.stdout, /“trying a 256-token limit to see what breaks”/, 'folded onto one line');
+  } finally {
+    await server.stop();
+  }
+});
