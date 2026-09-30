@@ -105,7 +105,7 @@ footer{margin-top:80px;border-top:2px solid var(--ink);padding-top:14px;font-fam
 <header class="masthead">
   <div class="docline">
     <span>Engineering build specification</span>
-    <span>DOC OB-SPEC-001 · REV C · 2026-09-29</span>
+    <span>DOC OB-SPEC-001 · REV D · 2026-09-30</span>
   </div>
 
   <div class="plate" role="img" aria-label="Orange data plate reading: orangebox, the flight recorder for AI agents">
@@ -795,12 +795,21 @@ curl -sN http://127.0.0.1:4100/openai/v1/chat/completions \
     <p>The rule, now tested against all five providers: <strong><code>input_tokens</code> is the part of the prompt billed at the full input rate.</strong> Cached tokens sit beside it, never inside it, and the parts add back up to what the provider reported. The untouched usage object is still in the recorded response either way, so §7.1 is unharmed.</p>
   </div>
   <p>Once the counts are right, what caching saved is worth reporting: a read priced at the difference between the two rates, a write priced at the premium it costs, and the two netted — so a cache that never paid for itself shows as a negative rather than as a saving of zero.</p>
+
+  <h3><span class="sub">22.6</span>Answers that were cut off</h3>
+  <p>A response that stopped at its output limit is the quietest failure there is: a 200, an ordinary cost, and an agent acting on half an answer — or on a tool call whose arguments end mid-JSON, so the error that follows blames the tool. Every provider spells it differently (<code>max_tokens</code>, <code>length</code>, <code>max_output_tokens</code>, <code>MAX_TOKENS</code>) and §7.1 keeps the stop reason verbatim, so the translation is one table that every routable provider must appear in. The timeline had only ever recognised Anthropic's spelling; the other four drew a truncation as a normal finish.</p>
+
+  <h3><span class="sub">22.7</span>One question instead of three</h3>
+  <p>Loops, runaway context and cut-off answers each only help once you already suspect them. <code>diagnose</code> inverts that: every run in a window with anything wrong, ranked by what was found rather than when — a wrong answer above a costly one above a slowly costly one.</p>
+
+  <h3><span class="sub">22.8</span>What the prompt carries</h3>
+  <p>Growth usually comes from a tool result that lands once and is re-sent on every later call, so a tool's cost is its size times how long the conversation carries it. orangebox has token counts per call, not per message, so this is estimated from stored bytes and labelled as such everywhere it appears. It is for "which tool", never for reconciling against a bill.</p>
 </section>
 
 </main>
 
 <footer>
-  <span>OB-SPEC-001 · REV C · END OF DOCUMENT</span>
+  <span>OB-SPEC-001 · REV D · END OF DOCUMENT</span>
   <span>orangebox — if it isn't recorded, it didn't happen</span>
   <a class="backtop" href="#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false">▲ top</a>
 </footer>
