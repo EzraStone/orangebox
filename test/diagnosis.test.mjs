@@ -160,3 +160,12 @@ test('a run still going is not accused of ignoring its latest tool request', asy
   // An hour later with nothing more, it was abandoned.
   assert.equal(unansweredTools(calls, tools, { now: now + 60 * 60_000 }).count, 1);
 });
+
+test('a loop finding says what the repeats cost', () => {
+  const [costly] = findingsFor({ loops: { loops: [{ count: 6, call_ids: ['a', 'b'] }], wasted_usd: 0.091 } });
+  assert.match(costly.text, /6 calls asked the same thing, \$0\.091 in repeats/);
+
+  // Too small to be worth a figure, or not known: no "$0".
+  const [free] = findingsFor({ loops: { loops: [{ count: 3, call_ids: ['a'] }], wasted_usd: 0 } });
+  assert.equal(free.text, '3 calls asked the same thing');
+});

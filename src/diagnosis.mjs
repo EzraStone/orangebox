@@ -5,6 +5,8 @@
 // the thing it looks for. This asks the question the other way round: which of
 // my runs have *anything* wrong with them, and what?
 
+import { formatUsd } from './format.mjs';
+
 /** How much weight each finding carries when runs are ranked. */
 const WEIGHT = { unanswered: 3, truncated: 3, loop: 2, growth: 1 };
 
@@ -51,7 +53,11 @@ export function findingsFor({ truncations, loops, context, weight, unanswered })
       wasted_usd: loops.wasted_usd,
       // The second time it asked — the first repeat is where it went wrong.
       call_id: worst.call_ids?.[1] ?? worst.call_ids?.[0] ?? null,
+      // The cost is what makes a loop worth fixing, so it goes in the sentence
+      // rather than in a field nobody prints. Left out when it rounds to
+      // nothing or is unknown, rather than printed as "$0".
       text: `${worst.count} calls asked the same thing`
+        + (loops.wasted_usd >= 0.001 ? `, ${formatUsd(loops.wasted_usd)} in repeats` : '')
     });
   }
 
