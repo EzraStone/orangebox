@@ -29,3 +29,13 @@ test('every kind the server can report has a label', async () => {
   assert.ok(kinds.length >= 3, `only found ${kinds.length} kinds`);
   for (const kind of kinds) assert.ok(FINDING_LABELS[kind], `no label for "${kind}"`);
 });
+
+test('the terminal has a word for every kind of finding too', async () => {
+  // The CLI's list of marks is a third list of kinds, beside the server's and
+  // the UI's. A kind missing from it crashed the report on `undefined.padEnd`.
+  const fs = await import('node:fs');
+  const { FINDING_MARK } = await import('../src/cli.mjs');
+  const source = fs.readFileSync(new URL('../src/diagnosis.mjs', import.meta.url), 'utf8');
+  const kinds = [...source.matchAll(/kind: '([a-z]+)'/g)].map((m) => m[1]);
+  for (const kind of kinds) assert.ok(FINDING_MARK[kind], `the CLI has no mark for "${kind}"`);
+});

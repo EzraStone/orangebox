@@ -1178,7 +1178,13 @@ async function loopReport(args) {
 }
 // -------------------------------------------------------------- diagnose
 
-const FINDING_MARK = { truncated: 'cut off', loop: 'loop', growth: 'growth' };
+/**
+ * The word printed beside each kind of finding. The UI has its own labels in
+ * ui/diagnosis.js; both are checked against the kinds src/diagnosis.mjs can
+ * produce, because a kind missing here used to mean `undefined.padEnd` and a
+ * crash in the middle of the report.
+ */
+export const FINDING_MARK = { truncated: 'cut off', loop: 'loop', growth: 'growth' };
 
 /**
  * §30 — every check orangebox makes, across runs, worst first.
@@ -1229,7 +1235,7 @@ async function diagnoseReport(args) {
     for (const entry of result.runs) {
       console.log(`  ${entry.run.name ?? entry.run.id}  ${fmtDim(entry.run.id)}`);
       for (const finding of entry.findings) {
-        console.log(`    ${warn(FINDING_MARK[finding.kind].padEnd(8))} ${finding.text}`);
+        console.log(`    ${warn((FINDING_MARK[finding.kind] ?? finding.kind).padEnd(8))} ${finding.text}`);
       }
     }
     console.log();
