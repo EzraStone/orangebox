@@ -529,7 +529,9 @@ pre.payload.clamped {
 }
 
 .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
-.seg { padding: 3px 9px; font-size: 11px; color: var(--muted); }
+/* 24px is the WCAG 2.2 minimum target size (2.5.8). The window buttons were
+   23px and every cross-run view uses them, so they fell short everywhere. */
+.seg { padding: 3px 9px; font-size: 11px; color: var(--muted); min-height: 24px; }
 .seg[aria-pressed="true"] { background: var(--panel-hi); color: var(--text); }
 
 .diffhead {
@@ -1007,8 +1009,14 @@ kbd {
 .diag-kind { flex: 0 0 120px; font-family: var(--mono); font-size: 11px; }
 .diag-text { color: var(--muted); flex: 1; }
 .diag-open {
-  font: inherit; font-size: 11px; color: var(--muted);
-  background: none; border: 1px solid var(--line); border-radius: 3px; padding: 0 6px; cursor: pointer;
+  font: inherit; font-size: 11px; color: var(--muted); min-height: 24px;
+  background: none; border: 1px solid var(--line); border-radius: 3px; padding: 0 8px; cursor: pointer;
+}
+
+/* On a touch screen the minimum is not enough: a fingertip is about 40px
+   across, and these sit close to their neighbours. */
+@media (pointer: coarse) {
+  .seg, .diag-open { min-height: 36px; }
 }
 .diag-open:hover, .diag-open:focus-visible { color: var(--text); border-color: var(--muted); }
 

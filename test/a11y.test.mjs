@@ -110,3 +110,19 @@ test('the banners are repainted from the last answer, not left blank', () => {
     'the cache is cleared after the run id is updated, which never clears it'
   );
 });
+
+test('small controls meet the minimum target size', () => {
+  // WCAG 2.2 2.5.8 asks for 24px. The time-window buttons were 23px and the
+  // diagnosis "show call" button 19px, measured in a browser at phone width.
+  for (const selector of ['.seg', '.diag-open']) {
+    // Found by position rather than a built regex: the selectors are full of
+    // dots, and every escape is one more thing to get wrong than it is worth.
+    const at = css.indexOf(`\n${selector} {`);
+    assert.ok(at >= 0, `no rule for ${selector}`);
+    const rule = css.slice(at, css.indexOf('}', at));
+    const min = Number(rule.match(/min-height:\s*(\d+)px/)?.[1] ?? 0);
+    assert.ok(min >= 24, `${selector} has no min-height of at least 24px`);
+  }
+  assert.match(css, /@media \(pointer: coarse\)[\s\S]*?\.seg, \.diag-open \{ min-height: 36px; \}/,
+    'touch screens get a size a fingertip can hit');
+});
