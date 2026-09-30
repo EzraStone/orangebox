@@ -122,15 +122,18 @@ const REPORT_CSS = 'body{max-width:980px;margin:40px auto;padding:0 20px;backgro
   + '.flag{margin:14px 0 0;padding:10px 12px;border-radius:6px;border:1px solid #5a4318;background:rgba(232,163,61,.1);color:#e8a33d}';
 
 /**
- * The numbers somebody opens the report to find, above the calls.
+ * The numbers somebody opens a report to find, and the warnings, as data.
  *
- * A bug report is read by someone who was not there. Making them add up
- * fifteen per-call costs to answer "what did this cost" is how a report gets
- * skimmed and then ignored.
+ * A bug report is read by someone who was not there; making them add up
+ * fifteen per-call costs to learn what the run cost is how a report gets
+ * skimmed and then ignored. Both the HTML and the Markdown report render this
+ * rather than each working the figures out for itself — two reports of one
+ * run that disagreed about what it cost would be worse than either alone.
  */
-function summarySection(run, calls) {
+export function runSummary(run, calls) {
   const growth = contextGrowth(calls);
   const loops = findLoops(calls);
+  const truncations = findTruncations(calls);
   const errors = calls.filter((call) => call.error_type).length;
 
   const items = [
@@ -144,7 +147,6 @@ function summarySection(run, calls) {
   ];
 
   const flags = [];
-  const truncations = findTruncations(calls);
   if (truncations.truncated_calls > 0) {
     const n = truncations.truncated_calls;
     flags.push(`${n} ${n === 1 ? 'response was' : 'responses were'} cut off at the output limit (call${n === 1 ? '' : 's'} ${truncations.calls.map((c) => c.seq).join(', ')}).`);
@@ -157,10 +159,78 @@ function summarySection(run, calls) {
     flags.push(`The prompt grew ${growth.growth.toFixed(1)}x and almost none of it was cached.`);
   }
 
+  return { items, flags };
+}
+
+function summarySection(run, calls) {
+  const { items, flags } = runSummary(run, calls);
   return `<dl class="summary">${items.map(([label, value, note]) => `
   <div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}${note ? `<small>${escapeHtml(note)}</small>` : ''}</dd></div>`).join('')}
 </dl>${flags.map((text) => `
 <p class="flag">${escapeHtml(text)}</p>`).join('')}`;
+}
+
+/**
+ * A run as Markdown, for pasting into an issue or a pull request.
+ *
+ * The HTML report is a file you attach; this is text you paste, so it is
+ * shaped for what GitHub renders: a summary table, the warnings as a quote,
+ * one row per call, and the last request and response folded away in
+ * <details> so the issue stays readable.
+ */
+export function buildMarkdownReport(payload) {
+  const run = payload.run;
+  const calls = payload.calls ?? [];
+  const { items, flags } = runSummary(run, calls);
+  const lines = [];
+
+  lines.push(`### orangebox run: ${mdCell(run.name ?? run.id)}`, '');
+  lines.push('| | |', '| --- | --- |');
+  for (const [label, value, note] of items) {
+    lines.push(`| ${label} | ${mdCell(value)}${note ? ` (${mdCell(note)})` : ''} |`);
+  }
+  lines.push('');
+
+  for (const flag of flags) lines.push(`> **${mdCell(flag)}**`);
+  if (flags.length) lines.push('');
+
+  lines.push('| # | Model | Latency | Tokens | Cost | Stop |', '| ---: | --- | ---: | --- | ---: | --- |');
+  for (const call of calls) {
+    const stop = call.error_type ? `error: ${call.error_type}` : (call.stop_reason ?? '');
+    lines.push(`| ${call.seq} | ${mdCell(call.model ?? call.endpoint)} | ${formatMs(call.latency_ms)} | ${formatTokens(call)} | ${formatCost(call.cost_usd)} | ${mdCell(stop)} |`);
+  }
+  lines.push('');
+
+  const last = calls.at(-1);
+  if (last) {
+    for (const [label, body] of [['request', last.request_json], ['response', last.response_json]]) {
+      lines.push(`<details><summary>Last ${label} (call ${last.seq})</summary>`, '', mdFence(prettyJson(body)), '', '</details>', '');
+    }
+  }
+
+  lines.push(`<sub>orangebox ${mdCell(payload.orangebox_version ?? '')} · sanitized · ${new Date(payload.exported_at).toISOString()}</sub>`);
+  return lines.join('\n') + '\n';
+}
+
+/**
+ * Text safe to put in a Markdown table cell.
+ *
+ * Recorded values are untrusted: a model name or stop reason containing a pipe
+ * would shift every column after it, and a newline would end the table.
+ */
+function mdCell(value) {
+  return String(value ?? '')
+    .replaceAll('\\', '\\\\')
+    .replaceAll('|', '\\|')
+    .replace(/[\r\n]+/g, ' ')
+    .replaceAll('<', '&lt;');
+}
+
+/** A code fence that recorded content cannot close early. */
+function mdFence(text) {
+  const longest = Math.max(2, ...[...String(text).matchAll(/`+/g)].map((m) => m[0].length));
+  const fence = '`'.repeat(longest + 1);
+  return `${fence}json\n${text}\n${fence}`;
 }
 
 

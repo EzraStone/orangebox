@@ -493,10 +493,19 @@ async function postJson(url, body, health, authToken = null) {
 
 // --------------------------------------------------------------- export
 
+/**
+ * Every format `export` can write. `shared` formats exist to be handed to
+ * somebody else, so they are sanitized whether or not anyone asked; the rest
+ * are for you, and are written as recorded unless you ask otherwise.
+ */
 const EXPORT_FORMATS = {
-  json: { extension: 'json', label: 'JSON' },
-  html: { extension: 'html', label: 'HTML report' },
-  otel: { extension: 'otel.json', label: 'OpenTelemetry spans' }
+  json: { extension: 'json', label: 'JSON', shared: false, build: (payload) => JSON.stringify(payload, null, 2) },
+  html: { extension: 'html', label: 'HTML report', shared: true, build: (payload, x) => x.buildHtmlReport(payload) },
+  md: { extension: 'md', label: 'Markdown report', shared: true, build: (payload, x) => x.buildMarkdownReport(payload) },
+  otel: {
+    extension: 'otel.json', label: 'OpenTelemetry spans', shared: false,
+    build: (payload, x) => JSON.stringify(x.buildOtelExport(payload), null, 2)
+  }
 };
 
 async function exportRun(args) {
@@ -529,11 +538,11 @@ async function exportRun(args) {
   }
 
   const runId = positional[0];
-  if (!runId) fail('usage: orangebox export <run-id> [-o file] [--format json|html|otel]');
+  if (!runId) fail(`usage: orangebox export <run-id> [-o file] [--format ${Object.keys(EXPORT_FORMATS).join('|')}]`);
 
   const { openStore } = await import('./store.mjs');
   const { buildExport } = await import('./server.mjs');
-  const { sanitizeExport, buildHtmlReport, buildOtelExport } = await import('./export.mjs');
+  const builders = await import('./export.mjs');
   const fs = await import('node:fs');
 
   const store = openStore(dbPath ?? defaultDbPath());
@@ -543,16 +552,13 @@ async function exportRun(args) {
     const calls = payload.calls.length;
     const tools = payload.tools.length;
 
-    // An HTML report is for handing to somebody else, so it is sanitized
-    // whether or not you remembered to ask — the same rule the HTTP route
-    // follows. Say so, because a silently redacted report is a confusing one.
-    const sanitized = sanitize ?? (format === 'html' ? 'basic' : null);
-    if (sanitized) payload = sanitizeExport(payload, { full: sanitized === 'full' });
+    // A report is for handing to somebody else, so it is sanitized whether or
+    // not you remembered to ask — the same rule the HTTP route follows. Say
+    // so, because a silently redacted report is a confusing one.
+    const sanitized = sanitize ?? (EXPORT_FORMATS[format].shared ? 'basic' : null);
+    if (sanitized) payload = builders.sanitizeExport(payload, { full: sanitized === 'full' });
 
-    let body;
-    if (format === 'html') body = buildHtmlReport(payload);
-    else if (format === 'otel') body = JSON.stringify(buildOtelExport(payload), null, 2);
-    else body = JSON.stringify(payload, null, 2);
+    const body = EXPORT_FORMATS[format].build(payload, builders);
 
     const target = outFile ?? `orangebox-run-${runId}.${EXPORT_FORMATS[format].extension}`;
     fs.writeFileSync(target, body);
@@ -2040,7 +2046,7 @@ orangebox v${VERSION} — flight recorder for AI agents
 USAGE
   orangebox [start] [options]          start recording (default command)
   orangebox run [--name "..."] -- CMD  run CMD with its calls grouped into one run
-  orangebox export <run-id> [-o file]  write a run out; --format json|html|otel,
+  orangebox export <run-id> [-o file]  write a run out; --format json|html|md|otel,
                                        --sanitize or --sanitize-full to redact it
   orangebox assert <run-id> [limits]    fail CI when a recorded run exceeds a limit
   orangebox spend [--group <k>]        what your agents have cost so far

@@ -691,7 +691,7 @@ test('`export` refuses a format it cannot write', async () => {
     const result = await runCli(['export', 'whatever', '--db', server.dbPath, '--format', 'pdf']);
     assert.notEqual(result.code, 0);
     assert.match(result.output, /unknown format "pdf"/);
-    assert.match(result.output, /json, html, otel/);
+    assert.match(result.output, /json, html, md, otel/);
   } finally {
     await server.stop();
     removeTempDir(server.dbPath);
@@ -910,6 +910,35 @@ test('`diagnose` lists every run with something wrong, worst first (§30)', asyn
     const quiet = await runCli(['diagnose', '--db', server.dbPath, '--since', '2099-01-01', '--fail']);
     assert.equal(quiet.code, 0);
     assert.match(quiet.stdout, /Nothing wrong found in 0 run\(s\) since 2099-01-01/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});
+
+test('`export --format md` writes a sanitized report to paste into an issue', async () => {
+  const server = await startCliServer();
+  const outDir = fs.mkdtempSync(path.join(path.dirname(server.dbPath), 'md-'));
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const run = store.createRun({ name: 'pasteable', source: 'explicit' });
+    store.insertCall({
+      id: 'md-1', run_id: run.id, seq: 1, provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+      started_at: Date.now(), input_tokens: 100, output_tokens: 10, cost_usd: 0.01, stop_reason: 'max_tokens',
+      request_json: JSON.stringify({ messages: [{ role: 'user', content: 'mail dev@example.com' }] }), response_json: '{}'
+    });
+    store.close();
+
+    const target = path.join(outDir, 'run.md');
+    const result = await runCli(['export', run.id, '--db', server.dbPath, '--format', 'md', '-o', target]);
+    assert.equal(result.code, 0, result.output);
+    assert.match(result.stdout, /Markdown report.*sanitized by default/);
+
+    const md = fs.readFileSync(target, 'utf8');
+    assert.match(md, /### orangebox run: pasteable/);
+    assert.match(md, /1 response was cut off/);
+    assert.equal(md.includes('dev@example.com'), false);
   } finally {
     await server.stop();
     removeTempDir(server.dbPath);

@@ -265,3 +265,48 @@ test('a cut-off call says so in its span and in the report (§29)', () => {
 
   assert.match(buildHtmlReport(cut), /1 response was cut off at the output limit \(call 2\)/);
 });
+
+test('the Markdown report leads with the same summary as the HTML one', async () => {
+  // One set of figures, two renderings — two reports of one run that
+  // disagreed about its cost would be worse than either alone.
+  const { buildMarkdownReport, runSummary } = await import('../src/export.mjs');
+  const clean = sanitizeExport(payload);
+  const md = buildMarkdownReport(clean);
+
+  for (const [label, value] of runSummary(clean.run, clean.calls).items) {
+    assert.ok(md.includes(`| ${label} | ${value}`), `${label} missing or different`);
+  }
+  assert.match(md, /^### orangebox run: /);
+  assert.match(md, /\| # \| Model \| Latency \| Tokens \| Cost \| Stop \|/);
+});
+
+test('recorded values cannot break the Markdown table or close the fence', async () => {
+  // A model name with a pipe would shift every column after it; a response
+  // containing ``` would end the code block and render the rest as Markdown.
+  const { buildMarkdownReport } = await import('../src/export.mjs');
+  const nasty = {
+    orangebox_export: 1, orangebox_version: '0.0.0', exported_at: Date.now(),
+    run: { id: 'r', name: 'a | b\nc', cost_usd: 0.01, unknown_cost_count: 0 },
+    calls: [{
+      seq: 1, id: 'c1', provider: 'openai', endpoint: '/v1', model: 'evil|model<script>',
+      stop_reason: 'stop', request_json: '{}', response_json: JSON.stringify({ text: 'x ``` y ```` z' })
+    }],
+    tools: []
+  };
+  const md = buildMarkdownReport(nasty);
+
+  // Built with a variable rather than escapes in a literal: what is being
+  // checked is that a backslash reaches the output, so the test should not
+  // depend on one surviving its own quoting.
+  const escapedPipe = String.fromCharCode(92) + '|';
+  assert.ok(md.includes(`evil${escapedPipe}model&lt;script>`), 'pipe escaped and tag defused');
+  assert.ok(md.includes(`a ${escapedPipe} b c`), 'newline in a name folded into the cell');
+  assert.equal(md.includes('<script>'), false);
+
+  // The response holds a run of four backticks, so its fence needs five; the
+  // request holds none and keeps the ordinary three.
+  const response = md.slice(md.indexOf('Last response'));
+  const fence = response.match(/^(`{3,})json$/m)[1];
+  assert.equal(fence.length, 5, 'the fence is longer than any run of backticks inside it');
+  assert.ok(response.includes(`${fence}json`) && response.lastIndexOf(fence) > response.indexOf(`${fence}json`));
+});

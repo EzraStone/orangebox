@@ -193,7 +193,7 @@ four times budget — a regression rather than a noisy neighbour.
 | --- | --- |
 | `orangebox` (or `orangebox start`) | Start recording. This is the default command. |
 | `orangebox run [--name "…"] -- CMD` | Run `CMD` with `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` pointed at a run-scoped prefix, so its calls group exactly. Exits with the child's exit code. |
-| `orangebox export <run-id> [-o file]` | Write a run out. `--format json` (default), `html` for a self-contained report, or `otel` for OpenTelemetry spans. `--sanitize` redacts prompts; `--sanitize-full` also replaces ids. |
+| `orangebox export <run-id> [-o file]` | Write a run out. `--format json` (default), `html` for a self-contained report, `md` to paste into an issue, or `otel` for OpenTelemetry spans. `--sanitize` redacts prompts; `--sanitize-full` also replaces ids. |
 | `orangebox assert <run-id> [limits]` | Exit non-zero when cost, latency, errors, call count, repeats, context growth, or unknown costs exceed a CI threshold. |
 | `orangebox spend [--group <k>]` | What your agents have cost, by model, provider, run, or day — with an explicit count of what it could not price. |
 | `orangebox import <file.json>` | Load a run somebody exported. Additive — never overwrites what you already have. |

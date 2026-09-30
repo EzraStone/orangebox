@@ -12,7 +12,7 @@ import { openStore, newId, safeStringify } from './store.mjs';
 import { createLiveHub } from './live.mjs';
 import { loadPricing, cacheSavings } from './pricing.mjs';
 import { createProxy } from './proxy.mjs';
-import { compareRuns, sanitizeExport, buildHtmlReport, buildOtelExport } from './export.mjs';
+import { compareRuns, sanitizeExport, buildHtmlReport, buildMarkdownReport, buildOtelExport } from './export.mjs';
 import { createMobileAccess, mobileSessionCanAccess, MOBILE_SESSION_TTL_SECONDS, pairingUrl } from './mobile.mjs';
 import { resolveCredential, missingCredentialMessage, credentialRequired } from './credentials.mjs';
 
@@ -635,8 +635,21 @@ async function handleApi(req, res, ctx, pathname, url) {
       });
       return void res.end(html);
     }
+    if (format === 'md') {
+      // Sanitized for the same reason as HTML: it exists to be pasted where
+      // other people will read it. Served as plain text, never as a page.
+      if (!sanitize) payload = sanitizeExport(payload);
+      const markdown = buildMarkdownReport(payload);
+      res.writeHead(200, {
+        'content-type': 'text/markdown; charset=utf-8',
+        'content-disposition': `${url.searchParams.get('download') === '1' ? 'attachment' : 'inline'}; filename="orangebox-run-${safeId}.md"`,
+        'content-length': Buffer.byteLength(markdown),
+        'x-content-type-options': 'nosniff'
+      });
+      return void res.end(markdown);
+    }
     if (format === 'otel') payload = buildOtelExport(payload);
-    else if (format !== 'json') return sendJson(res, 400, { error: 'format must be json, html, or otel' });
+    else if (format !== 'json') return sendJson(res, 400, { error: 'format must be json, html, md, or otel' });
     const filename = format === 'otel' ? `orangebox-run-${safeId}.otel.json` : `orangebox-run-${safeId}.json`;
     res.writeHead(200, {
       'content-type': 'application/json; charset=utf-8',
