@@ -10,7 +10,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHIPPED = path.join(HERE, 'pricing.json');
 
 /** Providers that run on your own hardware, where per-token cost is zero. */
-const LOCAL_PROVIDERS = new Set(['ollama']);
+export const LOCAL_PROVIDERS = new Set(['ollama']);
 
 export function userPricingPath() {
   return path.join(os.homedir(), '.orangebox', 'pricing.json');

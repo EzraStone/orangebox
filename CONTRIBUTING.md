@@ -74,8 +74,9 @@ having missed at least one of them.
 11. `PROXIED` in `ui/service-worker.js` — the offline worker must never touch
     its traffic
 
-Every one of 3 to 11 now has a test that derives it from the routing table, so
-a provider missing from any of them fails the suite by name. Run `npm test` and
+Every one of 2 to 11 has a test that derives it from the routing table, so a
+provider missing from any of them fails the suite by name (number 7 checks one
+representative model per provider, not the whole catalogue). Run `npm test` and
 believe it over this list.
 
 Numbers 9 to 11 were each found the same way: a list that named Anthropic and
