@@ -154,3 +154,52 @@ test('the timeline marks a tool stop whichever provider made it', async () => {
   assert.equal(stopKind('end_turn'), '');
   assert.equal(stopKind(null), '');
 });
+
+test('every routable provider has said where its request sets the output limit', async () => {
+  const { OUTPUT_LIMIT_FIELDS } = await import('../src/truncation.mjs');
+  assert.deepEqual(Object.keys(OUTPUT_LIMIT_FIELDS).sort(), [...ROUTABLE_PROVIDERS].sort());
+});
+
+test('the limit a truncated request asked for is found in each provider’s own field', async () => {
+  // "cut off" says something went wrong; "max_completion_tokens was 4096"
+  // says what to change.
+  const { requestedLimit } = await import('../src/truncation.mjs');
+  const cases = [
+    ['anthropic', { max_tokens: 1024 }, 'max_tokens', 1024],
+    ['openai', { max_completion_tokens: 4096, max_tokens: 99 }, 'max_completion_tokens', 4096],
+    ['openai', { max_tokens: 512 }, 'max_tokens', 512],
+    ['openai', { max_output_tokens: 2048 }, 'max_output_tokens', 2048],
+    ['gemini', { generationConfig: { maxOutputTokens: 800 } }, 'generationConfig.maxOutputTokens', 800],
+    ['ollama', { options: { num_predict: 128 } }, 'options.num_predict', 128],
+    ['bedrock', { inferenceConfig: { maxTokens: 300 } }, 'inferenceConfig.maxTokens', 300]
+  ];
+  for (const [provider, request, field, value] of cases) {
+    assert.deepEqual(requestedLimit(provider, JSON.stringify(request)), { field, value }, `${provider} ${field}`);
+  }
+});
+
+test('a request that set no limit says so rather than guessing one', async () => {
+  // The provider's default applied, and orangebox cannot see what it was.
+  const { requestedLimit } = await import('../src/truncation.mjs');
+  assert.equal(requestedLimit('openai', '{"model":"x"}'), null);
+  assert.equal(requestedLimit('anthropic', 'not json'), null);
+  assert.equal(requestedLimit('unknown-provider', '{"max_tokens":5}'), null);
+  assert.equal(requestedLimit('anthropic', { max_tokens: '1024' }), null, 'a string is not a limit');
+});
+
+test('truncationsIn names the limit each cut-off call hit', async () => {
+  const { Store, newId } = await import('../src/store.mjs');
+  const store = new Store(':memory:');
+  try {
+    const run = store.createRun({ name: 'limited', source: 'explicit' });
+    store.insertCall({
+      id: newId(), run_id: run.id, seq: 1, provider: 'openai', endpoint: '/v1/chat/completions', model: 'gpt-5.6-sol',
+      started_at: Date.now(), output_tokens: 300, stop_reason: 'length',
+      request_json: JSON.stringify({ model: 'gpt-5.6-sol', max_completion_tokens: 300 })
+    });
+    const [call] = store.truncationsIn(run.id).calls;
+    assert.deepEqual(call.limit, { field: 'max_completion_tokens', value: 300 });
+  } finally {
+    store.close();
+  }
+});

@@ -952,7 +952,9 @@ export class Store {
 
   /** §29 — calls in this run that stopped at their output limit. */
   truncationsIn(runId) {
-    return findTruncations(this.callSummaries(runId));
+    // Full rows, because naming the limit that was hit means reading the
+    // request that set it. Only truncated calls parse theirs.
+    return findTruncations(this.fullCalls(runId));
   }
 
   /**
