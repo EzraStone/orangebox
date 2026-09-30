@@ -6,19 +6,21 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Added
 
+- Diagnosis (§30): `orangebox diagnose`, `GET /api/diagnosis`, and a Diagnosis view behind `d` — every run in a window with an unanswered tool call, a cut-off answer, a loop or runaway context, ranked by what was found rather than when. Each finding opens onto the call behind it, loop findings say what the repeats cost, growth findings name the tool behind the growth, and the note you left on a run is shown beside it. `--fail` for nightly jobs.
+- Cut-off answers (§29): `orangebox truncated`, `GET /api/runs/:id/truncations`, a banner on the timeline, and `orangebox assert --max-truncated`. Recognises a response that stopped at its output limit in every provider's spelling, and names the request parameter that set the limit in that provider's own spelling (`max_completion_tokens`, `generationConfig.maxOutputTokens`, …) so the advice says which setting to raise. `orangebox tail`, the HTML and Markdown reports and the OTel export all mark them too.
+- Tool weight (§31): `GET /api/runs/:id/tool-weight`, a breakdown at the end of `orangebox context`, and a line on the timeline's context strip — which tools' results a run's prompts carried, weighted by how many calls re-sent them. Estimated from stored bytes, and labelled so everywhere; the reports and the OTel run span name the dominant tool, never a size.
 - `orangebox assert --limits <file>`, and `orangebox.limits.json` picked up from the working directory: CI thresholds as a JSON file keyed by flag name. Flags beat the file; unknown keys and wrong types are refused; a run asserted with no limits says it checked nothing.
 - `orangebox export --format md`: a run as Markdown, for pasting into an issue.
-- Tool weight (§31): `GET /api/runs/:id/tool-weight`, a breakdown at the end of `orangebox context`, and a line on the timeline's context strip — which tools' results a run's prompts carried, weighted by how many calls re-sent them. Estimated from stored bytes, and labelled so.
-- Diagnosis (§30): `orangebox diagnose`, `GET /api/diagnosis`, and a Diagnosis view behind `d` — every run in a window with an unanswered tool call, a cut-off answer, a loop or runaway context, ranked by what was found. Findings open onto the call behind them, and show the note left on the run. `--fail` for nightly jobs.
-- Cut-off answers name the request parameter that set the limit, in that provider's own spelling (`max_completion_tokens`, `generationConfig.maxOutputTokens`, …), so the advice says which setting to raise.
-- `orangebox tail` marks cut-off answers; `orangebox doctor` reports the age of the shipped price table.
-- Cut-off answers (§29): `orangebox truncated`, `GET /api/runs/:id/truncations`, a banner on the timeline, and `orangebox assert --max-truncated`. Finds responses that stopped at their output limit, whichever provider's spelling of that they used.
+- `orangebox doctor` reports the age of the shipped price table, and says so louder past ninety days.
+- The OTel export sends `gen_ai.response.finish_reasons` on every call span.
 
 ### Fixed
 
-- Sanitized exports turned null token counts into the string `[redacted-secret]`, which made the context-growth maths NaN — so the "prompt grew and nothing was cached" warning never appeared in a shared HTML report.
-- The test suite leaked a temp directory per recorder it started: 6,600 of them, 408 MB, before anyone looked.
 - The timeline's stop chip recognised only Anthropic's `max_tokens` and `tool_use`. An OpenAI response cut off with `length` or a Gemini one with `MAX_TOKENS` drew as an ordinary finish, and OpenAI's `tool_calls` got no colour.
+- Sanitized exports turned null token counts into the string `[redacted-secret]`, which made the context-growth maths NaN — so the "prompt grew and nothing was cached" warning never appeared in a shared HTML report.
+- The offline service worker's list of proxied paths it must never touch named `/openai` and `/anthropic` only. Nothing leaked — it caches listed shell assets alone — but the guard now covers every routable provider.
+- The time-window buttons and the Diagnosis view's "show call" button were below the 24px minimum target size (WCAG 2.2, 2.5.8); they are 24px, and 36px on touch screens. The Diagnosis view's findings no longer squeeze into a 77px column on a phone.
+- The test suite leaked a temp directory per recorder it started: 6,600 of them, 408 MB, before anyone looked.
 
 ## [1.5.0] - 2026-09-29
 
