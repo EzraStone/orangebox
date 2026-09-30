@@ -54,6 +54,8 @@ export async function main(argv) {
       return contextReport(rest);
     case 'truncated':
       return truncationReport(rest);
+    case 'diagnose':
+      return diagnoseReport(rest);
     case 'tail':
       return tail(rest);
     case 'note':
@@ -1071,6 +1073,74 @@ async function loopReport(args) {
     store.close();
   }
 }
+// -------------------------------------------------------------- diagnose
+
+const FINDING_MARK = { truncated: 'cut off', loop: 'loop', growth: 'growth' };
+
+/**
+ * §30 — every check orangebox makes, across runs, worst first.
+ *
+ * Exits non-zero when anything is found and --fail is passed, so a nightly job
+ * can run one command instead of three and still say why it failed.
+ */
+async function diagnoseReport(args) {
+  let dbPath = null;
+  let format = 'text';
+  let limit = 200;
+  let failOnFinding = false;
+  const window = { from: null, to: null };
+
+  for (let i = 0; i < args.length; i++) {
+    const next = () => {
+      const value = args[++i];
+      if (value === undefined) fail(`${args[i - 1]} needs a value`);
+      return value;
+    };
+    switch (args[i]) {
+      case '--db': dbPath = next(); break;
+      case '--since': window.from = epochArg(next(), '--since'); break;
+      case '--until': window.to = epochArg(next(), '--until'); break;
+      case '--days': window.from = Date.now() - int(next(), '--days') * 86_400_000; break;
+      case '--limit': limit = int(next(), '--limit'); break;
+      case '--fail': failOnFinding = true; break;
+      case '--json': format = 'json'; break;
+      default: fail(`unknown flag "${args[i]}"`);
+    }
+  }
+
+  const { openStore } = await import('./store.mjs');
+  const store = openStore(dbPath ?? defaultDbPath());
+
+  try {
+    const result = store.diagnose({ limit, ...window });
+    if (failOnFinding && result.flagged_runs > 0) process.exitCode = 1;
+
+    if (format === 'json') return void console.log(JSON.stringify(result, null, 2));
+
+    if (result.flagged_runs === 0) {
+      console.log(`Nothing wrong found in ${result.checked_runs} run(s)${describeRunWindow(window)}.`);
+      return;
+    }
+
+    console.log();
+    for (const entry of result.runs) {
+      console.log(`  ${entry.run.name ?? entry.run.id}  ${fmtDim(entry.run.id)}`);
+      for (const finding of entry.findings) {
+        console.log(`    ${warn(FINDING_MARK[finding.kind].padEnd(8))} ${finding.text}`);
+      }
+    }
+    console.log();
+
+    const { truncated, loop, growth } = result.counts;
+    console.log(`  ${result.flagged_runs} of ${result.checked_runs} run(s) need a look — `
+      + `${truncated} with cut-off answers, ${loop} looping, ${growth} with runaway context`);
+    console.log(`  ${fmtDim('orangebox truncated | loops | context <run-id> for the detail')}`);
+    console.log();
+  } finally {
+    store.close();
+  }
+}
+
 // ------------------------------------------------------------- truncated
 
 /**
@@ -1645,6 +1715,8 @@ function epochArg(value, flag) {
 // or a CI log should produce text, not escape sequences.
 const useColour = () => process.stdout.isTTY === true && !process.env.NO_COLOR;
 const warn = (text) => (useColour() ? String.fromCharCode(27) + '[33m' + text + String.fromCharCode(27) + '[0m' : text);
+// Secondary detail — a run id beside its name, a hint under a report.
+const fmtDim = (text) => (useColour() ? String.fromCharCode(27) + '[2m' + text + String.fromCharCode(27) + '[0m' : text);
 
 const BAR_WIDTH = 34;
 
@@ -1976,6 +2048,7 @@ USAGE
   orangebox loops [<run-id>] [--days n] find prompts your agent sent more than once
   orangebox context [<run-id>] [--all] how far the prompt grew, and what cached
   orangebox truncated [<run-id>]       find responses cut off at their output limit
+  orangebox diagnose [--days n]        every check above, across runs, worst first
   orangebox tail [--run <id>]          watch calls as they are recorded
   orangebox note [<id> "text"]         leave or read a note on a run or call
   orangebox errors                     which failures keep happening, across runs

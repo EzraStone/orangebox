@@ -201,6 +201,7 @@ four times budget — a regression rather than a noisy neighbour.
 | `orangebox loops [<run-id>]` | Find prompts your agent sent more than once, and what the repeats cost. `--days`, `--since`, `--until` window it. |
 | `orangebox context [<run-id>] [--all]` | How far the prompt grew over a run, and how much of it the provider cached. `--all` ranks every run by growth; `--days`, `--since`, `--until` window it. |
 | `orangebox truncated [<run-id>]` | Responses cut off at their output limit, across runs. Takes the same window flags. |
+| `orangebox diagnose [--days n]` | Every check at once — cut-off answers, loops, runaway context — across runs, worst first. `--fail` exits non-zero when anything is found. |
 | `orangebox tail [--run <id>]` | Watch calls as they are recorded, one line each. Works without a running recorder. |
 | `orangebox note [<id> "text"]` | Leave or read a note on a run or call; with no arguments, lists every note. |
 | `orangebox find <text>` | Search recorded prompts and responses. Prints the run, call, model, and a snippet. |

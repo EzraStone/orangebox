@@ -879,3 +879,39 @@ test('`assert --max-truncated` fails a run whose answers were cut off (§29)', a
     removeTempDir(server.dbPath);
   }
 });
+
+test('`diagnose` lists every run with something wrong, worst first (§30)', async () => {
+  const server = await startCliServer();
+  try {
+    const { openStore } = await import('../src/store.mjs');
+    const store = openStore(server.dbPath);
+    const add = (run, i, stop, prompt) => store.insertCall({
+      id: `${run.id}-${i}`, run_id: run.id, seq: store.nextSeq(run.id),
+      provider: 'anthropic', endpoint: '/v1/messages', model: 'claude-opus-5',
+      started_at: Date.now() + i, input_tokens: 400, output_tokens: 50, cost_usd: 0.01, stop_reason: stop,
+      request_json: JSON.stringify({ messages: [{ role: 'user', content: prompt }] })
+    });
+
+    const healthy = store.createRun({ name: 'healthy', source: 'explicit' });
+    ['a', 'b'].forEach((p, i) => add(healthy, i, 'end_turn', p));
+    const cut = store.createRun({ name: 'cut', source: 'explicit' });
+    add(cut, 0, 'max_tokens', 'write it all');
+    store.close();
+
+    const report = await runCli(['diagnose', '--db', server.dbPath]);
+    assert.equal(report.code, 0, 'a report is not a failure unless --fail asks for one');
+    assert.match(report.stdout, /cut off\s+1 response cut off/);
+    assert.equal(report.stdout.includes('healthy'), false);
+    assert.match(report.stdout, /1 of 2 run\(s\) need a look/);
+
+    const gated = await runCli(['diagnose', '--db', server.dbPath, '--fail']);
+    assert.equal(gated.code, 1);
+
+    const quiet = await runCli(['diagnose', '--db', server.dbPath, '--since', '2099-01-01', '--fail']);
+    assert.equal(quiet.code, 0);
+    assert.match(quiet.stdout, /Nothing wrong found in 0 run\(s\) since 2099-01-01/);
+  } finally {
+    await server.stop();
+    removeTempDir(server.dbPath);
+  }
+});
