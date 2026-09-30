@@ -332,8 +332,9 @@ button {
   color: var(--muted);
   white-space: nowrap;
 }
-.chip.stop-tool_use { border-color: var(--blue-dim); background: rgba(91, 141, 239, 0.12); color: var(--blue); }
-.chip.stop-max_tokens { border-color: #5a4318; background: rgba(232, 163, 61, 0.12); color: var(--amber); }
+/* Named by kind, not by one provider's spelling of it (§29). */
+.chip.stop-tool { border-color: var(--blue-dim); background: rgba(91, 141, 239, 0.12); color: var(--blue); }
+.chip.stop-truncated { border-color: #5a4318; background: rgba(232, 163, 61, 0.12); color: var(--amber); }
 .chip.stop-error { border-color: #5c2226; background: rgba(229, 72, 77, 0.14); color: var(--err); }
 .chip.streaming { border-color: var(--orange-dim); color: var(--orange); }
 

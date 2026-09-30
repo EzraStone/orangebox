@@ -2,7 +2,7 @@
 // third-party anything. Every piece of recorded content is inserted with
 // textContent; a prompt containing markup renders inert (§12.3).
 import { diffLines, collapseUnchanged, diffStats } from '/diff.js';
-import { el, $, fmt, SHORTCUTS, throttled } from '/dom.js';
+import { el, $, fmt, SHORTCUTS, throttled, stopKind } from '/dom.js';
 import { renderSpend, loadSpend } from '/spend.js';
 import { renderTools, loadTools } from '/tools.js';
 import { renderFind, loadFind, state as findState } from '/find.js';
@@ -971,8 +971,14 @@ function callNode(call) {
   if (isError) {
     chips.push(el('span', { class: 'chip stop-error', text: `▲ ${call.error_type}` }));
   } else if (call.stop_reason) {
-    const known = ['tool_use', 'max_tokens'].includes(call.stop_reason) ? call.stop_reason : '';
-    chips.push(el('span', { class: `chip ${known ? `stop-${known}` : ''}`, text: `stop: ${call.stop_reason}` }));
+    const kind = stopKind(call.stop_reason);
+    chips.push(el('span', {
+      class: `chip ${kind ? `stop-${kind}` : ''}`,
+      // The provider's own word is kept on the chip; the title says what it
+      // means, because "length" does not announce itself as a failure.
+      title: kind === 'truncated' ? 'Cut off at the output limit — the model had more to say' : null,
+      text: `stop: ${call.stop_reason}`
+    }));
   }
 
   const tokens =

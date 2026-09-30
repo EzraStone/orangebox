@@ -204,3 +204,25 @@ export function throttled(ms, fn) {
     }, wait);
   };
 }
+
+/**
+ * What kind of stop a provider's stop reason is, whatever the provider.
+ *
+ * The timeline used to recognise Anthropic's spelling only, so an OpenAI
+ * response cut off with `length`, or a Gemini one with `MAX_TOKENS`, drew as an
+ * ordinary finish — the one warning chip that matters, missing for three of
+ * the five providers.
+ *
+ * TRUNCATED_STOPS must equal every entry in TRUNCATION_REASONS in
+ * src/truncation.mjs. This file cannot import that one (ui/ is static assets
+ * with no build step), so a test checks the two agree.
+ */
+export const TRUNCATED_STOPS = new Set(['max_tokens', 'length', 'max_output_tokens', 'MAX_TOKENS']);
+export const TOOL_STOPS = new Set(['tool_use', 'tool_calls']);
+
+export function stopKind(reason) {
+  if (typeof reason !== 'string' || reason === '') return '';
+  if (TRUNCATED_STOPS.has(reason)) return 'truncated';
+  if (TOOL_STOPS.has(reason)) return 'tool';
+  return '';
+}

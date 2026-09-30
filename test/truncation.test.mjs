@@ -135,3 +135,22 @@ test('GET /api/runs/:id/truncations answers with the same shape as the store', a
     removeTempDir(app.dbPath);
   }
 });
+
+test('the timeline recognises the same cut-off reasons as the server', async () => {
+  // ui/dom.js cannot import src/truncation.mjs, so it keeps its own list. Before
+  // this, the timeline knew only Anthropic's spelling: an OpenAI response cut
+  // off with "length" drew as an ordinary finish, with no warning at all.
+  const { TRUNCATED_STOPS, stopKind } = await import('../ui/dom.js');
+  const server = new Set(Object.values(TRUNCATION_REASONS).flat());
+
+  assert.deepEqual([...TRUNCATED_STOPS].sort(), [...server].sort());
+  for (const reason of server) assert.equal(stopKind(reason), 'truncated', reason);
+});
+
+test('the timeline marks a tool stop whichever provider made it', async () => {
+  const { stopKind } = await import('../ui/dom.js');
+  assert.equal(stopKind('tool_use'), 'tool');
+  assert.equal(stopKind('tool_calls'), 'tool', 'OpenAI spells it tool_calls');
+  assert.equal(stopKind('end_turn'), '');
+  assert.equal(stopKind(null), '');
+});
