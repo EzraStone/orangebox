@@ -148,3 +148,16 @@ test('the changelog has an entry for the version being shipped', () => {
   assert.ok(lines.some((line) => line.startsWith(heading)),
     `CHANGELOG.md has no dated heading for ${version}`);
 });
+
+test('every in-page link in the README points at a heading that exists', () => {
+  // GitHub makes an anchor from each heading: lower-case, spaces to hyphens,
+  // punctuation dropped. A renamed heading silently breaks every link to it.
+  const readme = read('README.md');
+  const anchors = new Set(
+    [...readme.matchAll(/^#{1,6} (.+)$/gm)].map(([, title]) =>
+      title.toLowerCase().trim().replace(/[^\p{L}\p{N} -]/gu, '').replace(/ /g, '-'))
+  );
+  const links = [...readme.matchAll(/\]\(#([^)]+)\)/g)].map((m) => m[1]);
+  assert.ok(links.length >= 2, `only found ${links.length} in-page links`);
+  for (const link of links) assert.ok(anchors.has(link), `README links to #${link}, which is no heading`);
+});

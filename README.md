@@ -102,6 +102,10 @@ Same mechanism, different target. Pick the one aimed at your problem.
   <img src="docs/img/timeline.svg" width="900" alt="The orangebox UI: a runs list on the left, and a timeline of three calls — a planning call, a tool-loop call with two tool chips and a 2.1 second client-side gap, and a streaming call with a time-to-first-token of 108 milliseconds.">
 </p>
 
+**What went wrong, without knowing where to look.** The expensive agent failures do not error: a tool call that never got an answer, a response cut off at its output limit, the same question asked six times, a prompt that grew fortyfold with nothing cached. Every one of them returns a 200 at an ordinary price. orangebox looks for all four, marks them on the run's timeline, and `orangebox diagnose` (or the **Diagnosis** view, `d`) lists every run that has any of them, worst first, with a button to the call behind each. [More below.](#what-needs-a-look)
+
+**CI gates for the failures that pass every other gate.** `orangebox assert` fails a build on cost, latency and errors — and on unanswered tool calls, cut-off answers, repeated prompts and runaway context, which cost and latency limits pass straight through. Keep the thresholds in `orangebox.limits.json`. [More below.](#cli)
+
 **The exact prompt the model saw.** Click any call and read the full message history at that moment — system prompt, every turn, tool results injected — as the model received it, not as you think you assembled it.
 
 **Tool calls, paired.** `tool_use` blocks and the `tool_result` that answered them, linked, with errors flagged. The wall-clock gap between calls is labelled "client-side ≈" because orangebox sees the result, not the execution.
