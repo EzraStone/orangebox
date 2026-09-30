@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { contextGrowth } from './context.mjs';
 import { formatTokens as formatTokenCount, formatUsd as formatCost } from './format.mjs';
 import { findLoops } from './loops.mjs';
+import { findTruncations, isTruncated } from './truncation.mjs';
 
 export function compareRuns(store, leftId, rightId) {
   const left = store.getRun(leftId);
@@ -143,6 +144,11 @@ function summarySection(run, calls) {
   ];
 
   const flags = [];
+  const truncations = findTruncations(calls);
+  if (truncations.truncated_calls > 0) {
+    const n = truncations.truncated_calls;
+    flags.push(`${n} ${n === 1 ? 'response was' : 'responses were'} cut off at the output limit (call${n === 1 ? '' : 's'} ${truncations.calls.map((c) => c.seq).join(', ')}).`);
+  }
   if (loops.loops.length > 0) {
     const worst = loops.loops[0];
     flags.push(`${worst.count} calls asked the same thing, costing ${formatCost(loops.wasted_usd)} in repeats.`);
@@ -192,7 +198,9 @@ export function buildOtelExport(payload) {
       'openai.api.type': call.provider === 'openai'
         ? (call.endpoint?.includes('/responses') ? 'responses' : 'chat_completions')
         : null,
-      'error.type': call.error_type
+      'error.type': call.error_type,
+      'gen_ai.response.finish_reasons': call.stop_reason ? [call.stop_reason] : null,
+      'orangebox.truncated': isTruncated(call.stop_reason, call.provider) || null
     }),
     events: (toolsByCall.get(call.id) ?? []).map((tool) => ({
       timeUnixNano: toNano(call.ended_at ?? call.started_at),
@@ -231,6 +239,7 @@ export function buildOtelExport(payload) {
 function runSpan(run, calls, traceId, spanId) {
   const growth = contextGrowth(calls);
   const loops = findLoops(calls);
+  const truncations = findTruncations(calls);
   const ends = calls.map((call) => call.ended_at ?? call.started_at).filter(Boolean);
 
   return {
@@ -258,6 +267,7 @@ function runSpan(run, calls, traceId, spanId) {
       'orangebox.loops.repeated_prompts': loops.loops.length,
       'orangebox.loops.looping_calls': loops.looping_calls,
       'orangebox.loops.wasted_usd': loops.wasted_usd,
+      'orangebox.truncated.calls': truncations.truncated_calls,
       'gen_ai.usage.input_tokens': growth.total_input_tokens || null
     }),
     status: run.error_count > 0 ? { code: 2, message: `${run.error_count} failed call(s)` } : { code: 1 }
@@ -321,6 +331,9 @@ function compactAttributes(record) {
 }
 
 function attributeValue(value) {
+  // OTLP JSON wraps arrays; String(['max_tokens']) would quietly send a scalar
+  // where the GenAI conventions say finish_reasons is a list.
+  if (Array.isArray(value)) return { arrayValue: { values: value.map(attributeValue) } };
   if (typeof value === 'boolean') return { boolValue: value };
   if (typeof value === 'number' && Number.isInteger(value)) return { intValue: String(value) };
   if (typeof value === 'number') return { doubleValue: value };

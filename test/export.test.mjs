@@ -242,3 +242,26 @@ test('a string under a credential key is still redacted whatever it looks like',
   assert.equal(request.includes('abc'), false);
   assert.equal(request.includes('"a"'), false, 'a list under a credential key goes wholesale');
 });
+
+test('a cut-off call says so in its span and in the report (§29)', () => {
+  const cut = {
+    orangebox_export: 1, orangebox_version: '0.0.0', exported_at: Date.now(),
+    run: { id: 'r', name: 'cut', cost_usd: 0.02, unknown_cost_count: 0, error_count: 0 },
+    calls: [
+      { seq: 1, id: 'c1', provider: 'openai', endpoint: '/v1/chat/completions', model: 'gpt-5.6-sol', stop_reason: 'stop', started_at: 1, request_json: '{}' },
+      { seq: 2, id: 'c2', provider: 'openai', endpoint: '/v1/chat/completions', model: 'gpt-5.6-sol', stop_reason: 'length', started_at: 2, request_json: '{}' }
+    ],
+    tools: []
+  };
+
+  const spans = buildOtelExport(cut).resourceSpans[0].scopeSpans[0].spans;
+  const run = attributesOf(spans.find((s) => !s.parentSpanId));
+  assert.equal(run['orangebox.truncated.calls'].intValue, '1');
+
+  const second = attributesOf(spans.find((s) => s.name && s.parentSpanId && s.spanId && s.startTimeUnixNano === '2000000'));
+  assert.equal(second['orangebox.truncated'].boolValue, true);
+  // finish_reasons is a list in the GenAI conventions, and OTLP JSON wraps lists.
+  assert.deepEqual(second['gen_ai.response.finish_reasons'], { arrayValue: { values: [{ stringValue: 'length' }] } });
+
+  assert.match(buildHtmlReport(cut), /1 response was cut off at the output limit \(call 2\)/);
+});
