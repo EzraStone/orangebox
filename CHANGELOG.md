@@ -6,6 +6,7 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ### Added
 
+- Diagnosis (§30): `orangebox diagnose`, `GET /api/diagnosis`, and a Diagnosis view behind `d` — every run in a window with a cut-off answer, a loop or runaway context, ranked by what was found. `--fail` for nightly jobs.
 - Cut-off answers (§29): `orangebox truncated`, `GET /api/runs/:id/truncations`, a banner on the timeline, and `orangebox assert --max-truncated`. Finds responses that stopped at their output limit, whichever provider's spelling of that they used.
 
 ### Fixed

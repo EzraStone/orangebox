@@ -459,6 +459,36 @@ A run with repeats shows a banner on its timeline, and `--max-repeats` fails CI
 on it — the one gate that cost, latency and error thresholds all pass straight
 through.
 
+## What needs a look
+
+Each check above has its own command and its own banner, and each is only
+useful once you already suspect the thing it looks for. `diagnose` asks the
+other way round: which runs have *anything* wrong with them, and what?
+
+```bash
+orangebox diagnose --days 7
+```
+
+```
+  truncating agent  mung4bny-9cef1f71
+    cut off  2 responses cut off at the output limit
+  stuck agent  mulykw2l-b9a69e89
+    loop     6 calls asked the same thing
+  refactor-auth  mulz2097-2efe5e22
+    growth   prompt grew 34.4× with almost nothing cached
+
+  3 of 4 run(s) need a look — 1 with cut-off answers, 1 looping, 1 with runaway context
+```
+
+Runs are ranked by what was found rather than when: a cut-off answer means a
+wrong answer, a loop a costly one, runaway context a costly one slowly. Growth
+is only listed when it is steep, over enough calls to mean something, and not
+already being cached — anything gentler is how multi-turn agents work.
+
+The same list is the **Diagnosis** view in the UI (press `d`), defaulting to
+the last seven days. `--fail` makes the command exit non-zero when anything is
+found, so a nightly job can run one command instead of three.
+
 ## Cut-off answers
 
 A response that stops because it ran out of output room is the quietest
