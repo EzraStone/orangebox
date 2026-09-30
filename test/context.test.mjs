@@ -175,3 +175,15 @@ test('a run with no token counts cannot fail the growth gate', async () => {
   const result = evaluateRunAssertions(run, [], { maxContextGrowth: 1.5 }, [], null, growth);
   assert.equal(result.ok, true);
 });
+
+test('a non-numeric cache count cannot turn the share into NaN', () => {
+  // A redacted export once handed this function "[redacted-secret]" where a
+  // null belonged, and `?? 0` let the string through into the sum.
+  const result = contextGrowth([
+    { seq: 1, input_tokens: 1000, cache_read_tokens: '[redacted-secret]' },
+    { seq: 2, input_tokens: 2000, cache_read_tokens: null },
+    { seq: 3, input_tokens: 3000, cache_read_tokens: 500 }
+  ]);
+  assert.ok(Number.isFinite(result.cached_share));
+  assert.equal(result.cached_tokens, 500);
+});

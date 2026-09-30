@@ -65,9 +65,15 @@ export function sanitizeExport(payload, { full = false } = {}) {
       // output_tokens, cache_read_tokens and max_tokens, which are counts —
       // and redacting those left every shared run with no usage data and no
       // record of what the request asked for. A credential is never a number,
-      // so a finite number under one of these keys is kept and everything
-      // else, including a numeric-looking string, still goes.
-      if (/auth|api.?key|token|secret|cookie/i.test(childKey) && !Number.isFinite(child)) {
+      // and never absent: a finite number or a null under one of these keys is
+      // kept, and everything else, including a numeric-looking string, goes.
+      //
+      // The null case matters as much as the number. A call with no cache
+      // reads stores cache_read_tokens as null, and turning that into the
+      // string "[redacted-secret]" made every sum over the column NaN — so the
+      // "nothing was cached" warning never once appeared in a shared report.
+      const keep = child === null || child === undefined || Number.isFinite(child);
+      if (/auth|api.?key|token|secret|cookie/i.test(childKey) && !keep) {
         out[childKey] = '[redacted-secret]';
       }
       else if (/^(system|instructions)$/i.test(childKey)) out[childKey] = '[redacted-system-prompt]';

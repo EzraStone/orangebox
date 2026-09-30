@@ -310,3 +310,27 @@ test('recorded values cannot break the Markdown table or close the fence', async
   assert.equal(fence.length, 5, 'the fence is longer than any run of backticks inside it');
   assert.ok(response.includes(`${fence}json`) && response.lastIndexOf(fence) > response.indexOf(`${fence}json`));
 });
+
+test('sanitizing keeps an absent token count absent', () => {
+  // null is not a credential. Replacing it with "[redacted-secret]" made every
+  // sum over the column NaN, and the growth warning vanished from every
+  // shared report as a result.
+  const clean = sanitizeExport({
+    run: { id: 'r' },
+    calls: [{ seq: 1, id: 'c1', input_tokens: 900, cache_read_tokens: null, cache_write_tokens: null }],
+    tools: []
+  });
+  assert.equal(clean.calls[0].cache_read_tokens, null);
+  assert.equal(clean.calls[0].cache_write_tokens, null);
+  assert.equal(clean.calls[0].input_tokens, 900);
+});
+
+test('a shared report of a run that grew without caching says so', async () => {
+  const { runSummary } = await import('../src/export.mjs');
+  const calls = Array.from({ length: 10 }, (_, i) => ({
+    seq: i + 1, id: `c${i}`, provider: 'anthropic', input_tokens: 1000 * (i + 1),
+    cache_read_tokens: null, stop_reason: 'end_turn', request_json: JSON.stringify({ messages: [{ role: 'user', content: `step ${i}` }] })
+  }));
+  const clean = sanitizeExport({ run: { id: 'r', cost_usd: 1, unknown_cost_count: 0 }, calls, tools: [] });
+  assert.ok(runSummary(clean.run, clean.calls).flags.some((f) => /grew 10\.0x/.test(f)));
+});

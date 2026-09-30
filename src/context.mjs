@@ -32,7 +32,10 @@ export function contextGrowth(calls) {
   const last = sized.at(-1).input_tokens;
   const peak = Math.max(...sized.map((c) => c.input_tokens));
   const total = sized.reduce((sum, c) => sum + c.input_tokens, 0);
-  const cached = sized.reduce((sum, c) => sum + (c.cache_read_tokens ?? 0), 0);
+  // Finite numbers only. `?? 0` lets a string through, and one string turns
+  // the whole sum into concatenation and the share into NaN — which is exactly
+  // what a redacted export used to hand this function.
+  const cached = sized.reduce((sum, c) => sum + (Number.isFinite(c.cache_read_tokens) ? c.cache_read_tokens : 0), 0);
 
   // Cache reads are reported separately from input tokens by some providers and
   // included by others, so the share is capped rather than allowed past 1 —
