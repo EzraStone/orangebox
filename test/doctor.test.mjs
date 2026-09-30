@@ -329,3 +329,29 @@ test('a database with no caching at all produces no cache check', async () => {
     store.close();
   }
 });
+
+test('doctor says how old the shipped rates are', async () => {
+  const { checkPricingAge } = await import('../src/doctor.mjs');
+  const day = 86_400_000;
+  const base = Date.parse('2026-07-31T00:00:00Z');
+
+  const fresh = checkPricingAge('2026-07-31', { now: base + 30 * day })[0];
+  assert.equal(fresh.status, 'ok');
+  assert.match(fresh.detail, /2026-07-31 \(30 days ago\)/);
+
+  // Old enough that a price has probably changed: say so, and say the fix.
+  const stale = checkPricingAge('2026-07-31', { now: base + 120 * day })[0];
+  assert.equal(stale.status, 'note');
+  assert.match(stale.detail, /120 days ago.*may have moved.*pricing\.json/);
+
+  const undated = checkPricingAge(undefined)[0];
+  assert.equal(undated.status, 'note');
+  assert.match(undated.detail, /age is unknown/);
+});
+
+test('the shipped table carries a date doctor can read', async () => {
+  // Without it the age check above can only ever say "unknown".
+  const { loadPricing } = await import('../src/pricing.mjs');
+  const updated = loadPricing({ userFile: null }).meta.updated;
+  assert.match(updated ?? '', /^\d{4}-\d{2}-\d{2}$/);
+});

@@ -145,13 +145,14 @@ export function checkDatabase(store, { largeBytes = 500 * 1024 * 1024 } = {}) {
  * Pricing coverage, measured against what is actually recorded rather than
  * against the table — a table full of models you never call proves nothing.
  */
-export function checkPricing(store, pricing) {
+export function checkPricing(store, pricing, { now = Date.now() } = {}) {
   const checks = [
     {
       name: 'pricing table',
       status: OK,
       detail: `${pricing.entries.length} model rates${pricing.meta.userFileLoaded ? ', plus your ~/.orangebox/pricing.json' : ''}`
-    }
+    },
+    ...checkPricingAge(pricing.meta.updated, { now, userFile: pricing.meta.userFileLoaded })
   ];
 
   try {
@@ -188,6 +189,36 @@ export function checkPricing(store, pricing) {
   return checks;
 }
 
+
+/** How old the shipped rates can get before doctor says so. */
+export const PRICING_STALE_DAYS = 90;
+
+/**
+ * How current the shipped price table is.
+ *
+ * Providers change prices without notice and orangebox never fetches them
+ * (§02.2 — no network calls of its own). So the only thing it can do is say
+ * how old its numbers are, and say it louder once they are old enough that a
+ * change has probably happened. A user pricing file is mentioned as the fix,
+ * since it is the one that needs no release.
+ */
+export function checkPricingAge(updated, { now = Date.now(), userFile = false } = {}) {
+  const at = typeof updated === 'string' ? Date.parse(`${updated}T00:00:00Z`) : Number.NaN;
+  if (!Number.isFinite(at)) {
+    return [{ name: 'pricing age', status: NOTE, detail: 'the shipped table carries no date, so its age is unknown' }];
+  }
+
+  const days = Math.max(0, Math.floor((now - at) / 86_400_000));
+  const when = `${updated} (${days} day${days === 1 ? '' : 's'} ago)`;
+  if (days <= PRICING_STALE_DAYS) return [{ name: 'pricing age', status: OK, detail: `rates checked ${when}` }];
+
+  return [{
+    name: 'pricing age',
+    status: NOTE,
+    detail: `rates checked ${when} — provider prices may have moved; `
+      + (userFile ? 'your ~/.orangebox/pricing.json overrides the rates it lists' : 'correct any in ~/.orangebox/pricing.json')
+  }];
+}
 
 /**
  * §28 — models that cache but have no cache rate in the table.

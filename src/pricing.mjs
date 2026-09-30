@@ -26,7 +26,10 @@ export function loadPricing({ userFile = userPricingPath() } = {}) {
   // Longest key first so prefix matching is a plain linear scan (§08).
   entries.sort((a, b) => b[0].length - a[0].length);
 
-  return new Pricing(entries, { userFileLoaded: Boolean(user) });
+  // The shipped table's date, not the merged one's: a user file overrides
+  // some rates, and says nothing about how current the rest are.
+  const updated = typeof shipped._updated === 'string' ? shipped._updated : null;
+  return new Pricing(entries, { userFileLoaded: Boolean(user), updated });
 }
 
 export class Pricing {
