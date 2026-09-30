@@ -334,3 +334,45 @@ test('a shared report of a run that grew without caching says so', async () => {
   const clean = sanitizeExport({ run: { id: 'r', cost_usd: 1, unknown_cost_count: 0 }, calls, tools: [] });
   assert.ok(runSummary(clean.run, clean.calls).flags.some((f) => /grew 10\.0x/.test(f)));
 });
+
+test('sanitizing rewrites strings and nothing else', async () => {
+  // Every export bug in this file so far was a sanitizer changing something
+  // that was not a string: numbers turned into "[redacted-secret]", then nulls.
+  // Both broke arithmetic downstream without breaking anything that looked.
+  // So: walk a real recorded run, every column of every row, and insist the
+  // only values whose type changed were strings to begin with.
+  const { Store, newId } = await import('../src/store.mjs');
+  const { buildExport } = await import('../src/server.mjs');
+  const store = new Store(':memory:');
+
+  try {
+    const run = store.createRun({ name: 'everything', source: 'explicit' });
+    store.setRunNote(run.id, 'why this run exists');
+    const call = {
+      id: newId(), run_id: run.id, seq: 1, provider: 'anthropic', endpoint: '/v1/messages',
+      model: 'claude-opus-5', status: 200, streamed: 1, started_at: Date.now(), first_token_at: Date.now() + 5,
+      ended_at: Date.now() + 90, latency_ms: 90, ttft_ms: 5, input_tokens: 400, output_tokens: 30,
+      cache_read_tokens: null, cache_write_tokens: 0, cost_usd: 0.004, stop_reason: 'tool_use',
+      request_json: JSON.stringify({ max_tokens: 1024, messages: [{ role: 'user', content: 'mail dev@example.com' }] }),
+      response_json: JSON.stringify({ usage: { input_tokens: 400, output_tokens: 30 } })
+    };
+    store.insertCall(call, [{
+      id: newId(), run_id: run.id, call_id: call.id, kind: 'tool_use', tool_name: 'send_mail',
+      tool_use_id: 'toolu_1', is_error: 0, content_json: JSON.stringify({ to: 'dev@example.com' })
+    }]);
+
+    const raw = buildExport(store, run.id);
+    const changed = [];
+    const walk = (before, after, at) => {
+      const kind = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+      if (kind(before) === 'string') return;
+      if (kind(before) !== kind(after)) return void changed.push(`${at}: ${kind(before)} became ${kind(after)}`);
+      if (before && typeof before === 'object') for (const key of Object.keys(before)) walk(before[key], after[key], `${at}.${key}`);
+    };
+
+    for (const full of [false, true]) walk(raw, sanitizeExport(raw, { full }), full ? 'full' : 'basic');
+    assert.deepEqual(changed, []);
+  } finally {
+    store.close();
+  }
+});
