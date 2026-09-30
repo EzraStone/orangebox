@@ -574,6 +574,27 @@ async function exportRun(args) {
 
 // --------------------------------------------------------------- assert
 
+/**
+ * Every threshold `assert` accepts: its flag, the key it sets on `limits`, and
+ * how its value is read.
+ *
+ * A table rather than a switch, because the thresholds are listed in three
+ * places — the parser, --help and the README — and a table is the one of
+ * those a test can read.
+ */
+export const ASSERT_LIMITS = [
+  { flag: '--max-cost', key: 'maxCost', kind: 'number' },
+  { flag: '--max-latency', key: 'maxLatency', kind: 'number' },
+  { flag: '--max-errors', key: 'maxErrors', kind: 'int' },
+  { flag: '--max-calls', key: 'maxCalls', kind: 'int' },
+  { flag: '--require-known-cost', key: 'requireKnownCost', kind: 'switch' },
+  { flag: '--max-tool-errors', key: 'maxToolErrors', kind: 'int' },
+  { flag: '--max-unanswered-tools', key: 'maxUnansweredTools', kind: 'int' },
+  { flag: '--max-repeats', key: 'maxRepeats', kind: 'int' },
+  { flag: '--max-context-growth', key: 'maxContextGrowth', kind: 'number' },
+  { flag: '--max-truncated', key: 'maxTruncated', kind: 'int' }
+];
+
 async function assertRun(args) {
   const positional = [];
   let dbPath = null;
@@ -585,19 +606,15 @@ async function assertRun(args) {
       if (value === undefined) fail(`${args[i - 1]} needs a value`);
       return value;
     };
+    const limit = ASSERT_LIMITS.find((entry) => entry.flag === args[i]);
+    if (limit) {
+      if (limit.kind === 'switch') limits[limit.key] = true;
+      else limits[limit.key] = (limit.kind === 'int' ? int : number)(next(), limit.flag);
+      continue;
+    }
     switch (args[i]) {
       case '--db': dbPath = next(); break;
-      case '--max-cost': limits.maxCost = number(next(), '--max-cost'); break;
-      case '--max-latency': limits.maxLatency = number(next(), '--max-latency'); break;
-      case '--max-errors': limits.maxErrors = int(next(), '--max-errors'); break;
-      case '--max-calls': limits.maxCalls = int(next(), '--max-calls'); break;
-      case '--require-known-cost': limits.requireKnownCost = true; break;
       case '--json': asJson = true; break;
-      case '--max-tool-errors': limits.maxToolErrors = int(next(), '--max-tool-errors'); break;
-      case '--max-unanswered-tools': limits.maxUnansweredTools = int(next(), '--max-unanswered-tools'); break;
-      case '--max-repeats': limits.maxRepeats = int(next(), '--max-repeats'); break;
-      case '--max-context-growth': limits.maxContextGrowth = number(next(), '--max-context-growth'); break;
-      case '--max-truncated': limits.maxTruncated = int(next(), '--max-truncated'); break;
       default:
         if (args[i].startsWith('-')) fail(`unknown flag "${args[i]}"`);
         positional.push(args[i]);

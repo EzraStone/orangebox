@@ -33,21 +33,18 @@ test('every command the CLI dispatches is in the README', () => {
   }
 });
 
-test('every assert threshold the CLI accepts is in the README', () => {
+test('every assert threshold the CLI accepts is in the README and --help', async () => {
   // A CI gate nobody can find is a CI gate nobody adds, which is the whole
   // reason for having written it.
-  const source = read('src/cli.mjs');
+  const { ASSERT_LIMITS } = await import('../src/cli.mjs');
   const readme = read('README.md');
+  const source = read('src/cli.mjs');
+  const help = source.slice(source.indexOf('ASSERT LIMITS'), source.indexOf('ASSERT LIMITS') + 2000);
 
-  const start = source.indexOf('async function assertRun(');
-  const end = source.indexOf('const runId = positional[0]', start);
-  const flags = [...source.slice(start, end).matchAll(/case '(--[a-z-]+)':/g)]
-    .map((m) => m[1])
-    .filter((flag) => !['--db', '--json'].includes(flag));
-
-  assert.ok(flags.length >= 7, `only found ${flags.length} thresholds to check`);
-  for (const flag of flags) {
-    assert.ok(readme.includes(flag), `"${flag}" is accepted but never documented in README.md`);
+  assert.ok(ASSERT_LIMITS.length >= 10, `only found ${ASSERT_LIMITS.length} thresholds to check`);
+  for (const { flag } of ASSERT_LIMITS) {
+    assert.ok(readme.includes(`\`${flag}`), `"${flag}" is accepted but never documented in README.md`);
+    assert.ok(help.includes(flag), `"${flag}" is accepted but missing from --help`);
   }
 });
 
