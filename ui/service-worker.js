@@ -1,4 +1,4 @@
-const CACHE = 'orangebox-shell-v6';
+const CACHE = 'orangebox-shell-v7';
 const SHELL = [
   '/',
   '/style.css',
@@ -14,6 +14,8 @@ const SHELL = [
   '/icon.svg',
   '/icon-maskable.svg'
 ];
+
+const PROXIED = new Set(['anthropic', 'openai', 'gemini', 'ollama', 'bedrock', 'r']);
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
@@ -37,7 +39,10 @@ self.addEventListener('fetch', (event) => {
 
   // Prompt data and live feeds must never enter browser-managed caches.
   if (url.pathname === '/api' || url.pathname.startsWith('/api/')) return;
-  if (url.pathname.startsWith('/openai') || url.pathname.startsWith('/anthropic') || url.pathname.startsWith('/r/')) return;
+  // Proxied provider traffic, by first path segment. Must list every routable
+  // provider — it named two of five for three releases. test/shell.test.mjs
+  // derives the expected list from the server's routing table.
+  if (PROXIED.has(url.pathname.split('/')[1])) return;
 
   const isNavigation = request.mode === 'navigate';
   const isShellAsset = SHELL.includes(url.pathname);

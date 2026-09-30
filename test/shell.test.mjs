@@ -70,3 +70,18 @@ test('the shell never caches recorded data', () => {
     assert.ok(!path.startsWith('/run/'), `${path} would cache a recorded run`);
   }
 });
+
+test('the offline worker keeps its hands off every proxied provider', async () => {
+  // It named /openai and /anthropic and nothing else for three releases after
+  // Gemini, Ollama and Bedrock became routable. The shell-asset check caught
+  // the rest in practice, but a guard that lists two of five is a guard
+  // nobody should be relying on.
+  const { ROUTABLE_PROVIDERS } = await import('../src/server.mjs');
+  const worker = read('service-worker.js');
+  const listed = new Set([...worker.match(/const PROXIED = new Set\(\[([^\]]*)\]\)/)[1].matchAll(/'([a-z]+)'/g)].map((m) => m[1]));
+
+  for (const provider of ROUTABLE_PROVIDERS) {
+    assert.ok(listed.has(provider), `the service worker would not skip /${provider}/`);
+  }
+  assert.ok(listed.has('r'), 'run-scoped routes (/r/<id>/...) are proxied too');
+});
