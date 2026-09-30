@@ -458,6 +458,33 @@ A run with repeats shows a banner on its timeline, and `--max-repeats` fails CI
 on it — the one gate that cost, latency and error thresholds all pass straight
 through.
 
+## Cut-off answers
+
+A response that stops because it ran out of output room is the quietest
+failure there is. The status is 200, nothing errored, the cost is ordinary,
+and the agent carries on with half an answer. When the half is a tool call it
+carries on with arguments cut off mid-JSON, and the error that follows points
+at the tool rather than at the limit.
+
+```bash
+orangebox truncated
+```
+
+```
+  refactor-auth  ·  2 of 14 cut off (14%)
+    call 006  gpt-5.6-sol  stopped: length at 4096 tokens
+    call 011  gpt-5.6-sol  stopped: length at 4096 tokens
+
+  2 response(s) cut off across 1 run(s) — raise max_tokens, or ask for less at once
+```
+
+Every provider says it differently — `max_tokens`, `length`,
+`max_output_tokens`, `MAX_TOKENS` — and orangebox stores the stop reason
+exactly as the provider sent it, so the translation lives in one table with a
+test that makes every provider state its answer. The timeline marks a cut-off
+call the same way whichever provider it came from, a run with any shows a
+banner, and `--max-truncated 0` fails CI on it.
+
 ## Context growth
 
 A loop is the agent repeating itself. The sibling question is whether the agent

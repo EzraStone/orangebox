@@ -4,6 +4,14 @@ All notable changes to orangebox are documented here. Versions follow semantic v
 
 ## Unreleased
 
+### Added
+
+- Cut-off answers (§29): `orangebox truncated`, `GET /api/runs/:id/truncations`, a banner on the timeline, and `orangebox assert --max-truncated`. Finds responses that stopped at their output limit, whichever provider's spelling of that they used.
+
+### Fixed
+
+- The timeline's stop chip recognised only Anthropic's `max_tokens` and `tool_use`. An OpenAI response cut off with `length` or a Gemini one with `MAX_TOKENS` drew as an ordinary finish, and OpenAI's `tool_calls` got no colour.
+
 ## [1.5.0] - 2026-09-29
 
 ### Added
