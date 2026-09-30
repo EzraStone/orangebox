@@ -202,6 +202,10 @@ export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"</pre>
 
   <div class="grid">
     <div class="card">
+      <h3>Answers cut off</h3>
+      <p>A response that hit its output limit is a 200 with an ordinary cost, and the agent carries on with half an answer — or a tool call whose arguments stop mid-JSON. orangebox recognises it in every provider's spelling and <code>--max-truncated 0</code> fails the build on it.</p>
+    </div>
+    <div class="card">
       <h3>Going in circles</h3>
       <p>A loop resends a growing history with the same final ask, so hashing the whole request finds nothing. orangebox fingerprints the <em>last instruction</em> instead, counts the repeats, and prices them. <code>--max-repeats</code> fails the build on it.</p>
     </div>
@@ -217,9 +221,15 @@ export OPENAI_BASE_URL="http://127.0.0.1:4100/openai"</pre>
       <h3>What caching saved</h3>
       <p>Cache reads are priced at the difference they made; cache writes cost more than ordinary input, so they are netted off rather than hidden. A cache that never paid for itself shows as a negative, not as a saving of zero.</p>
     </div>
+  
+
+    <div class="card">
+      <h3>What the prompt carries</h3>
+      <p>The usual reason a prompt grows is a tool result that lands once and is re-sent on every call after. orangebox estimates which tool's results the conversation was carrying, weighted by how long it carried them — "mostly read_file" is a different fix from "turn on caching".</p>
+    </div>
   </div>
 
-  <p>None of this needs a change to your agent. It is all read back out of what was already recorded.</p>
+  <p>One command asks all of it at once: <code>orangebox diagnose</code> lists every run with anything wrong, worst first, and the same list is the <strong>Diagnosis</strong> view in the UI. None of this needs a change to your agent. It is all read back out of what was already recorded.</p>
 </section>
 
 <section>
