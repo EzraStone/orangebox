@@ -33,7 +33,19 @@ test('one cut-off response is described in the singular', () => {
 test('a shared limit is named, because it is usually the fix', () => {
   const summary = truncationSummary({ truncated_calls: 2, calls: [call(3), call(9)] });
   assert.match(summary.detail, /each stopped at 4096 tokens/);
-  assert.match(summary.advice, /Raise max_tokens/);
+  // No request parameter known, so the advice stays general.
+  assert.match(summary.advice, /Raise the output limit/);
+});
+
+test('the advice uses the provider’s own name for the parameter', () => {
+  // "max_tokens" is the wrong word to give someone whose client sends
+  // max_completion_tokens; they would go looking for a setting they do not have.
+  const limited = (seq) => ({ ...call(seq), limit: { field: 'max_completion_tokens', value: 4096 } });
+  const summary = truncationSummary({ truncated_calls: 2, calls: [limited(3), limited(9)] });
+  assert.match(summary.advice, /Raise max_completion_tokens/);
+
+  const mixed = truncationSummary({ truncated_calls: 2, calls: [limited(3), { ...call(9), limit: { field: 'max_tokens', value: 4096 } }] });
+  assert.match(mixed.advice, /Raise the output limit/, 'two different parameters: name neither');
 });
 
 test('different limits are not summarised as one', () => {

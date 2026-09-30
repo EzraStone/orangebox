@@ -1314,13 +1314,14 @@ async function truncationReport(args) {
       console.log(`  ${entry.run.name ?? entry.run.id}  ·  ${warn(`${entry.truncated_calls} of ${entry.answered_calls} cut off`)} (${pct}%)`);
       for (const call of entry.calls) {
         const at = call.output_tokens === null ? '' : ` at ${tokenCount(call.output_tokens)} tokens`;
-        console.log(`    call ${String(call.seq).padStart(3, '0')}  ${call.model ?? call.provider}  stopped: ${call.stop_reason}${at}`);
+        const limit = call.limit ? ` — ${call.limit.field} was ${call.limit.value}` : ' — no limit set; the provider default applied';
+        console.log(`    call ${String(call.seq).padStart(3, '0')}  ${call.model ?? call.provider}  stopped: ${call.stop_reason}${at}${limit}`);
       }
       console.log();
     }
 
     const total = found.reduce((sum, entry) => sum + entry.truncated_calls, 0);
-    console.log(`  ${total} response(s) cut off across ${found.length} run(s) — raise max_tokens, or ask for less at once`);
+    console.log(`  ${total} response(s) cut off across ${found.length} run(s) — raise the limit named above, or ask for less at once`);
     console.log();
   } finally {
     store.close();

@@ -838,6 +838,7 @@ test('`truncated` finds responses cut off at their limit (§29)', async () => {
     assert.match(report.stdout, /cut short/);
     assert.match(report.stdout, /2 of 3 cut off/);
     assert.match(report.stdout, /stopped: length at 4096 tokens/);
+    assert.match(report.stdout, /no limit set; the provider default applied/);
 
     const json = JSON.parse((await runCli(['truncated', '--db', server.dbPath, '--json'])).stdout);
     assert.equal(json.runs[0].truncated_calls, 2);

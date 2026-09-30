@@ -1472,11 +1472,17 @@ export function truncationSummary(data) {
   const seqs = (data.calls ?? []).map((call) => String(call.seq).padStart(2, '0'));
   const shown = seqs.slice(0, 6).join(', ') + (seqs.length > 6 ? `, and ${seqs.length - 6} more` : '');
   const limits = [...new Set((data.calls ?? []).map((call) => call.output_tokens).filter(Number.isFinite))];
+  // Name the request parameter when every cut-off call set the same one:
+  // that is the setting to change, in the provider's own spelling of it.
+  const fields = [...new Set((data.calls ?? []).map((call) => call.limit?.field ?? null))];
+  const field = fields.length === 1 && fields[0] ? fields[0] : null;
 
   return {
     headline: `${n} ${n === 1 ? 'response was' : 'responses were'} cut off at the output limit.`,
     detail: `Call${n === 1 ? '' : 's'} ${shown}` + (limits.length === 1 ? ` — each stopped at ${fmt.tokens(limits[0])} tokens.` : '.'),
-    advice: 'The model had more to say. Raise max_tokens, or ask for less at once.'
+    advice: field
+      ? `The model had more to say. Raise ${field}, or ask for less at once.`
+      : 'The model had more to say. Raise the output limit, or ask for less at once.'
   };
 }
 
