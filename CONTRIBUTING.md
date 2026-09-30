@@ -51,7 +51,7 @@ Section references in code comments (`§06.3`, `§14.2`) point into it.
 
 ## Adding a provider
 
-One file in `src/parse/`, exporting six functions — **and seven other places**.
+One file in `src/parse/`, exporting six functions — **and ten other places**.
 That list is not padding: Gemini, Ollama and Bedrock each shipped a release
 having missed at least one of them.
 
@@ -67,9 +67,21 @@ having missed at least one of them.
    but unhelpful
 8. `test/usage-convention.test.mjs` — state, in that provider's own spelling,
    whether its reported prompt total already includes cached tokens
+9. `TRUNCATION_REASONS` in `src/truncation.mjs` — the stop reason that means
+   "cut off at the output limit", or its truncations draw as normal finishes
+10. `OUTPUT_LIMIT_FIELDS` in the same file — where its request sets that
+    limit, so a truncation can name the parameter to raise
+11. `PROXIED` in `ui/service-worker.js` — the offline worker must never touch
+    its traffic
 
-Four tests already fail if you miss 3, 4, 5, 6 or 8. Run `npm test` and believe
-it over this list.
+Every one of 3 to 11 now has a test that derives it from the routing table, so
+a provider missing from any of them fails the suite by name. Run `npm test` and
+believe it over this list.
+
+Numbers 9 to 11 were each found the same way: a list that named Anthropic and
+OpenAI, written before Gemini, Ollama and Bedrock existed, and never revisited.
+The timeline's cut-off chip recognised one provider's spelling for three
+releases.
 
 Number 8 is the newest and cost the most. Providers disagree about what a
 prompt total means: Anthropic and Bedrock report cache reads outside it, Gemini
