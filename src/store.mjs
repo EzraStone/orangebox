@@ -8,7 +8,7 @@ import Database from 'better-sqlite3';
 import { findLoops } from './loops.mjs';
 import { contextGrowth } from './context.mjs';
 import { findTruncations } from './truncation.mjs';
-import { diagnose } from './diagnosis.mjs';
+import { diagnose, unansweredTools } from './diagnosis.mjs';
 import { toolWeight } from './tool-weight.mjs';
 
 export const SCHEMA_VERSION = '3';
@@ -968,11 +968,13 @@ export class Store {
     const runs = this.listRuns({ limit, from, to }).runs;
     return diagnose(runs, (runId) => {
       const calls = this.fullCalls(runId);
+      const tools = this.toolEvents(runId);
       return {
         loops: findLoops(calls),
         context: contextGrowth(calls),
         truncations: findTruncations(calls),
-        weight: toolWeight(calls, this.toolEvents(runId))
+        weight: toolWeight(calls, tools),
+        unanswered: unansweredTools(calls, tools)
       };
     });
   }

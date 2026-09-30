@@ -1018,6 +1018,7 @@ kbd {
   .diag-finding { flex-wrap: wrap; row-gap: 2px; align-items: baseline; }
   .diag-kind { flex: 0 0 100%; }
 }
+.diag-unanswered .diag-kind { color: var(--err); }
 .diag-truncated .diag-kind { color: var(--amber); }
 .diag-loop .diag-kind { color: var(--orange); }
 .diag-growth .diag-kind { color: var(--blue); }

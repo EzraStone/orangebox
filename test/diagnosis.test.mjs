@@ -44,7 +44,7 @@ test('diagnose only lists runs with something to say, and counts by kind', () =>
 
   assert.equal(result.checked_runs, 3);
   assert.equal(result.flagged_runs, 2);
-  assert.deepEqual(result.counts, { truncated: 2, loop: 1, growth: 0 });
+  assert.deepEqual(result.counts, { unanswered: 0, truncated: 2, loop: 1, growth: 0 });
   assert.equal(result.runs[0].run.id, 'c');
 });
 
@@ -122,4 +122,41 @@ test('a finding that points at a call says which', () => {
   assert.equal(byKind.truncated.call_id, 'first-cut');
   // The first repeat, not the original ask — that is where it went wrong.
   assert.equal(byKind.loop.call_id, 'ask-2');
+});
+
+test('a tool call nobody answered is a finding, weighted with a cut-off answer', async () => {
+  const { unansweredTools } = await import('../src/diagnosis.mjs');
+  const now = Date.UTC(2026, 8, 30, 12);
+  const old = now - 60 * 60_000;
+  const calls = [{ id: 'c1', seq: 1, started_at: old }, { id: 'c2', seq: 2, started_at: old + 1000 }];
+  const tools = [
+    { kind: 'tool_use', call_id: 'c1', tool_use_id: 'a' },
+    { kind: 'tool_result', call_id: 'c2', tool_use_id: 'a' },
+    { kind: 'tool_use', call_id: 'c2', tool_use_id: 'b' } // asked for, never answered, run gone quiet
+  ];
+
+  const open = unansweredTools(calls, tools, { now });
+  assert.deepEqual(open, { count: 1, call_id: 'c2' });
+
+  const [finding] = findingsFor({ unanswered: open });
+  assert.equal(finding.kind, 'unanswered');
+  assert.match(finding.text, /1 tool call never got a result/);
+
+  const ranked = rankDiagnoses([
+    { run: { id: 'loop', started_at: 2 }, findings: [{ kind: 'loop' }] },
+    { run: { id: 'open', started_at: 1 }, findings: [{ kind: 'unanswered' }] }
+  ]);
+  assert.equal(ranked[0].run.id, 'open');
+});
+
+test('a run still going is not accused of ignoring its latest tool request', async () => {
+  // Its results simply have not been sent yet.
+  const { unansweredTools } = await import('../src/diagnosis.mjs');
+  const now = Date.UTC(2026, 8, 30, 12);
+  const calls = [{ id: 'c1', seq: 1, started_at: now - 30_000 }];
+  const tools = [{ kind: 'tool_use', call_id: 'c1', tool_use_id: 'x' }];
+  assert.equal(unansweredTools(calls, tools, { now }).count, 0);
+
+  // An hour later with nothing more, it was abandoned.
+  assert.equal(unansweredTools(calls, tools, { now: now + 60 * 60_000 }).count, 1);
 });

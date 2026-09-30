@@ -6,7 +6,7 @@
 // my runs have *anything* wrong with them, and what?
 
 /** How much weight each finding carries when runs are ranked. */
-const WEIGHT = { truncated: 3, loop: 2, growth: 1 };
+const WEIGHT = { unanswered: 3, truncated: 3, loop: 2, growth: 1 };
 
 /**
  * Findings for one run, from the three analyses the store already makes.
@@ -16,8 +16,21 @@ const WEIGHT = { truncated: 3, loop: 2, growth: 1 };
  * gentler is how multi-turn agents work, and listing it would bury the runs
  * that actually need looking at.
  */
-export function findingsFor({ truncations, loops, context, weight }) {
+export function findingsFor({ truncations, loops, context, weight, unanswered }) {
   const findings = [];
+
+  // A tool the agent asked for and never got an answer to: the run finishes,
+  // costs little, errors nowhere, and did not work. It shares the top weight
+  // with a cut-off answer because both mean the result is wrong, not dear.
+  if (unanswered?.count > 0) {
+    const n = unanswered.count;
+    findings.push({
+      kind: 'unanswered',
+      count: n,
+      call_id: unanswered.call_id ?? null,
+      text: `${n} tool call${n === 1 ? '' : 's'} never got a result`
+    });
+  }
 
   if (truncations?.truncated_calls > 0) {
     const n = truncations.truncated_calls;
@@ -83,7 +96,7 @@ export function diagnose(runs, analyse) {
     if (findings.length > 0) entries.push({ run, findings });
   }
 
-  const counts = { truncated: 0, loop: 0, growth: 0 };
+  const counts = { unanswered: 0, truncated: 0, loop: 0, growth: 0 };
   for (const entry of entries) for (const finding of entry.findings) counts[finding.kind] += 1;
 
   return {
@@ -92,4 +105,29 @@ export function diagnose(runs, analyse) {
     counts,
     runs: rankDiagnoses(entries)
   };
+}
+
+/** How recent a run's last call must be for its final tool request to count as still pending. */
+export const PENDING_MS = 5 * 60_000;
+
+/**
+ * Tool calls a run asked for and never answered.
+ *
+ * The final call's requests are forgiven while the run is fresh: an agent
+ * still running has simply not sent the results yet. Anything earlier was
+ * skipped over by later calls, and anything in the final call of a run that
+ * has gone quiet was abandoned — which is the failure this looks for.
+ */
+export function unansweredTools(calls, tools, { now = Date.now() } = {}) {
+  const answered = new Set(tools.filter((t) => t.kind === 'tool_result' && t.tool_use_id).map((t) => t.tool_use_id));
+  const last = calls.reduce((latest, call) => ((call.seq ?? 0) > (latest?.seq ?? -1) ? call : latest), null);
+  const lastActivity = last ? (last.ended_at ?? last.started_at ?? 0) : 0;
+  const stillRunning = now - lastActivity < PENDING_MS;
+
+  const open = tools.filter((t) => t.kind === 'tool_use' && (!t.tool_use_id || !answered.has(t.tool_use_id)))
+    .filter((t) => !(stillRunning && last && t.call_id === last.id));
+
+  const seqOf = new Map(calls.map((call) => [call.id, call.seq]));
+  open.sort((a, b) => (seqOf.get(a.call_id) ?? 0) - (seqOf.get(b.call_id) ?? 0));
+  return { count: open.length, call_id: open[0]?.call_id ?? null };
 }

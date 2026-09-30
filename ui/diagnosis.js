@@ -7,6 +7,7 @@
 import { el, segmented, WINDOWS, fmt } from './dom.js';
 
 export const FINDING_LABELS = {
+  unanswered: 'Never answered',
   truncated: 'Cut off',
   loop: 'Looping',
   growth: 'Runaway context'
@@ -23,7 +24,8 @@ export function diagnosisSummary(data) {
   }
 
   const parts = [];
-  const { truncated = 0, loop = 0, growth = 0 } = data.counts ?? {};
+  const { unanswered = 0, truncated = 0, loop = 0, growth = 0 } = data.counts ?? {};
+  if (unanswered) parts.push(`${unanswered} with tool calls never answered`);
   if (truncated) parts.push(`${truncated} with cut-off answers`);
   if (loop) parts.push(`${loop} looping`);
   if (growth) parts.push(`${growth} with runaway context`);

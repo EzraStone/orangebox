@@ -1185,7 +1185,7 @@ async function loopReport(args) {
  * produce, because a kind missing here used to mean `undefined.padEnd` and a
  * crash in the middle of the report.
  */
-export const FINDING_MARK = { truncated: 'cut off', loop: 'loop', growth: 'growth' };
+export const FINDING_MARK = { unanswered: 'no reply', truncated: 'cut off', loop: 'loop', growth: 'growth' };
 
 /**
  * §30 — every check orangebox makes, across runs, worst first.
@@ -1242,9 +1242,16 @@ async function diagnoseReport(args) {
     }
     console.log();
 
-    const { truncated, loop, growth } = result.counts;
-    console.log(`  ${result.flagged_runs} of ${result.checked_runs} run(s) need a look — `
-      + `${truncated} with cut-off answers, ${loop} looping, ${growth} with runaway context`);
+    // Only the kinds that were found, in the same words as the Diagnosis view.
+    // "0 with unanswered tool calls" is four words spent saying nothing.
+    const { unanswered, truncated, loop, growth } = result.counts;
+    const parts = [
+      unanswered && `${unanswered} with unanswered tool calls`,
+      truncated && `${truncated} with cut-off answers`,
+      loop && `${loop} looping`,
+      growth && `${growth} with runaway context`
+    ].filter(Boolean);
+    console.log(`  ${result.flagged_runs} of ${result.checked_runs} run(s) need a look — ${parts.join(', ')}`);
     console.log(`  ${fmtDim('orangebox truncated | loops | context <run-id> for the detail')}`);
     console.log();
   } finally {
